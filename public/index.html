@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Fogbound — aventure IA</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#12141c">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <span class="brand">Fogbound</span>
+  <button id="settingsBtn" class="icon-btn" aria-label="Réglages" title="Réglages">⚙</button>
+</header>
+
+<main id="app">
+
+  <!-- World list / create -->
+  <section id="view-home" class="view">
+    <div id="worldList" class="world-list"></div>
+    <div class="create-panel">
+      <h2>Nouvelle histoire</h2>
+      <p class="hint">Décris une idée en une phrase — lieu, ambiance, ou personnage.</p>
+      <textarea id="ideaInput" rows="3" placeholder="Un détective steampunk dans une ville de brouillard..."></textarea>
+      <button id="createWorldBtn" class="primary-btn">Commencer</button>
+    </div>
+  </section>
+
+  <!-- Story / play view -->
+  <section id="view-story" class="view hidden">
+    <button id="backBtn" class="text-btn">‹ Mes histoires</button>
+    <h2 id="storyTitle"></h2>
+    <div id="storyImage" class="story-image hidden"><img id="storyImageEl" alt=""></div>
+    <div id="chapterFeed" class="chapter-feed"></div>
+    <div id="suggestedActions" class="suggested-actions"></div>
+    <form id="actionForm" class="action-form">
+      <input id="actionInput" type="text" placeholder="Que fais-tu ?" autocomplete="off">
+      <button type="submit" class="primary-btn">Envoyer</button>
+    </form>
+  </section>
+
+  <!-- Settings view -->
+  <section id="view-settings" class="view hidden">
+    <button id="closeSettingsBtn" class="text-btn">‹ Retour</button>
+    <h2>Réglages</h2>
+
+    <div class="settings-group">
+      <h3>Texte</h3>
+      <label>Fournisseur
+        <select id="textProvider">
+          <option value="mock">Démo locale (sans clé)</option>
+          <option value="anthropic">Anthropic (Claude)</option>
+          <option value="openai">OpenAI</option>
+          <option value="openrouter">OpenRouter (plusieurs modèles)</option>
+        </select>
+      </label>
+      <label>Modèle <span class="hint-inline">(optionnel, sinon valeur par défaut)</span>
+        <input id="textModel" type="text" placeholder="ex : claude-sonnet-4-6">
+      </label>
+      <label class="key-field">Clé API Anthropic <input id="key-anthropic" type="password" placeholder="sk-ant-..."></label>
+      <label class="key-field">Clé API OpenAI <input id="key-openai" type="password" placeholder="sk-..."></label>
+      <label class="key-field">Clé API OpenRouter <input id="key-openrouter" type="password" placeholder="sk-or-..."></label>
+    </div>
+
+    <div class="settings-group">
+      <h3>Images</h3>
+      <label class="toggle-row">
+        <span>Génération d'images</span>
+        <input id="imagesEnabled" type="checkbox">
+      </label>
+      <label>Fournisseur
+        <select id="imageProvider">
+          <option value="mock">Démo locale (sans clé)</option>
+          <option value="stability">Stability AI</option>
+          <option value="replicate">Replicate</option>
+        </select>
+      </label>
+      <label class="key-field">Clé API Stability <input id="key-stability" type="password" placeholder="sk-..."></label>
+      <label class="key-field">Clé API Replicate <input id="key-replicate" type="password" placeholder="r8_..."></label>
+    </div>
+
+    <button id="saveSettingsBtn" class="primary-btn">Enregistrer</button>
+    <p id="settingsStatus" class="hint"></p>
+  </section>
+
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>
