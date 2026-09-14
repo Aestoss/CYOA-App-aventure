@@ -102,6 +102,13 @@ pas de règle CSS `.hidden`, donc restait visible même masqué en JS).
       page) : trois onglets navigables — "Créer un monde", "Mes mondes",
       "Mes sauvegardes" — le plus esthétique et intuitif possible plutôt
       qu'un simple `<select>` d'onglets basique.
+- [ ] **Remonter automatiquement en haut de la page à chaque génération
+      d'un nouveau chapitre/tour** — actuellement après avoir joué une
+      action (ou une régénération), le scroll reste là où il était ; il
+      faudrait que la vue histoire remonte en haut (scroll to top) dès
+      que le nouveau tour s'affiche, pour commencer la lecture du chapitre
+      depuis le début sans avoir à remonter manuellement.
+
 ## Fait (15/09 — crash JSON brut, flèches de pagination invisibles)
 
 - [x] **Bug d'affichage : les flèches ‹ › de pagination étaient quasi
