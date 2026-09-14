@@ -58,6 +58,20 @@ pas de règle CSS `.hidden`, donc restait visible même masqué en JS).
       devenue sans objet : on a implémenté la pagination directement sur
       demande, plutôt que d'étudier le rationnel avant. Retiré de la liste.
 
+## Retours de relecture (14/09, session suivante)
+
+- [ ] **La langue ne s'applique pas correctement.** Choisir "English" dans
+      Réglages ne suffit pas si le monde a été créé à partir d'une idée
+      tapée en français : le reste du contexte envoyé à l'IA à chaque tour
+      (World Bible, instructions principales, scènes récentes) reste dans
+      la langue de création du monde, et l'IA a tendance à continuer dans
+      cette langue dominante malgré la consigne contraire. Diagnostic
+      donné à l'utilisateur en session ; correctif proposé ci-dessous.
+- [ ] **Emoji du mode auteur/secret à changer** : remplacer 🔓 (cadenas) par
+      🔍 (loupe) — jugé plus esthétique. Concerne le bouton `#authorModeBtn`
+      et le préfixe dans `#secretInfoBox` (`public/app.js`,
+      `public/index.html`).
+
 ---
 
 ## Notes pour plus tard
@@ -72,3 +86,13 @@ pas de règle CSS `.hidden`, donc restait visible même masqué en JS).
 - La régénération ne s'applique qu'à la dernière page (pas aux pages
   passées) — pour regénérer un tour plus ancien, il faut d'abord "reprendre
   à partir d'ici" juste avant, puis rejouer.
+- **Correctif proposé pour la langue** : arrêter de traiter la langue comme
+  un réglage global relu à chaque tour, et la figer sur le monde au moment
+  de sa création (comme `tone` ou `skills`) — stocker `world.language` et
+  toujours l'utiliser pour ce monde, plutôt que de laisser le réglage
+  courant entrer en conflit avec un contexte déjà écrit dans une autre
+  langue. Ça implique : ajouter un choix de langue au moment de créer un
+  monde (pas seulement dans Réglages), passer `world.language` à
+  `buildTurnPrompt` au lieu de `settings.language`, et assumer qu'un monde
+  déjà créé garde sa langue (pas de traduction rétroactive du World Bible/
+  des tours passés — trop coûteux et fragile pour la valeur apportée).
