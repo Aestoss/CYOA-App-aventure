@@ -257,6 +257,12 @@ input[type="range"] { width: 100%; margin: 6px 0 4px; accent-color: var(--accent
 .ai-character-gen input { margin: 0; flex: 1; }
 .ai-character-gen button { white-space: nowrap; }
 
+/* Skills editor (world editor) */
+.skills-edit-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+.skill-edit-row { display: flex; gap: 8px; align-items: center; }
+.skill-edit-row input { margin: 0; flex: 1; }
+.skill-edit-row .skill-remove-btn { width: 40px; height: 40px; flex-shrink: 0; font-size: 0.95rem; }
+
 /* Story view */
 .story-header-row { display: flex; align-items: center; justify-content: space-between; }
 .story-header-actions { display: flex; gap: 8px; }

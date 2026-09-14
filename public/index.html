@@ -131,9 +131,16 @@
     <button id="closeWorldEditBtn" class="text-btn" data-i18n="backGeneric"></button>
     <h2 id="worldEditTitle">Éditer le monde</h2>
     <p id="worldLanguageInfo" class="hint"></p>
+    <p id="worldVersionInfo" class="hint"></p>
 
     <div class="settings-group">
       <h3 data-i18n="worldEditInfoHeading"></h3>
+      <label><span data-i18n="worldTitleLabel"></span>
+        <input id="worldTitleInput" type="text">
+      </label>
+      <div id="worldCoverWrap" class="story-image hidden"><img id="worldCoverImg" alt=""></div>
+      <button id="regenerateCoverBtn" class="text-btn" data-i18n="regenerateCoverBtn"></button>
+      <p id="coverStatus" class="hint"></p>
       <label><span data-i18n="worldDescriptionLabel"></span> <span class="hint-inline" data-i18n="worldDescriptionHint"></span>
         <textarea id="worldDescriptionInput" rows="2"></textarea>
       </label>
@@ -149,6 +156,15 @@
       <label class="toggle-row"><span data-i18n="worldMatureLabel"></span><input id="worldMatureInput" type="checkbox"></label>
       <label><span data-i18n="worldContentWarningsLabel"></span> <span class="hint-inline" data-i18n="worldContentWarningsHint"></span>
         <input id="worldContentWarningsInput" type="text" data-i18n-placeholder="worldContentWarningsPlaceholder">
+      </label>
+      <label><span data-i18n="worldSettingLabel"></span> <span class="hint-inline" data-i18n="worldSettingHint"></span>
+        <textarea id="worldSettingInput" rows="3"></textarea>
+      </label>
+      <label><span data-i18n="worldToneLabel"></span> <span class="hint-inline" data-i18n="worldToneHint"></span>
+        <input id="worldToneInput" type="text">
+      </label>
+      <label><span data-i18n="worldRulesLabel"></span> <span class="hint-inline" data-i18n="worldRulesHint"></span>
+        <textarea id="worldRulesInput" rows="3"></textarea>
       </label>
       <label><span data-i18n="worldInstructionsLabel"></span>
         <textarea id="worldInstructionsInput" rows="10"></textarea>
@@ -167,6 +183,29 @@
       </label>
       <button id="saveWorldEditBtn" class="primary-btn" data-i18n="saveBtn"></button>
       <p id="worldEditStatus" class="hint"></p>
+    </div>
+
+    <div class="settings-group">
+      <h3 data-i18n="worldSkillsHeading"></h3>
+      <p class="hint" data-i18n="worldSkillsHint"></p>
+      <div id="worldSkillsList" class="skills-edit-list"></div>
+      <button id="addSkillBtn" class="text-btn" data-i18n="addSkillBtn"></button>
+    </div>
+
+    <div class="settings-group">
+      <h3 data-i18n="victoryDefeatHeading"></h3>
+      <label><span data-i18n="worldVictoryConditionLabel"></span> <span class="hint-inline" data-i18n="worldConditionHint"></span>
+        <textarea id="worldVictoryConditionInput" rows="2"></textarea>
+      </label>
+      <label><span data-i18n="worldVictoryTextLabel"></span>
+        <textarea id="worldVictoryTextInput" rows="2"></textarea>
+      </label>
+      <label><span data-i18n="worldDefeatConditionLabel"></span> <span class="hint-inline" data-i18n="worldConditionHint"></span>
+        <textarea id="worldDefeatConditionInput" rows="2"></textarea>
+      </label>
+      <label><span data-i18n="worldDefeatTextLabel"></span>
+        <textarea id="worldDefeatTextInput" rows="2"></textarea>
+      </label>
     </div>
 
     <div class="settings-group">

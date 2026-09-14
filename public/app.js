@@ -81,6 +81,11 @@ const UI = {
     ],
     worldEditInfoHeading: 'Informations',
     worldLanguageInfo: name => `Langue de ce monde : ${name} (fixée à la création)`,
+    worldVersionInfo: v => `Version : ${v}`,
+    worldTitleLabel: 'Titre',
+    regenerateCoverBtn: "🖼️ Régénérer l'image de couverture",
+    regeneratingCoverStatus: 'Génération en cours...',
+    coverRegeneratedStatus: 'Image régénérée.',
     worldDescriptionLabel: 'Description', worldDescriptionHint: '(affichée dans la liste des mondes, sans effet sur le jeu)',
     worldObjectiveLabel: 'Objectif', worldObjectiveHint: '(affiché au joueur dès le premier tour, optionnel)',
     worldBackgroundLabel: 'Background', worldBackgroundHint: '(texte montré au joueur en popup avant le premier chapitre, identique à chaque nouvelle aventure — vide = pas de popup, ancien chapitre d\'ouverture statique à la place)',
@@ -93,7 +98,18 @@ const UI = {
     worldImageStyleLabel: 'Style visuel', worldImageStyleHint: '(description générale, ex : "aquarelle sombre, palette froide")',
     worldImageStylePrefixLabel: "Préfixe d'image", worldImageStylePrefixHint: "(ajouté avant chaque prompt d'image)",
     worldImageStyleSuffixLabel: "Suffixe d'image", worldImageStyleSuffixHint: "(ajouté après chaque prompt d'image)",
+    worldSettingLabel: 'Setting', worldSettingHint: '(lieu, époque, ambiance)',
+    worldToneLabel: 'Ton', worldToneHint: '(ex : "noir tendu", "fantaisie légère")',
+    worldRulesLabel: 'Règles du monde', worldRulesHint: '(une par ligne)',
     savedStatus: 'Enregistré.',
+    worldSkillsHeading: 'Compétences',
+    worldSkillsHint: "Utilisées par l'IA pour juger la réussite ou l'échec des actions (4 à 6 recommandées). Renommer ou supprimer une compétence ne met pas à jour les personnages déjà créés.",
+    addSkillBtn: '+ Ajouter une compétence',
+    victoryDefeatHeading: 'Fin de partie',
+    worldVictoryConditionLabel: 'Condition de victoire', worldConditionHint: '(vide = désactivée)',
+    worldVictoryTextLabel: 'Texte affiché en cas de victoire',
+    worldDefeatConditionLabel: 'Condition de défaite',
+    worldDefeatTextLabel: 'Texte affiché en cas de défaite',
     worldAiEditHeading: 'Retouche IA',
     worldAiEditHint: "Décris un changement en langage naturel — l'IA ajuste le monde en conséquence (léger, pas une régénération complète).",
     worldAiEditPlaceholder: 'Rends le ton plus sombre, ajoute un rival...',
@@ -199,6 +215,11 @@ const UI = {
     ],
     worldEditInfoHeading: 'Information',
     worldLanguageInfo: name => `This world's language: ${name} (fixed at creation)`,
+    worldVersionInfo: v => `Version: ${v}`,
+    worldTitleLabel: 'Title',
+    regenerateCoverBtn: '🖼️ Regenerate cover image',
+    regeneratingCoverStatus: 'Generating...',
+    coverRegeneratedStatus: 'Image regenerated.',
     worldDescriptionLabel: 'Description', worldDescriptionHint: "(shown in the world list, doesn't affect gameplay)",
     worldObjectiveLabel: 'Objective', worldObjectiveHint: '(shown to the player from the first turn, optional)',
     worldBackgroundLabel: 'Background', worldBackgroundHint: '(text shown to the player in a popup before the first chapter, same every new adventure — empty = no popup, falls back to the old static opening chapter)',
@@ -211,7 +232,18 @@ const UI = {
     worldImageStyleLabel: 'Visual style', worldImageStyleHint: '(general description, e.g. "dark watercolor, cool palette")',
     worldImageStylePrefixLabel: 'Image prefix', worldImageStylePrefixHint: '(added before every image prompt)',
     worldImageStyleSuffixLabel: 'Image suffix', worldImageStyleSuffixHint: '(added after every image prompt)',
+    worldSettingLabel: 'Setting', worldSettingHint: '(place, era, atmosphere)',
+    worldToneLabel: 'Tone', worldToneHint: '(e.g. "tense noir", "whimsical fantasy")',
+    worldRulesLabel: 'World rules', worldRulesHint: '(one per line)',
     savedStatus: 'Saved.',
+    worldSkillsHeading: 'Skills',
+    worldSkillsHint: "Used by the AI to judge whether actions succeed or fail (4-6 recommended). Renaming or removing a skill doesn't update characters already created.",
+    addSkillBtn: '+ Add a skill',
+    victoryDefeatHeading: 'Ending the story',
+    worldVictoryConditionLabel: 'Victory condition', worldConditionHint: '(empty = disabled)',
+    worldVictoryTextLabel: 'Text shown on victory',
+    worldDefeatConditionLabel: 'Defeat condition',
+    worldDefeatTextLabel: 'Text shown on defeat',
     worldAiEditHeading: 'AI retouch',
     worldAiEditHint: 'Describe a change in plain language — the AI adjusts the world accordingly (light touch, not a full regeneration).',
     worldAiEditPlaceholder: 'Make the tone darker, add a rival...',
@@ -454,26 +486,100 @@ async function openWorldEditor(worldId) {
 
 const LANGUAGE_NAMES = { fr: 'Français', en: 'English' };
 
+function renderSkillsEditor(skills) {
+  const list = document.getElementById('worldSkillsList');
+  list.innerHTML = '';
+  (skills || []).forEach(addSkillRow);
+}
+
+function addSkillRow(value) {
+  const list = document.getElementById('worldSkillsList');
+  const row = document.createElement('div');
+  row.className = 'skill-edit-row';
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = value || '';
+  const removeBtn = document.createElement('button');
+  removeBtn.type = 'button';
+  removeBtn.className = 'icon-btn danger-text skill-remove-btn';
+  removeBtn.textContent = '✕';
+  removeBtn.onclick = () => row.remove();
+  row.appendChild(input);
+  row.appendChild(removeBtn);
+  list.appendChild(row);
+}
+
+function readSkillsEditor() {
+  return [...document.querySelectorAll('#worldSkillsList .skill-edit-row input')]
+    .map(input => input.value.trim())
+    .filter(Boolean);
+}
+
+document.getElementById('addSkillBtn').onclick = () => addSkillRow('');
+
+function renderWorldCover(world) {
+  const wrap = document.getElementById('worldCoverWrap');
+  const img = document.getElementById('worldCoverImg');
+  if (world.coverImageUrl) {
+    img.src = world.coverImageUrl;
+    wrap.classList.remove('hidden');
+  } else {
+    wrap.classList.add('hidden');
+  }
+}
+
 function populateWorldEditor(world, playableCharacters) {
   currentWorldId = world.id;
   currentWorldSkills = world.skills || [];
   document.getElementById('worldEditTitle').textContent = world.title;
   document.getElementById('worldLanguageInfo').textContent = t('worldLanguageInfo')(LANGUAGE_NAMES[world.language] || LANGUAGE_NAMES.fr);
+  document.getElementById('worldVersionInfo').textContent = t('worldVersionInfo')(world.version);
+  document.getElementById('worldTitleInput').value = world.title || '';
+  renderWorldCover(world);
+  document.getElementById('coverStatus').textContent = '';
   document.getElementById('worldDescriptionInput').value = world.description || '';
   document.getElementById('worldObjectiveInput').value = world.objective || '';
   document.getElementById('worldBackgroundInput').value = world.background || '';
   document.getElementById('worldFirstActionInput').value = world.firstAction || '';
   document.getElementById('worldMatureInput').checked = Boolean(world.mature);
   document.getElementById('worldContentWarningsInput').value = (world.contentWarnings || []).join(', ');
+  document.getElementById('worldSettingInput').value = world.setting || '';
+  document.getElementById('worldToneInput').value = world.tone || '';
+  document.getElementById('worldRulesInput').value = (world.rules || []).join('\n');
   document.getElementById('worldInstructionsInput').value = world.instructions || '';
   document.getElementById('worldAuthorStyleInput').value = world.authorStyle || '';
   document.getElementById('worldImageStyleInput').value = world.imageStyle || '';
   document.getElementById('worldImageStylePrefixInput').value = world.imageStylePrefix || '';
   document.getElementById('worldImageStyleSuffixInput').value = world.imageStyleSuffix || '';
+  renderSkillsEditor(world.skills || []);
+  document.getElementById('worldVictoryConditionInput').value = world.victoryCondition || '';
+  document.getElementById('worldVictoryTextInput').value = world.victoryText || '';
+  document.getElementById('worldDefeatConditionInput').value = world.defeatCondition || '';
+  document.getElementById('worldDefeatTextInput').value = world.defeatText || '';
   document.getElementById('worldAiEditInput').value = '';
   document.getElementById('worldAiEditStatus').textContent = '';
   renderCharacterEditList(playableCharacters || []);
 }
+
+document.getElementById('regenerateCoverBtn').onclick = async () => {
+  const btn = document.getElementById('regenerateCoverBtn');
+  const status = document.getElementById('coverStatus');
+  btn.disabled = true;
+  status.textContent = t('regeneratingCoverStatus');
+  try {
+    const res = await fetch(`${API}/worlds/${currentWorldId}/regenerate-cover`, { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    renderWorldCover(data.world);
+    document.getElementById('worldVersionInfo').textContent = t('worldVersionInfo')(data.world.version);
+    status.textContent = t('coverRegeneratedStatus');
+  } catch (e) {
+    status.textContent = t('errorPrefix') + e.message;
+  } finally {
+    btn.disabled = false;
+    setTimeout(() => { status.textContent = ''; }, 2500);
+  }
+};
 
 document.getElementById('closeWorldEditBtn').onclick = () => {
   showView(currentSaveId ? 'story' : 'home');
@@ -482,17 +588,26 @@ document.getElementById('closeWorldEditBtn').onclick = () => {
 
 document.getElementById('saveWorldEditBtn').onclick = async () => {
   const body = {
+    title: document.getElementById('worldTitleInput').value.trim() || undefined,
     description: document.getElementById('worldDescriptionInput').value,
     objective: document.getElementById('worldObjectiveInput').value || null,
     background: document.getElementById('worldBackgroundInput').value,
     firstAction: document.getElementById('worldFirstActionInput').value || null,
     mature: document.getElementById('worldMatureInput').checked,
     contentWarnings: document.getElementById('worldContentWarningsInput').value.split(',').map(s => s.trim()).filter(Boolean),
+    setting: document.getElementById('worldSettingInput').value,
+    tone: document.getElementById('worldToneInput').value,
+    rules: document.getElementById('worldRulesInput').value.split('\n').map(s => s.trim()).filter(Boolean),
     instructions: document.getElementById('worldInstructionsInput').value,
     authorStyle: document.getElementById('worldAuthorStyleInput').value,
     imageStyle: document.getElementById('worldImageStyleInput').value,
     imageStylePrefix: document.getElementById('worldImageStylePrefixInput').value,
-    imageStyleSuffix: document.getElementById('worldImageStyleSuffixInput').value
+    imageStyleSuffix: document.getElementById('worldImageStyleSuffixInput').value,
+    skills: readSkillsEditor(),
+    victoryCondition: document.getElementById('worldVictoryConditionInput').value || null,
+    victoryText: document.getElementById('worldVictoryTextInput').value || null,
+    defeatCondition: document.getElementById('worldDefeatConditionInput').value || null,
+    defeatText: document.getElementById('worldDefeatTextInput').value || null
   };
   const res = await fetch(`${API}/worlds/${currentWorldId}`, {
     method: 'PATCH',
@@ -505,6 +620,9 @@ document.getElementById('saveWorldEditBtn').onclick = async () => {
     status.textContent = t('errorPrefix') + data.error;
     return;
   }
+  currentWorldSkills = data.world.skills || [];
+  document.getElementById('worldEditTitle').textContent = data.world.title;
+  document.getElementById('worldVersionInfo').textContent = t('worldVersionInfo')(data.world.version);
   status.textContent = t('savedStatus');
   setTimeout(() => { status.textContent = ''; }, 2000);
 };

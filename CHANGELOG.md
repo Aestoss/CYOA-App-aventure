@@ -5,6 +5,35 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-14 — Éditeur de monde : champs jusque-là indirects rendus directement éditables
+
+Suite à la repasse comparative avec Infinite Worlds (`docs/INFINITE_WORLDS_REFERENCE.md`,
+section 5) : tout ce qui existait déjà dans le modèle de données mais
+n'était éditable qu'en passant par la retouche IA (ou pas du tout visible)
+a maintenant un champ dédié dans l'éditeur de monde.
+
+- **Titre du monde** : champ texte direct (avant : renommer un monde exigeait
+  une retouche IA).
+- **Compétences (skills)** : petite liste éditable (ajouter/renommer/
+  supprimer une compétence), au lieu de la retouche IA uniquement.
+- **Setting / Ton / Règles du monde** : champs texte dédiés.
+- **Conditions et textes de victoire/défaite** : quatre champs dédiés
+  (vide = condition désactivée, comme avant).
+- **Numéro de version** : affiché en lecture seule dans l'éditeur (existait
+  déjà côté serveur, incrémenté à chaque édition, mais invisible jusqu'ici).
+- **Image de couverture** : bouton pour la régénérer par IA après la
+  création (avant : générée une seule fois, aucun moyen de la retoucher
+  sans régénérer tout le monde).
+- `background`/`firstAction` (popup d'intro + première action) rendus
+  éditables également — oversight repéré en review juste après leur ajout.
+
+Vérifié de bout en bout en navigateur réel : préremplissage de tous les
+nouveaux champs à l'ouverture, sauvegarde, titre et version mis à jour
+immédiatement après "Enregistrer", persistance confirmée après fermeture/
+réouverture de l'éditeur, régénération de couverture (round-trip confirmé
+avec le fournisseur factice, qui ne renvoie volontairement aucune image de
+test).
+
 ## 2026-09-14 — Langue par monde, interface traduite, onglets, popup d'intro
 
 - **Langue figée par monde** : choix de langue au moment de créer un monde

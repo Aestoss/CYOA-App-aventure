@@ -3,7 +3,7 @@ const cors = require('cors');
 const path = require('path');
 const db = require('./lib/db');
 const {
-  createWorld, getWorld, updateWorld, aiEditWorld, deleteWorld,
+  createWorld, getWorld, updateWorld, aiEditWorld, deleteWorld, regenerateWorldCover,
   addCharacter, generateCharacterWithAI, updateCharacter, deleteCharacter,
   createSave, getSave, selectCharacter, continueAfterVictory, deleteSave,
   playTurn, rewindToTurn, regenerateTurn, getSettings
@@ -83,9 +83,15 @@ app.post('/api/worlds', async (req, res) => {
 
 app.patch('/api/worlds/:id', (req, res) => {
   try {
-    const { instructions, authorStyle, imageStyle, imageStylePrefix, imageStyleSuffix, description, objective, background, firstAction, mature, contentWarnings } = req.body;
+    const {
+      title, instructions, authorStyle, imageStyle, imageStylePrefix, imageStyleSuffix,
+      description, objective, background, firstAction, mature, contentWarnings,
+      setting, tone, rules, skills, victoryCondition, victoryText, defeatCondition, defeatText
+    } = req.body;
     const world = updateWorld(req.params.id, {
-      instructions, authorStyle, imageStyle, imageStylePrefix, imageStyleSuffix, description, objective, background, firstAction, mature, contentWarnings
+      title, instructions, authorStyle, imageStyle, imageStylePrefix, imageStyleSuffix,
+      description, objective, background, firstAction, mature, contentWarnings,
+      setting, tone, rules, skills, victoryCondition, victoryText, defeatCondition, defeatText
     });
     res.json({ ok: true, world });
   } catch (e) {
@@ -101,6 +107,15 @@ app.post('/api/worlds/:id/ai-edit', async (req, res) => {
     res.json({ ok: true, world });
   } catch (e) {
     res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/worlds/:id/regenerate-cover', async (req, res) => {
+  try {
+    const world = await regenerateWorldCover(req.params.id);
+    res.json({ ok: true, world });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
   }
 });
 
