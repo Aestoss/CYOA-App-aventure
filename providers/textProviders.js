@@ -272,12 +272,17 @@ function sleep(ms) {
 
 // 429 (rate limited) and 5xx (server-side/overload, e.g. the "high demand"
 // 503 Gemini returns) are worth a short automatic retry — the same request
-// often succeeds moments later. A missing status means the request never
-// got an HTTP response at all (DNS/connection failure), which is the same
-// kind of transient condition. Anything else (401 bad key, 400 bad
-// request...) would just fail identically again, so it isn't retried.
-function isRetryableStatus(status) {
-  return status === undefined || status === 429 || (status >= 500 && status < 600);
+// often succeeds moments later. A handful of specific network-level error
+// codes (connection reset/refused/timed out, DNS hiccup) are the same kind
+// of transient condition. Anything else — a bad key, a bad request, or a
+// bug in our own code throwing mid-call — would just fail identically
+// again (or isn't network-related at all), so it's deliberately NOT
+// retried: silently retrying an arbitrary error for ~25s (3 attempts) would
+// only hide what actually broke behind a long, unexplained delay.
+const RETRYABLE_NETWORK_CODES = new Set(['ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'EAI_AGAIN', 'ENOTFOUND', 'EPIPE']);
+function isRetryable(err) {
+  if (typeof err.status === 'number') return err.status === 429 || (err.status >= 500 && err.status < 600);
+  return RETRYABLE_NETWORK_CODES.has(err.code);
 }
 
 const RETRY_DELAYS_MS = [1000, 2500]; // up to 2 retries (3 attempts total)
@@ -290,7 +295,7 @@ async function generateText({ provider, system, user, apiKey, model }) {
       return await fn({ system, user, apiKey, model });
     } catch (e) {
       lastError = e;
-      if (!isRetryableStatus(e.status) || attempt === RETRY_DELAYS_MS.length) throw e;
+      if (!isRetryable(e) || attempt === RETRY_DELAYS_MS.length) throw e;
       await sleep(RETRY_DELAYS_MS[attempt]);
     }
   }

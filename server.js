@@ -1,3 +1,12 @@
+const dns = require('dns');
+// Some container platforms (Railway included) route IPv6 unreliably or not
+// at all even when a host resolves to both an A and AAAA record — Node can
+// then pick the IPv6 address first and hang until it times out before
+// falling back to IPv4, adding several seconds to every external API call
+// (Anthropic/OpenAI/Gemini/etc.) and making a real, working setup look
+// broken. Preferring IPv4 first avoids that hop entirely.
+dns.setDefaultResultOrder('ipv4first');
+
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -83,6 +92,7 @@ app.post('/api/worlds', async (req, res) => {
     const result = await createWorld(idea.trim(), language);
     res.json(result);
   } catch (e) {
+    console.error(e);
     res.status(500).json({ error: e.message });
   }
 });
@@ -114,6 +124,7 @@ app.post('/api/worlds/:id/ai-edit', async (req, res) => {
     const world = await aiEditWorld(req.params.id, instruction.trim());
     res.json({ ok: true, world });
   } catch (e) {
+    console.error(e);
     res.status(500).json({ error: e.message });
   }
 });
@@ -154,6 +165,7 @@ app.post('/api/worlds/:id/characters/generate', async (req, res) => {
     const character = await generateCharacterWithAI(req.params.id, description);
     res.json({ ok: true, character });
   } catch (e) {
+    console.error(e);
     res.status(500).json({ error: e.message });
   }
 });
@@ -354,6 +366,7 @@ app.post('/api/saves/:id/turn', async (req, res) => {
     const itemDefs = db.get('trackedItemDefs').filter({ worldId: save.worldId }).value();
     res.json(publicTurn(turn, { debug: Boolean(debug), itemDefs }));
   } catch (e) {
+    console.error(e);
     res.status(500).json({ error: e.message });
   }
 });
@@ -367,6 +380,7 @@ app.post('/api/saves/:id/turns/:turnNumber/regenerate', async (req, res) => {
     const itemDefs = db.get('trackedItemDefs').filter({ worldId: save.worldId }).value();
     res.json(publicTurn(turn, { debug: Boolean(debug), itemDefs }));
   } catch (e) {
+    console.error(e);
     res.status(500).json({ error: e.message });
   }
 });
