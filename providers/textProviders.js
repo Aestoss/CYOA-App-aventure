@@ -104,7 +104,14 @@ async function callMock({ system, user }) {
           skills: { Intuition: 3, Nerve: 3, Charm: 2, Lore: 5 }
         }
       ],
-      starting_characters: [{ name: 'Keeper Oduya', role: 'lighthouse keeper', description: 'Guarded, watchful, knows more than she says.' }],
+      starting_characters: [{
+        name: 'Keeper Oduya',
+        role: 'lighthouse keeper',
+        detail: 'Guarded, watchful, knows more than she says. Has tended the lighthouse for eleven years and has never once let the lens go dark.',
+        one_liner: 'The wary keeper of the lighthouse, who knows more about the fog than she lets on.',
+        appearance: 'Tall, weathered, silver-streaked hair kept in a tight braid, a long oilskin coat.',
+        location: 'The lighthouse doorway, most evenings'
+      }],
       starting_scene: 'You arrive at the lighthouse steps as the evening fog rolls in.',
       opening_chapter: 'The fog reaches the steps before you do, curling around your ankles like something curious. Keeper Oduya watches from the doorway, lantern unlit. "You\'re early," she says, though you were told nothing about a schedule.',
       victory_condition: 'The player character has found the source of the fog and chosen what to do with it.',
@@ -143,6 +150,7 @@ async function callMock({ system, user }) {
       skill_used: null,
       game_over: { result: 'victory', text: null },
       tracked_item_updates: [],
+      secret_info: '',
       state_updates: { location: null, new_facts: [], characters_changed: [], inventory_changed: [] },
       image_prompt: null,
       suggested_actions: []
@@ -155,6 +163,7 @@ async function callMock({ system, user }) {
       skill_used: null,
       game_over: { result: 'defeat', text: null },
       tracked_item_updates: [],
+      secret_info: '',
       state_updates: { location: null, new_facts: [], characters_changed: [], inventory_changed: [] },
       image_prompt: null,
       suggested_actions: []
@@ -167,6 +176,7 @@ async function callMock({ system, user }) {
       skill_used: null,
       game_over: null,
       tracked_item_updates: [{ name: 'Inventory', new_value: 'a small brass lantern' }, { name: 'Keeper Trust', new_value: 4 }],
+      secret_info: 'Keeper Oduya left the lantern out on purpose, to see who would take it.',
       state_updates: { location: null, new_facts: [], characters_changed: [], inventory_changed: ['+ brass lantern'] },
       image_prompt: null,
       suggested_actions: ['Ask why she\'s watching you', 'Light the lantern', 'Put it back']
@@ -179,6 +189,7 @@ async function callMock({ system, user }) {
     skill_used: null,
     game_over: null,
     tracked_item_updates: [],
+    secret_info: '',
     state_updates: { location: 'Lighthouse steps', new_facts: [], characters_changed: [], inventory_changed: [] },
     image_prompt: 'A foggy lighthouse at dusk, glass architecture, a lone figure on stone steps',
     suggested_actions: ['Call out to the Keeper', 'Climb the steps', 'Look for another way in']

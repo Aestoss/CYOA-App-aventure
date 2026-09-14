@@ -7,6 +7,7 @@
 - Conditions de victoire/défaite générées avec chaque monde, évaluées par l'IA à chaque tour ; l'histoire se termine proprement (bannière + blocage des tours suivants) quand l'une d'elles est atteinte, avec possibilité de continuer à jouer après une victoire (Phase B)
 - Objets/état suivis (« tracked items ») typés par monde : inventaire, jauges de relation, etc., avec instructions de mise à jour dédiées et visibilité joueur/IA ou IA seule (état caché) (Phase C)
 - Instructions principales + style d'auteur générés à la création du monde, éditables ensuite depuis l'écran d'histoire (✏️) (Phase D)
+- PNJ enrichis (fiche complète, résumé court, apparence, lieu) — fiche complète transmise à l'IA seulement quand le PNJ est apparu récemment, sinon juste le résumé — et état caché (« secret info ») cumulatif jamais exposé au client (Phase E)
 - Frontend complet (une seule page web, installable sur téléphone)
 - Système de prompts en couches (Master Prompt / World Bible / Mémoire / Tours récents), comme détaillé dans le plan
 - Mémoire réelle : faits extraits stockés en base + résumé automatique tous les ~15-20 tours

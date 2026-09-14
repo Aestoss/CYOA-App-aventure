@@ -9,8 +9,17 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// secretInfo is deliberately hidden state (see docs/INFINITE_WORLDS_REFERENCE.md,
+// Phase E) — strip it before any world object reaches the client. Returns a
+// shallow copy so callers never accidentally mutate the live db record.
+function publicWorld(world) {
+  if (!world) return world;
+  const { secretInfo, ...rest } = world;
+  return rest;
+}
+
 app.get('/api/worlds', (req, res) => {
-  res.json(db.get('worlds').value());
+  res.json(db.get('worlds').value().map(publicWorld));
 });
 
 app.get('/api/worlds/:id', (req, res) => {
@@ -22,7 +31,7 @@ app.get('/api/worlds/:id', (req, res) => {
   // ai_only tracked items are deliberately withheld from the client — that's
   // the whole point of the visibility flag (hidden state, e.g. a secret plot flag).
   const trackedItems = db.get('trackedItems').filter({ worldId: world.id, visibility: 'player_and_ai' }).value();
-  res.json({ world, turns, characters, playableCharacters, trackedItems });
+  res.json({ world: publicWorld(world), turns, characters, playableCharacters, trackedItems });
 });
 
 app.post('/api/worlds', async (req, res) => {
@@ -30,7 +39,7 @@ app.post('/api/worlds', async (req, res) => {
     const { idea } = req.body;
     if (!idea || !idea.trim()) return res.status(400).json({ error: 'idea is required' });
     const result = await createWorld(idea.trim());
-    res.json(result);
+    res.json({ ...result, world: publicWorld(result.world) });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -40,7 +49,7 @@ app.patch('/api/worlds/:id', (req, res) => {
   try {
     const { instructions, authorStyle } = req.body;
     const world = updateWorldInstructions(req.params.id, { instructions, authorStyle });
-    res.json({ ok: true, world });
+    res.json({ ok: true, world: publicWorld(world) });
   } catch (e) {
     res.status(400).json({ error: e.message });
   }
@@ -60,7 +69,7 @@ app.post('/api/worlds/:id/select-character', (req, res) => {
 app.post('/api/worlds/:id/continue', (req, res) => {
   try {
     const world = continueAfterVictory(req.params.id);
-    res.json({ ok: true, world });
+    res.json({ ok: true, world: publicWorld(world) });
   } catch (e) {
     res.status(400).json({ error: e.message });
   }
