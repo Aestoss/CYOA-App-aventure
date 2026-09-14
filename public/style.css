@@ -191,8 +191,23 @@ textarea:focus, input:focus, select:focus {
   background: var(--bg);
   padding: 8px 0 calc(12px + env(safe-area-inset-bottom));
 }
+.action-form.hidden { display: none; }
 .action-form input { margin: 0; flex: 1; }
 .action-form button { white-space: nowrap; }
+
+.game-over-banner {
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+  text-align: center;
+}
+.game-over-banner.hidden { display: none; }
+.game-over-banner strong { font-family: var(--serif); font-size: 1.1rem; display: block; margin-bottom: 6px; }
+.game-over-banner p { margin: 0; color: var(--text-dim); line-height: 1.5; }
+.game-over-banner.game-over-victory { background: rgba(127, 201, 127, 0.12); border: 1px solid rgba(127, 201, 127, 0.4); }
+.game-over-banner.game-over-victory strong { color: #7fc97f; }
+.game-over-banner.game-over-defeat { background: rgba(217, 119, 111, 0.12); border: 1px solid rgba(217, 119, 111, 0.4); }
+.game-over-banner.game-over-defeat strong { color: #d9776f; }
 
 /* Settings */
 .settings-group {

@@ -121,6 +121,24 @@ async function openWorld(id) {
     charEl.classList.add('hidden');
   }
   renderChapters(data.turns);
+  renderGameOver(data.world.gameOver);
+}
+
+function renderGameOver(gameOver) {
+  const banner = document.getElementById('gameOverBanner');
+  const actions = document.getElementById('suggestedActions');
+  const form = document.getElementById('actionForm');
+  if (!gameOver) {
+    banner.classList.add('hidden');
+    banner.textContent = '';
+    form.classList.remove('hidden');
+    return;
+  }
+  const label = gameOver.result === 'victory' ? 'Victoire' : 'Fin de l\'histoire';
+  banner.className = `game-over-banner game-over-${gameOver.result}`;
+  banner.innerHTML = `<strong>${label}</strong><p>${escapeHtml(gameOver.text)}</p>`;
+  actions.innerHTML = '';
+  form.classList.add('hidden');
 }
 
 function renderChapters(turns) {
@@ -189,6 +207,7 @@ async function playAction(action) {
     pending.remove();
     const data = await fetch(`${API}/worlds/${currentWorldId}`).then(r => r.json());
     renderChapters(data.turns);
+    renderGameOver(data.world.gameOver);
   } catch (e) {
     pending.textContent = 'Erreur : ' + e.message;
   }

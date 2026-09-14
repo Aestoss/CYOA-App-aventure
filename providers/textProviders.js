@@ -104,13 +104,47 @@ async function callMock({ system, user }) {
       ],
       starting_characters: [{ name: 'Keeper Oduya', role: 'lighthouse keeper', description: 'Guarded, watchful, knows more than she says.' }],
       starting_scene: 'You arrive at the lighthouse steps as the evening fog rolls in.',
-      opening_chapter: 'The fog reaches the steps before you do, curling around your ankles like something curious. Keeper Oduya watches from the doorway, lantern unlit. "You\'re early," she says, though you were told nothing about a schedule.'
+      opening_chapter: 'The fog reaches the steps before you do, curling around your ankles like something curious. Keeper Oduya watches from the doorway, lantern unlit. "You\'re early," she says, though you were told nothing about a schedule.',
+      victory_condition: 'The player character has found the source of the fog and chosen what to do with it.',
+      victory_text: 'You understand the fog now — and it understands you. Whatever you choose next, the lighthouse will remember.',
+      defeat_condition: 'The player character is lost in the fog with no way back to the lighthouse.',
+      defeat_text: 'The fog closes in, and this time it does not let go. Your story ends here, somewhere in the grey.'
     });
   }
+
+  // Test hooks so the win/loss wiring can be exercised end-to-end without a
+  // real API key: a real model would judge this from context, but the mock
+  // is deterministic and doesn't read the story, so it keys off the action text.
+  const actionMatch = user.match(/PLAYER ACTION THIS TURN: (.*)/);
+  const action = (actionMatch && actionMatch[1]) || '';
+  if (/\bwin\b/i.test(action)) {
+    return JSON.stringify({
+      chapter_text: 'The fog parts at last, and you see clearly what it was hiding — and what to do about it.',
+      outcome: 'success',
+      skill_used: null,
+      game_over: { result: 'victory', text: null },
+      state_updates: { location: null, new_facts: [], characters_changed: [], inventory_changed: [] },
+      image_prompt: null,
+      suggested_actions: []
+    });
+  }
+  if (/\blose\b/i.test(action)) {
+    return JSON.stringify({
+      chapter_text: 'The fog thickens until you can no longer tell which way leads back to the light.',
+      outcome: 'failure',
+      skill_used: null,
+      game_over: { result: 'defeat', text: null },
+      state_updates: { location: null, new_facts: [], characters_changed: [], inventory_changed: [] },
+      image_prompt: null,
+      suggested_actions: []
+    });
+  }
+
   return JSON.stringify({
     chapter_text: 'You step forward, and the fog seems to lean in around you, as if listening. Somewhere above, the lighthouse lens turns without a keeper\'s hand.',
     outcome: 'n/a',
     skill_used: null,
+    game_over: null,
     state_updates: { location: 'Lighthouse steps', new_facts: [], characters_changed: [], inventory_changed: [] },
     image_prompt: 'A foggy lighthouse at dusk, glass architecture, a lone figure on stone steps',
     suggested_actions: ['Call out to the Keeper', 'Climb the steps', 'Look for another way in']
