@@ -83,6 +83,8 @@ const UI = {
     worldLanguageInfo: name => `Langue de ce monde : ${name} (fixée à la création)`,
     worldDescriptionLabel: 'Description', worldDescriptionHint: '(affichée dans la liste des mondes, sans effet sur le jeu)',
     worldObjectiveLabel: 'Objectif', worldObjectiveHint: '(affiché au joueur dès le premier tour, optionnel)',
+    worldBackgroundLabel: 'Background', worldBackgroundHint: '(texte montré au joueur en popup avant le premier chapitre, identique à chaque nouvelle aventure — vide = pas de popup, ancien chapitre d\'ouverture statique à la place)',
+    worldFirstActionLabel: 'Première action', worldFirstActionHint: '(action fixe qui déclenche le premier chapitre généré par IA, après la popup background)',
     worldMatureLabel: 'Contenu mature (R)',
     worldContentWarningsLabel: 'Avertissements de contenu', worldContentWarningsHint: '(séparés par des virgules)',
     worldContentWarningsPlaceholder: 'violence, horreur...',
@@ -199,6 +201,8 @@ const UI = {
     worldLanguageInfo: name => `This world's language: ${name} (fixed at creation)`,
     worldDescriptionLabel: 'Description', worldDescriptionHint: "(shown in the world list, doesn't affect gameplay)",
     worldObjectiveLabel: 'Objective', worldObjectiveHint: '(shown to the player from the first turn, optional)',
+    worldBackgroundLabel: 'Background', worldBackgroundHint: '(text shown to the player in a popup before the first chapter, same every new adventure — empty = no popup, falls back to the old static opening chapter)',
+    worldFirstActionLabel: 'First action', worldFirstActionHint: '(fixed action that triggers the AI-generated first chapter, after the background popup)',
     worldMatureLabel: 'Mature content (R)',
     worldContentWarningsLabel: 'Content warnings', worldContentWarningsHint: '(comma-separated)',
     worldContentWarningsPlaceholder: 'violence, horror...',
@@ -457,6 +461,8 @@ function populateWorldEditor(world, playableCharacters) {
   document.getElementById('worldLanguageInfo').textContent = t('worldLanguageInfo')(LANGUAGE_NAMES[world.language] || LANGUAGE_NAMES.fr);
   document.getElementById('worldDescriptionInput').value = world.description || '';
   document.getElementById('worldObjectiveInput').value = world.objective || '';
+  document.getElementById('worldBackgroundInput').value = world.background || '';
+  document.getElementById('worldFirstActionInput').value = world.firstAction || '';
   document.getElementById('worldMatureInput').checked = Boolean(world.mature);
   document.getElementById('worldContentWarningsInput').value = (world.contentWarnings || []).join(', ');
   document.getElementById('worldInstructionsInput').value = world.instructions || '';
@@ -478,6 +484,8 @@ document.getElementById('saveWorldEditBtn').onclick = async () => {
   const body = {
     description: document.getElementById('worldDescriptionInput').value,
     objective: document.getElementById('worldObjectiveInput').value || null,
+    background: document.getElementById('worldBackgroundInput').value,
+    firstAction: document.getElementById('worldFirstActionInput').value || null,
     mature: document.getElementById('worldMatureInput').checked,
     contentWarnings: document.getElementById('worldContentWarningsInput').value.split(',').map(s => s.trim()).filter(Boolean),
     instructions: document.getElementById('worldInstructionsInput').value,

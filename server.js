@@ -83,9 +83,9 @@ app.post('/api/worlds', async (req, res) => {
 
 app.patch('/api/worlds/:id', (req, res) => {
   try {
-    const { instructions, authorStyle, imageStyle, imageStylePrefix, imageStyleSuffix, description, objective, mature, contentWarnings } = req.body;
+    const { instructions, authorStyle, imageStyle, imageStylePrefix, imageStyleSuffix, description, objective, background, firstAction, mature, contentWarnings } = req.body;
     const world = updateWorld(req.params.id, {
-      instructions, authorStyle, imageStyle, imageStylePrefix, imageStyleSuffix, description, objective, mature, contentWarnings
+      instructions, authorStyle, imageStyle, imageStylePrefix, imageStyleSuffix, description, objective, background, firstAction, mature, contentWarnings
     });
     res.json({ ok: true, world });
   } catch (e) {
