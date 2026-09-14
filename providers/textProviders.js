@@ -152,6 +152,8 @@ async function callMock({ system, user }) {
         }],
         starting_scene: 'You arrive at the lighthouse steps as the evening fog rolls in.',
         opening_chapter: 'The fog reaches the steps before you do, curling around your ankles like something curious. Keeper Oduya watches from the doorway, lantern unlit. "You\'re early," she says, though you were told nothing about a schedule.',
+        background: 'You were not meant to find this coastline. A storm took your ship two nights ago, and the only lights you have seen since belong to a lighthouse city built from sea-glass, wrapped in a fog that never quite lifts. You do not know Keeper Oduya, but somehow she was expecting you — and the fog itself seems to lean toward you, as if listening for something you have not said yet. Whatever brought you here, it is not finished with you.',
+        first_action: 'Approach the lighthouse and knock.',
         victory_condition: 'The player character has found the source of the fog and chosen what to do with it.',
         victory_text: 'You understand the fog now — and it understands you. Whatever you choose next, the lighthouse will remember.',
         defeat_condition: 'The player character is lost in the fog with no way back to the lighthouse.',

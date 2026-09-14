@@ -72,9 +72,9 @@ app.get('/api/worlds/:id', (req, res) => {
 
 app.post('/api/worlds', async (req, res) => {
   try {
-    const { idea } = req.body;
+    const { idea, language } = req.body;
     if (!idea || !idea.trim()) return res.status(400).json({ error: 'idea is required' });
-    const result = await createWorld(idea.trim());
+    const result = await createWorld(idea.trim(), language);
     res.json(result);
   } catch (e) {
     res.status(500).json({ error: e.message });

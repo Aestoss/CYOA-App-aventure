@@ -8,18 +8,269 @@ const views = {
   settings: document.getElementById('view-settings')
 };
 
-const SKILL_LABELS = { 1: 'Untrained', 2: 'Unskilled', 3: 'Competent', 4: 'Highly skilled', 5: 'Exceptional' };
-const OUTCOME_LABELS = { success: '✅ Réussite', partial_success: '⚠️ Réussite partielle', failure: '❌ Échec' };
-const CREATION_STEPS = [
-  'Écriture du monde...',
-  'Création des personnages...',
-  'Réglage des compétences...',
-  'Mise en place des objets suivis...',
-  'Dernières touches...'
-];
+// ---------- i18n: the app's own interface (menus, buttons, labels) ----------
+// Distinct from a world's own `language` (baked in at creation, used for
+// AI-generated story text) — this is settings.language driving the chrome
+// around it. See t()/applyUiLanguage() below.
+let currentLang = 'fr';
+
+const UI = {
+  fr: {
+    settingsBtn: 'Réglages',
+    tabCreate: 'Créer un monde', tabWorlds: 'Mes mondes', tabSaves: 'Mes sauvegardes',
+    createPanelTitle: 'Nouveau monde',
+    createPanelHint: 'Décris une idée en une phrase — lieu, ambiance, ou personnage.',
+    ideaInputPlaceholder: 'Un détective steampunk dans une ville de brouillard...',
+    worldLanguageLabel: "Langue de l'histoire",
+    createWorldBtn: 'Créer le monde',
+    worldsTabHint: 'Un monde propose toujours une nouvelle aventure depuis le début.',
+    noSavesHint: "Pas encore de sauvegarde — commence une aventure depuis un monde.",
+    backgroundModalTitle: 'Avant de commencer...',
+    backgroundModalCloseBtn: "Commencer l'aventure",
+    preparingFirstChapter: 'Préparation du premier chapitre...',
+    firstTurnError: "Le premier chapitre n'a pas pu être généré — nouvelle tentative...",
+    backToStories: '‹ Mes histoires',
+    backGeneric: '‹ Retour',
+    authorModeBtn: 'Mode auteur (voir le caché, parler au narrateur)',
+    editWorldBtn: 'Modifier le monde',
+    prevPageBtn: 'Page précédente',
+    nextPageBtn: 'Page suivante',
+    resumeFromPageBtn: "⏪ Reprendre à partir d'ici",
+    resumeFromPageHint: 'Tout ce qui vient après cette page sera perdu.',
+    rewindConfirm: 'Reprendre à partir de cette page ? Tout ce qui vient après sera définitivement perdu.',
+    regenerateActionLabel: 'Action',
+    regenerateNoteLabel: 'Note pour le narrateur',
+    regenerateNoteHint: '(optionnel — "je veux qu\'il se passe plutôt...")',
+    regenerateConfirmBtn: 'Régénérer',
+    regenerateBtn: 'Régénérer ce tour',
+    cancelBtn: 'Annuler',
+    saveBtn: 'Enregistrer',
+    sendBtn: 'Envoyer',
+    actionInputPlaceholder: 'Que fais-tu ?',
+    authorInstructionPlaceholder: 'Instruction au narrateur (hors-personnage)...',
+    narratorThinking: 'Le narrateur réfléchit...',
+    narratorApplyingInstruction: "Le narrateur applique l'instruction...",
+    illegibleResponse: n => `Réponse du serveur illisible (HTTP ${n}).`,
+    retryHint: ' — réessaie.',
+    regenFailedHint: ' — la régénération a peut-être échoué, réessaie.',
+    errorPrefix: 'Erreur : ',
+    gameOverVictoryLabel: 'Victoire',
+    gameOverEndLabel: "Fin de l'histoire",
+    continuePlayingBtn: 'Continuer à jouer',
+    cannotContinue: 'Impossible de continuer : ',
+    outcomeSuccess: '✅ Réussite', outcomePartial: '⚠️ Réussite partielle', outcomeFailure: '❌ Échec',
+    storyCharacterPrefix: name => `Tu joues ${name}`,
+    chooseCharacterTitle: title => `Choisis ton personnage — ${title}`,
+    matureWarningPrefix: warnings => `⚠️ Contenu mature${warnings ? ' : ' + warnings : ''}`,
+    chooseCharacterBtn: name => `Choisir ${name}`,
+    editCharacterBtn: '✏️ Modifier',
+    skillNotRated: 'Non noté',
+    skillLabels: { 1: 'Débutant', 2: 'Novice', 3: 'Compétent', 4: 'Très compétent', 5: 'Exceptionnel' },
+    cannotChooseCharacter: 'Impossible de choisir ce personnage : ',
+    cannotStartAdventure: 'Impossible de démarrer une aventure : ',
+    cannotCreateWorld: 'Impossible de créer le monde : ',
+    turnCount: n => `${n} tour${n > 1 ? 's' : ''}`,
+    saveCountSuffix: n => ` · ${n} sauvegarde${n > 1 ? 's' : ''}`,
+    notStartedYet: 'Pas encore commencé',
+    gameOverVictorySub: '🏆 Terminé (victoire)', gameOverDefeatSub: '💀 Terminé (défaite)',
+    deleteSaveConfirm: title => `Supprimer cette sauvegarde de "${title}" ? Cette action est irréversible.`,
+    deleteWorldConfirm: title => `Supprimer le monde "${title}" et toutes ses sauvegardes ? Cette action est irréversible.`,
+    creationSteps: [
+      'Écriture du monde...', 'Création des personnages...', 'Réglage des compétences...',
+      'Mise en place des objets suivis...', 'Dernières touches...'
+    ],
+    worldEditInfoHeading: 'Informations',
+    worldLanguageInfo: name => `Langue de ce monde : ${name} (fixée à la création)`,
+    worldDescriptionLabel: 'Description', worldDescriptionHint: '(affichée dans la liste des mondes, sans effet sur le jeu)',
+    worldObjectiveLabel: 'Objectif', worldObjectiveHint: '(affiché au joueur dès le premier tour, optionnel)',
+    worldMatureLabel: 'Contenu mature (R)',
+    worldContentWarningsLabel: 'Avertissements de contenu', worldContentWarningsHint: '(séparés par des virgules)',
+    worldContentWarningsPlaceholder: 'violence, horreur...',
+    worldInstructionsLabel: 'Instructions principales',
+    worldAuthorStyleLabel: "Style d'auteur", worldAuthorStyleHint: '(ex : "Neil Gaiman", "un romancier de thriller")',
+    worldImageStyleLabel: 'Style visuel', worldImageStyleHint: '(description générale, ex : "aquarelle sombre, palette froide")',
+    worldImageStylePrefixLabel: "Préfixe d'image", worldImageStylePrefixHint: "(ajouté avant chaque prompt d'image)",
+    worldImageStyleSuffixLabel: "Suffixe d'image", worldImageStyleSuffixHint: "(ajouté après chaque prompt d'image)",
+    savedStatus: 'Enregistré.',
+    worldAiEditHeading: 'Retouche IA',
+    worldAiEditHint: "Décris un changement en langage naturel — l'IA ajuste le monde en conséquence (léger, pas une régénération complète).",
+    worldAiEditPlaceholder: 'Rends le ton plus sombre, ajoute un rival...',
+    worldAiEditBtn: "✨ Retoucher avec l'IA",
+    retouchingStatus: 'Retouche en cours...',
+    worldRetouchedStatus: 'Monde retouché.',
+    playableCharactersHeading: 'Personnages jouables',
+    addCharacterBtn: '+ Ajouter un personnage',
+    addCharacterDefaultName: 'Nouveau personnage',
+    aiCharacterDescPlaceholder: 'Décris le personnage à générer...',
+    generateCharacterBtn: '✨ Générer avec l\'IA',
+    generatingStatus: 'Génération en cours...',
+    charGeneratedStatus: name => `${name} généré.`,
+    errorSavingCharacter: "Erreur lors de l'enregistrement.",
+    characterSavedStatus: 'Personnage enregistré.',
+    deleteCharacterBtn: 'Supprimer',
+    deleteCharacterConfirm: name => `Supprimer ${name} ?`,
+    startAdventureBtn: '▶ Commencer une aventure',
+    deleteWorldBtn: '🗑️ Supprimer ce monde',
+    settingsHeading: 'Réglages',
+    settingsTextHeading: 'Texte',
+    responseLanguageLabel: 'Langue des réponses',
+    chapterLengthLabelText: 'Longueur des chapitres',
+    chapterLengthOptions: { short: 'Court (~200 mots)', medium: 'Moyen (~400 mots)', long: 'Long (~800 mots)' },
+    providerLabel: 'Fournisseur',
+    providerMock: 'Démo locale (sans clé)',
+    providerOpenrouter: 'OpenRouter (plusieurs modèles)',
+    modelLabel: 'Modèle', modelHint: '(optionnel, sinon valeur par défaut)',
+    keyAnthropicLabel: 'Clé API Anthropic', keyOpenaiLabel: 'Clé API OpenAI', keyOpenrouterLabel: 'Clé API OpenRouter',
+    keyGeminiLabel: 'Clé API Gemini', keyGeminiHint: '(gratuite pour tester)',
+    settingsImagesHeading: 'Images', imagesEnabledLabel: "Génération d'images",
+    keyStabilityLabel: 'Clé API Stability', keyReplicateLabel: 'Clé API Replicate',
+    keyAlreadySaved: '•••••••• (déjà enregistrée)',
+    costsHeading: '💰 Coûts',
+    costsHint: "Estimation approximative — les tarifs des fournisseurs changent, et OpenRouter n'a pas de tarif fixe (jetons seulement).",
+    costCallsLabel: 'Appels IA', costInputLabel: 'Jetons entrée', costOutputLabel: 'Jetons sortie', costEstimateLabel: 'Coût estimé',
+    costUnknown: '(inconnu)',
+    costUnknownHint: "Certains appels (ex. OpenRouter) n'ont pas de tarif connu et ne sont pas inclus dans l'estimation."
+  },
+  en: {
+    settingsBtn: 'Settings',
+    tabCreate: 'Create a world', tabWorlds: 'My worlds', tabSaves: 'My saves',
+    createPanelTitle: 'New world',
+    createPanelHint: 'Describe an idea in a sentence — a place, a mood, or a character.',
+    ideaInputPlaceholder: 'A steampunk detective in a fog-bound city...',
+    worldLanguageLabel: 'Story language',
+    createWorldBtn: 'Create the world',
+    worldsTabHint: 'A world always offers a brand new adventure from the start.',
+    noSavesHint: "No saves yet — start an adventure from one of your worlds.",
+    backgroundModalTitle: 'Before you begin...',
+    backgroundModalCloseBtn: 'Begin the adventure',
+    preparingFirstChapter: 'Preparing the first chapter...',
+    firstTurnError: 'The first chapter could not be generated — retrying...',
+    backToStories: '‹ My stories',
+    backGeneric: '‹ Back',
+    authorModeBtn: 'Author mode (see hidden state, talk to the narrator)',
+    editWorldBtn: 'Edit the world',
+    prevPageBtn: 'Previous page',
+    nextPageBtn: 'Next page',
+    resumeFromPageBtn: '⏪ Resume from here',
+    resumeFromPageHint: 'Everything after this page will be lost.',
+    rewindConfirm: 'Resume from this page? Everything after it will be permanently lost.',
+    regenerateActionLabel: 'Action',
+    regenerateNoteLabel: 'Note for the narrator',
+    regenerateNoteHint: '(optional — "I want this to happen instead...")',
+    regenerateConfirmBtn: 'Regenerate',
+    regenerateBtn: 'Regenerate this turn',
+    cancelBtn: 'Cancel',
+    saveBtn: 'Save',
+    sendBtn: 'Send',
+    actionInputPlaceholder: 'What do you do?',
+    authorInstructionPlaceholder: 'Instruction to the narrator (out-of-character)...',
+    narratorThinking: 'The narrator is thinking...',
+    narratorApplyingInstruction: 'The narrator is applying the instruction...',
+    illegibleResponse: n => `Unreadable server response (HTTP ${n}).`,
+    retryHint: ' — try again.',
+    regenFailedHint: ' — the regeneration may have failed, try again.',
+    errorPrefix: 'Error: ',
+    gameOverVictoryLabel: 'Victory',
+    gameOverEndLabel: 'The story ends',
+    continuePlayingBtn: 'Keep playing',
+    cannotContinue: 'Could not continue: ',
+    outcomeSuccess: '✅ Success', outcomePartial: '⚠️ Partial success', outcomeFailure: '❌ Failure',
+    storyCharacterPrefix: name => `You are playing ${name}`,
+    chooseCharacterTitle: title => `Choose your character — ${title}`,
+    matureWarningPrefix: warnings => `⚠️ Mature content${warnings ? ': ' + warnings : ''}`,
+    chooseCharacterBtn: name => `Choose ${name}`,
+    editCharacterBtn: '✏️ Edit',
+    skillNotRated: 'Unrated',
+    skillLabels: { 1: 'Untrained', 2: 'Unskilled', 3: 'Competent', 4: 'Highly skilled', 5: 'Exceptional' },
+    cannotChooseCharacter: 'Could not choose this character: ',
+    cannotStartAdventure: 'Could not start an adventure: ',
+    cannotCreateWorld: 'Could not create the world: ',
+    turnCount: n => `${n} turn${n > 1 ? 's' : ''}`,
+    saveCountSuffix: n => ` · ${n} save${n > 1 ? 's' : ''}`,
+    notStartedYet: 'Not started yet',
+    gameOverVictorySub: '🏆 Finished (victory)', gameOverDefeatSub: '💀 Finished (defeat)',
+    deleteSaveConfirm: title => `Delete this save of "${title}"? This cannot be undone.`,
+    deleteWorldConfirm: title => `Delete the world "${title}" and all its saves? This cannot be undone.`,
+    creationSteps: [
+      'Writing the world...', 'Creating characters...', 'Tuning skills...',
+      'Setting up tracked items...', 'Final touches...'
+    ],
+    worldEditInfoHeading: 'Information',
+    worldLanguageInfo: name => `This world's language: ${name} (fixed at creation)`,
+    worldDescriptionLabel: 'Description', worldDescriptionHint: "(shown in the world list, doesn't affect gameplay)",
+    worldObjectiveLabel: 'Objective', worldObjectiveHint: '(shown to the player from the first turn, optional)',
+    worldMatureLabel: 'Mature content (R)',
+    worldContentWarningsLabel: 'Content warnings', worldContentWarningsHint: '(comma-separated)',
+    worldContentWarningsPlaceholder: 'violence, horror...',
+    worldInstructionsLabel: 'Main instructions',
+    worldAuthorStyleLabel: 'Author style', worldAuthorStyleHint: '(e.g. "Neil Gaiman", "a thriller novelist")',
+    worldImageStyleLabel: 'Visual style', worldImageStyleHint: '(general description, e.g. "dark watercolor, cool palette")',
+    worldImageStylePrefixLabel: 'Image prefix', worldImageStylePrefixHint: '(added before every image prompt)',
+    worldImageStyleSuffixLabel: 'Image suffix', worldImageStyleSuffixHint: '(added after every image prompt)',
+    savedStatus: 'Saved.',
+    worldAiEditHeading: 'AI retouch',
+    worldAiEditHint: 'Describe a change in plain language — the AI adjusts the world accordingly (light touch, not a full regeneration).',
+    worldAiEditPlaceholder: 'Make the tone darker, add a rival...',
+    worldAiEditBtn: '✨ Retouch with AI',
+    retouchingStatus: 'Retouching...',
+    worldRetouchedStatus: 'World retouched.',
+    playableCharactersHeading: 'Playable characters',
+    addCharacterBtn: '+ Add a character',
+    addCharacterDefaultName: 'New character',
+    aiCharacterDescPlaceholder: 'Describe the character to generate...',
+    generateCharacterBtn: '✨ Generate with AI',
+    generatingStatus: 'Generating...',
+    charGeneratedStatus: name => `${name} generated.`,
+    errorSavingCharacter: 'Error while saving.',
+    characterSavedStatus: 'Character saved.',
+    deleteCharacterBtn: 'Delete',
+    deleteCharacterConfirm: name => `Delete ${name}?`,
+    startAdventureBtn: '▶ Start an adventure',
+    deleteWorldBtn: '🗑️ Delete this world',
+    settingsHeading: 'Settings',
+    settingsTextHeading: 'Text',
+    responseLanguageLabel: 'Response language',
+    chapterLengthLabelText: 'Chapter length',
+    chapterLengthOptions: { short: 'Short (~200 words)', medium: 'Medium (~400 words)', long: 'Long (~800 words)' },
+    providerLabel: 'Provider',
+    providerMock: 'Local demo (no key)',
+    providerOpenrouter: 'OpenRouter (multiple models)',
+    modelLabel: 'Model', modelHint: '(optional, otherwise the default)',
+    keyAnthropicLabel: 'Anthropic API key', keyOpenaiLabel: 'OpenAI API key', keyOpenrouterLabel: 'OpenRouter API key',
+    keyGeminiLabel: 'Gemini API key', keyGeminiHint: '(free to try)',
+    settingsImagesHeading: 'Images', imagesEnabledLabel: 'Image generation',
+    keyStabilityLabel: 'Stability API key', keyReplicateLabel: 'Replicate API key',
+    keyAlreadySaved: '•••••••• (already saved)',
+    costsHeading: '💰 Costs',
+    costsHint: "Rough estimate — provider pricing changes, and OpenRouter has no fixed rate (tokens only).",
+    costCallsLabel: 'AI calls', costInputLabel: 'Input tokens', costOutputLabel: 'Output tokens', costEstimateLabel: 'Estimated cost',
+    costUnknown: '(unknown)',
+    costUnknownHint: "Some calls (e.g. OpenRouter) have no known price and aren't included in the estimate."
+  }
+};
+
+function t(key) {
+  const val = (UI[currentLang] && UI[currentLang][key] !== undefined) ? UI[currentLang][key] : UI.fr[key];
+  return val;
+}
+
+function applyUiLanguage() {
+  document.documentElement.lang = currentLang;
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const val = t(el.dataset.i18n);
+    if (typeof val === 'string') el.textContent = val;
+  });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+    el.placeholder = t(el.dataset.i18nPlaceholder);
+  });
+  document.querySelectorAll('[data-i18n-title]').forEach(el => {
+    const val = t(el.dataset.i18nTitle);
+    el.title = val;
+    el.setAttribute('aria-label', val);
+  });
+}
 
 const CHAPTER_LENGTH_VALUES = ['short', 'medium', 'long'];
-const CHAPTER_LENGTH_LABELS = { short: 'Court (~200 mots)', medium: 'Moyen (~400 mots)', long: 'Long (~800 mots)' };
 
 let currentSaveId = null;   // active save while in the story / character-select views
 let currentWorldId = null;  // active world while in the world-editor view
@@ -29,13 +280,35 @@ let currentTurns = [];      // all turns of the open save, oldest first — one 
 let currentPageIndex = 0;   // which turn is currently displayed
 let debugModeOn = false;    // "mode auteur": reveals hidden info + turns the action box into a direct narrator instruction
 let previousView = 'home';
+let currentHomeTab = 'create'; // which home tab is active: 'create' | 'worlds' | 'saves'
+let pendingFirstAction = null; // world.firstAction while a background-popup first turn is being prefetched
+let firstTurnPromise = null;   // in-flight promise for that prefetch, so the popup close button can await it
 
 function showView(name) {
   Object.values(views).forEach(v => v.classList.add('hidden'));
   views[name].classList.remove('hidden');
 }
 
+// Called whenever a new turn/chapter has just been generated, so the player
+// starts reading it from the top instead of wherever the scroll happened to be.
+function scrollStoryToTop() {
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
 // ---------- Home ----------
+
+const HOME_TABS = ['create', 'worlds', 'saves'];
+
+function showHomeTab(name) {
+  currentHomeTab = name;
+  HOME_TABS.forEach(tab => {
+    document.getElementById(`homeTab${tab[0].toUpperCase()}${tab.slice(1)}`).classList.toggle('hidden', tab !== name);
+    document.getElementById(`homeTabBtn${tab[0].toUpperCase()}${tab.slice(1)}`).classList.toggle('active', tab === name);
+  });
+}
+HOME_TABS.forEach(tab => {
+  document.getElementById(`homeTabBtn${tab[0].toUpperCase()}${tab.slice(1)}`).onclick = () => showHomeTab(tab);
+});
 
 async function loadHome() {
   const [saves, worlds] = await Promise.all([
@@ -44,37 +317,37 @@ async function loadHome() {
   ]);
   renderSaveList(saves);
   renderWorldList(worlds);
+  // Land returning players on their saves, new users on the create tab.
+  showHomeTab(saves.length ? 'saves' : 'create');
+  const langSelect = document.getElementById('worldLanguageSelect');
+  if (langSelect && !langSelect.dataset.touched) langSelect.value = currentLang;
 }
 
 function renderSaveList(saves) {
-  const heading = document.getElementById('saveListHeading');
   const list = document.getElementById('saveList');
+  const emptyHint = document.getElementById('noSavesHint');
   list.innerHTML = '';
-  if (!saves.length) {
-    heading.hidden = true;
-    return;
-  }
-  heading.hidden = false;
+  emptyHint.classList.toggle('hidden', Boolean(saves.length));
   saves.slice().reverse().forEach(s => {
     const card = document.createElement('div');
     card.className = 'save-card';
     const cover = s.coverImageUrl ? `<img class="world-card-cover" src="${s.coverImageUrl}" alt="">` : '';
     const sub = s.gameOver
-      ? (s.gameOver.result === 'victory' ? '🏆 Terminé (victoire)' : '💀 Terminé (défaite)')
-      : (s.lastAction && s.lastAction !== '(story begins)' ? `→ ${escapeHtml(s.lastAction)}` : 'Pas encore commencé');
+      ? (s.gameOver.result === 'victory' ? t('gameOverVictorySub') : t('gameOverDefeatSub'))
+      : (s.lastAction && s.lastAction !== '(story begins)' ? `→ ${escapeHtml(s.lastAction)}` : t('notStartedYet'));
     card.innerHTML = `
       ${cover}
       <span class="world-card-body">
         <span class="world-card-title">${escapeHtml(s.worldTitle)}</span>
         <span class="world-card-desc">${sub}</span>
-        <small>${s.turnCount} tour${s.turnCount > 1 ? 's' : ''}</small>
+        <small>${t('turnCount')(s.turnCount)}</small>
       </span>
-      <button class="icon-btn danger-text save-delete-btn" title="Supprimer cette sauvegarde">🗑️</button>
+      <button class="icon-btn danger-text save-delete-btn" title="${t('deleteCharacterBtn')}">🗑️</button>
     `;
     card.querySelector('.world-card-body').onclick = () => openSave(s.id);
     card.querySelector('.save-delete-btn').onclick = async (e) => {
       e.stopPropagation();
-      if (!confirm(`Supprimer cette sauvegarde de "${s.worldTitle}" ? Cette action est irréversible.`)) return;
+      if (!confirm(t('deleteSaveConfirm')(s.worldTitle))) return;
       await fetch(`${API}/saves/${s.id}`, { method: 'DELETE' });
       loadHome();
     };
@@ -95,19 +368,19 @@ function renderWorldList(worlds) {
       <span class="world-card-body">
         <span class="world-card-title">${escapeHtml(w.title)}</span>
         ${desc}
-        <small>${escapeHtml(w.tone || '')}${w.saveCount ? ` · ${w.saveCount} sauvegarde${w.saveCount > 1 ? 's' : ''}` : ''}</small>
+        <small>${escapeHtml(w.tone || '')}${w.saveCount ? t('saveCountSuffix')(w.saveCount) : ''}</small>
       </span>
       <span class="world-card-actions">
-        <button class="icon-btn" title="Nouvelle aventure">▶</button>
-        <button class="icon-btn" title="Éditer">✏️</button>
-        <button class="icon-btn danger-text" title="Supprimer">🗑️</button>
+        <button class="icon-btn" title="${t('startAdventureBtn')}">▶</button>
+        <button class="icon-btn" title="${t('editWorldBtn')}">✏️</button>
+        <button class="icon-btn danger-text" title="${t('deleteCharacterBtn')}">🗑️</button>
       </span>
     `;
     const [playBtn, editBtn, delBtn] = card.querySelectorAll('button');
     playBtn.onclick = () => startNewAdventure(w.id);
     editBtn.onclick = () => openWorldEditor(w.id);
     delBtn.onclick = async () => {
-      if (!confirm(`Supprimer le monde "${w.title}" et toutes ses sauvegardes ? Cette action est irréversible.`)) return;
+      if (!confirm(t('deleteWorldConfirm')(w.title))) return;
       await fetch(`${API}/worlds/${w.id}`, { method: 'DELETE' });
       loadHome();
     };
@@ -122,12 +395,13 @@ let creationInterval = null;
 function startCreationProgress() {
   const wrap = document.getElementById('creationProgress');
   const text = document.getElementById('creationProgressText');
+  const steps = t('creationSteps');
   wrap.classList.remove('hidden');
   let step = 0;
-  text.textContent = CREATION_STEPS[0];
+  text.textContent = steps[0];
   creationInterval = setInterval(() => {
-    step = (step + 1) % CREATION_STEPS.length;
-    text.textContent = CREATION_STEPS[step];
+    step = (step + 1) % steps.length;
+    text.textContent = steps[step];
   }, 1400);
 }
 
@@ -136,9 +410,14 @@ function stopCreationProgress() {
   document.getElementById('creationProgress').classList.add('hidden');
 }
 
+document.getElementById('worldLanguageSelect').onchange = (e) => {
+  e.target.dataset.touched = '1'; // stop loadHome() from overwriting a deliberate choice
+};
+
 document.getElementById('createWorldBtn').onclick = async () => {
   const idea = document.getElementById('ideaInput').value.trim();
   if (!idea) return;
+  const language = document.getElementById('worldLanguageSelect').value;
   const btn = document.getElementById('createWorldBtn');
   btn.disabled = true;
   startCreationProgress();
@@ -146,7 +425,7 @@ document.getElementById('createWorldBtn').onclick = async () => {
     const res = await fetch(`${API}/worlds`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ idea })
+      body: JSON.stringify({ idea, language })
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Erreur inconnue');
@@ -154,7 +433,7 @@ document.getElementById('createWorldBtn').onclick = async () => {
     populateWorldEditor(data.world, data.playableCharacters);
     showView('worldEdit');
   } catch (e) {
-    alert('Impossible de créer le monde : ' + e.message);
+    alert(t('cannotCreateWorld') + e.message);
   } finally {
     btn.disabled = false;
     stopCreationProgress();
@@ -169,10 +448,13 @@ async function openWorldEditor(worldId) {
   showView('worldEdit');
 }
 
+const LANGUAGE_NAMES = { fr: 'Français', en: 'English' };
+
 function populateWorldEditor(world, playableCharacters) {
   currentWorldId = world.id;
   currentWorldSkills = world.skills || [];
   document.getElementById('worldEditTitle').textContent = world.title;
+  document.getElementById('worldLanguageInfo').textContent = t('worldLanguageInfo')(LANGUAGE_NAMES[world.language] || LANGUAGE_NAMES.fr);
   document.getElementById('worldDescriptionInput').value = world.description || '';
   document.getElementById('worldObjectiveInput').value = world.objective || '';
   document.getElementById('worldMatureInput').checked = Boolean(world.mature);
@@ -212,10 +494,10 @@ document.getElementById('saveWorldEditBtn').onclick = async () => {
   const data = await res.json();
   const status = document.getElementById('worldEditStatus');
   if (!res.ok) {
-    status.textContent = 'Erreur : ' + data.error;
+    status.textContent = t('errorPrefix') + data.error;
     return;
   }
-  status.textContent = 'Enregistré.';
+  status.textContent = t('savedStatus');
   setTimeout(() => { status.textContent = ''; }, 2000);
 };
 
@@ -225,7 +507,7 @@ document.getElementById('worldAiEditBtn').onclick = async () => {
   const btn = document.getElementById('worldAiEditBtn');
   const status = document.getElementById('worldAiEditStatus');
   btn.disabled = true;
-  status.textContent = 'Retouche en cours...';
+  status.textContent = t('retouchingStatus');
   try {
     const res = await fetch(`${API}/worlds/${currentWorldId}/ai-edit`, {
       method: 'POST',
@@ -236,10 +518,10 @@ document.getElementById('worldAiEditBtn').onclick = async () => {
     if (!res.ok) throw new Error(data.error);
     const charData = await fetch(`${API}/worlds/${currentWorldId}`).then(r => r.json());
     populateWorldEditor(data.world, charData.playableCharacters);
-    document.getElementById('worldAiEditStatus').textContent = 'Monde retouché.';
+    document.getElementById('worldAiEditStatus').textContent = t('worldRetouchedStatus');
     setTimeout(() => { document.getElementById('worldAiEditStatus').textContent = ''; }, 2500);
   } catch (e) {
-    status.textContent = 'Erreur : ' + e.message;
+    status.textContent = t('errorPrefix') + e.message;
   } finally {
     btn.disabled = false;
   }
@@ -248,14 +530,14 @@ document.getElementById('worldAiEditBtn').onclick = async () => {
 document.getElementById('startAdventureBtn').onclick = async () => {
   const res = await fetch(`${API}/worlds/${currentWorldId}/saves`, { method: 'POST' });
   const data = await res.json();
-  if (!res.ok) return alert('Impossible de démarrer une aventure : ' + data.error);
+  if (!res.ok) return alert(t('cannotStartAdventure') + data.error);
   const worldData = await fetch(`${API}/worlds/${currentWorldId}`).then(r => r.json());
   showCharacterSelect(worldData.world, worldData.playableCharacters, data.save.id);
 };
 
 document.getElementById('deleteWorldBtn').onclick = async () => {
   const title = document.getElementById('worldEditTitle').textContent;
-  if (!confirm(`Supprimer le monde "${title}" et toutes ses sauvegardes ? Cette action est irréversible.`)) return;
+  if (!confirm(t('deleteWorldConfirm')(title))) return;
   await fetch(`${API}/worlds/${currentWorldId}`, { method: 'DELETE' });
   currentWorldId = null;
   showView('home');
@@ -289,12 +571,12 @@ function renderCharacterEditList(characters) {
     const card = document.createElement('div');
     card.className = 'character-edit-card';
     card.innerHTML = `
-      <input type="text" id="${idPrefix}-name" value="${escapeHtml(c.name)}" placeholder="Nom">
-      <textarea id="${idPrefix}-desc" rows="2" placeholder="Description">${escapeHtml(c.description || '')}</textarea>
+      <input type="text" id="${idPrefix}-name" value="${escapeHtml(c.name)}">
+      <textarea id="${idPrefix}-desc" rows="2">${escapeHtml(c.description || '')}</textarea>
       <div class="skill-inputs">${skillInputsHtml(c.skills, idPrefix)}</div>
       <div class="character-edit-actions">
-        <button class="text-btn char-save-btn">Enregistrer</button>
-        <button class="text-btn danger-text char-delete-btn">Supprimer</button>
+        <button class="text-btn char-save-btn">${t('saveBtn')}</button>
+        <button class="text-btn danger-text char-delete-btn">${t('deleteCharacterBtn')}</button>
       </div>
     `;
     card.querySelector('.char-save-btn').onclick = async () => {
@@ -307,11 +589,11 @@ function renderCharacterEditList(characters) {
         method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body)
       });
       const status = document.getElementById('characterEditStatus');
-      status.textContent = res.ok ? 'Personnage enregistré.' : 'Erreur lors de l\'enregistrement.';
+      status.textContent = res.ok ? t('characterSavedStatus') : t('errorSavingCharacter');
       setTimeout(() => { status.textContent = ''; }, 2000);
     };
     card.querySelector('.char-delete-btn').onclick = async () => {
-      if (!confirm(`Supprimer ${c.name} ?`)) return;
+      if (!confirm(t('deleteCharacterConfirm')(c.name))) return;
       await fetch(`${API}/worlds/${currentWorldId}/characters/${c.id}`, { method: 'DELETE' });
       card.remove();
     };
@@ -323,10 +605,10 @@ document.getElementById('addCharacterBtn').onclick = async () => {
   const res = await fetch(`${API}/worlds/${currentWorldId}/characters`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ name: 'Nouveau personnage', description: '' })
+    body: JSON.stringify({ name: t('addCharacterDefaultName'), description: '' })
   });
   const data = await res.json();
-  if (!res.ok) return alert('Erreur : ' + data.error);
+  if (!res.ok) return alert(t('errorPrefix') + data.error);
   const charData = await fetch(`${API}/worlds/${currentWorldId}`).then(r => r.json());
   renderCharacterEditList(charData.playableCharacters);
 };
@@ -338,7 +620,7 @@ document.getElementById('generateCharacterBtn').onclick = async () => {
   const btn = document.getElementById('generateCharacterBtn');
   btn.disabled = true;
   const status = document.getElementById('characterEditStatus');
-  status.textContent = 'Génération en cours...';
+  status.textContent = t('generatingStatus');
   try {
     const res = await fetch(`${API}/worlds/${currentWorldId}/characters/generate`, {
       method: 'POST',
@@ -350,9 +632,9 @@ document.getElementById('generateCharacterBtn').onclick = async () => {
     input.value = '';
     const charData = await fetch(`${API}/worlds/${currentWorldId}`).then(r => r.json());
     renderCharacterEditList(charData.playableCharacters);
-    status.textContent = `${data.character.name} généré.`;
+    status.textContent = t('charGeneratedStatus')(data.character.name);
   } catch (e) {
-    status.textContent = 'Erreur : ' + e.message;
+    status.textContent = t('errorPrefix') + e.message;
   } finally {
     btn.disabled = false;
     setTimeout(() => { status.textContent = ''; }, 2500);
@@ -364,7 +646,7 @@ document.getElementById('generateCharacterBtn').onclick = async () => {
 async function startNewAdventure(worldId) {
   const res = await fetch(`${API}/worlds/${worldId}/saves`, { method: 'POST' });
   const data = await res.json();
-  if (!res.ok) return alert('Impossible de démarrer une aventure : ' + data.error);
+  if (!res.ok) return alert(t('cannotStartAdventure') + data.error);
   const worldData = await fetch(`${API}/worlds/${worldId}`).then(r => r.json());
   showCharacterSelect(worldData.world, worldData.playableCharacters, data.save.id);
 }
@@ -373,11 +655,11 @@ function showCharacterSelect(world, playableCharacters, saveId) {
   currentSaveId = saveId;
   currentWorldId = world.id;
   showView('characterSelect');
-  document.getElementById('charSelectTitle').textContent = `Choisis ton personnage — ${world.title}`;
+  document.getElementById('charSelectTitle').textContent = t('chooseCharacterTitle')(world.title);
   const warningEl = document.getElementById('matureWarning');
   if (world.mature) {
     const warnings = (world.contentWarnings || []).join(', ');
-    warningEl.textContent = `⚠️ Contenu mature${warnings ? ' : ' + warnings : ''}`;
+    warningEl.textContent = t('matureWarningPrefix')(warnings);
     warningEl.classList.remove('hidden');
   } else {
     warningEl.classList.add('hidden');
@@ -395,15 +677,15 @@ function showCharacterSelect(world, playableCharacters, saveId) {
 
 function renderCharacterSelectCard(card, c, worldId, saveId) {
   const skillsHtml = Object.entries(c.skills || {})
-    .map(([skill, value]) => `<li>${escapeHtml(skill)}: ${value} <span class="skill-label">(${SKILL_LABELS[value] || 'Non noté'})</span></li>`)
+    .map(([skill, value]) => `<li>${escapeHtml(skill)}: ${value} <span class="skill-label">(${t('skillLabels')[value] || t('skillNotRated')})</span></li>`)
     .join('');
   card.innerHTML = `
     <h3>${escapeHtml(c.name)}</h3>
     <p>${escapeHtml(c.description)}</p>
     <ul class="skill-list">${skillsHtml}</ul>
     <div class="character-card-actions">
-      <button class="primary-btn choose-character-btn">Choisir ${escapeHtml(c.name)}</button>
-      <button class="text-btn edit-character-btn">✏️ Modifier</button>
+      <button class="primary-btn choose-character-btn">${t('chooseCharacterBtn')(escapeHtml(c.name))}</button>
+      <button class="text-btn edit-character-btn">${t('editCharacterBtn')}</button>
     </div>
   `;
   card.querySelector('.choose-character-btn').onclick = () => chooseCharacter(saveId, c.id);
@@ -417,8 +699,8 @@ function showCharacterEditForm(card, c, worldId, saveId) {
     <textarea id="${idPrefix}-desc" rows="2">${escapeHtml(c.description || '')}</textarea>
     <div class="skill-inputs">${skillInputsHtml(c.skills, idPrefix)}</div>
     <div class="character-card-actions">
-      <button class="primary-btn char-select-save-btn">Enregistrer</button>
-      <button class="text-btn char-select-cancel-btn">Annuler</button>
+      <button class="primary-btn char-select-save-btn">${t('saveBtn')}</button>
+      <button class="text-btn char-select-cancel-btn">${t('cancelBtn')}</button>
     </div>
   `;
   card.querySelector('.char-select-save-btn').onclick = async () => {
@@ -431,7 +713,7 @@ function showCharacterEditForm(card, c, worldId, saveId) {
       method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body)
     });
     const data = await res.json();
-    if (!res.ok) return alert('Erreur : ' + data.error);
+    if (!res.ok) return alert(t('errorPrefix') + data.error);
     renderCharacterSelectCard(card, data.character, worldId, saveId);
   };
   card.querySelector('.char-select-cancel-btn').onclick = () => renderCharacterSelectCard(card, c, worldId, saveId);
@@ -444,7 +726,7 @@ async function chooseCharacter(saveId, characterId) {
     body: JSON.stringify({ characterId })
   });
   const data = await res.json();
-  if (!res.ok) return alert('Impossible de choisir ce personnage : ' + data.error);
+  if (!res.ok) return alert(t('cannotChooseCharacter') + data.error);
   await openSave(saveId);
 }
 
@@ -471,9 +753,9 @@ async function fetchSaveData() {
   } catch (e) {
     // A proxy/network hiccup can return a plain-text error body instead of
     // JSON — surface something readable instead of a raw parse error.
-    throw new Error(`Réponse du serveur illisible (HTTP ${res.status}).`);
+    throw new Error(t('illegibleResponse')(res.status));
   }
-  if (!res.ok) throw new Error(data.error || 'Erreur inconnue');
+  if (!res.ok) throw new Error(data.error || 'Unknown error');
   return data;
 }
 
@@ -510,14 +792,13 @@ function applySaveData(data, jumpToLatest) {
   currentWorldId = data.world.id;
   currentSave = data.save;
   currentTurns = data.turns;
-  currentPageIndex = jumpToLatest ? currentTurns.length - 1 : Math.min(currentPageIndex, currentTurns.length - 1);
 
   showView('story');
   document.getElementById('storyTitle').textContent = data.world.title;
   const activeCharacter = (data.playableCharacters || []).find(c => c.id === data.save.activeCharacterId);
   const charEl = document.getElementById('storyCharacter');
   if (activeCharacter) {
-    charEl.textContent = `Tu joues ${activeCharacter.name}`;
+    charEl.textContent = t('storyCharacterPrefix')(activeCharacter.name);
     charEl.classList.remove('hidden');
   } else {
     charEl.classList.add('hidden');
@@ -531,8 +812,91 @@ function applySaveData(data, jumpToLatest) {
   }
   document.getElementById('authorModeBtn').classList.toggle('active', debugModeOn);
   document.getElementById('regeneratePopover').classList.add('hidden');
+
+  // Worlds with a "background" popup generate their real first turn on
+  // demand (world.firstAction) once a character is chosen — until that
+  // first turn exists, show the popup and prefetch it behind the scenes
+  // instead of trying to render a page that doesn't exist yet.
+  if (currentTurns.length === 0 && data.world.background) {
+    document.getElementById('pageNav').classList.add('hidden');
+    document.getElementById('secretInfoBox').classList.add('hidden');
+    document.getElementById('trackedItemsPanel').classList.add('hidden');
+    document.getElementById('storyImage').classList.add('hidden');
+    document.getElementById('pageContent').innerHTML = '';
+    document.getElementById('gameOverBanner').classList.add('hidden');
+    document.getElementById('pastPageActions').classList.add('hidden');
+    document.getElementById('latestPageActions').classList.add('hidden');
+    showBackgroundModal(data.world);
+    return;
+  }
+
+  currentPageIndex = jumpToLatest ? currentTurns.length - 1 : Math.min(currentPageIndex, currentTurns.length - 1);
   renderPage();
+  if (jumpToLatest) scrollStoryToTop();
 }
+
+function showBackgroundModal(world) {
+  document.getElementById('backgroundModalText').innerHTML = formatChapterText(world.background);
+  document.getElementById('backgroundModal').classList.remove('hidden');
+  pendingFirstAction = world.firstAction || 'Begin.';
+  if (!firstTurnPromise) firstTurnPromise = triggerFirstTurn(pendingFirstAction);
+}
+
+function hideBackgroundModal() {
+  document.getElementById('backgroundModal').classList.add('hidden');
+}
+
+// Plays the world's fixed first action as an ordinary turn — this is what
+// generates the real, AI-written opening chapter (replacing the old free
+// static one for worlds with a background) while the player reads the popup.
+async function triggerFirstTurn(action) {
+  try {
+    const res = await fetch(`${API}/saves/${currentSaveId}/turn`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action, authorMode: false, debug: debugModeOn })
+    });
+    const text = await res.text();
+    let data;
+    try { data = JSON.parse(text); } catch (e) { throw new Error(t('illegibleResponse')(res.status)); }
+    if (!res.ok) throw new Error(data.error || 'Unknown error');
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+document.getElementById('backgroundModalCloseBtn').onclick = async () => {
+  const btn = document.getElementById('backgroundModalCloseBtn');
+  const originalLabel = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = t('preparingFirstChapter');
+  const ok = firstTurnPromise ? await firstTurnPromise : true;
+  btn.disabled = false;
+  btn.textContent = originalLabel;
+
+  if (!ok) {
+    // The prefetch call failed outright — check whether the server actually
+    // succeeded anyway (a dropped response, same class of issue as
+    // attemptRecovery elsewhere) before giving up and retrying.
+    try {
+      const data = await fetchSaveData();
+      if (data.turns && data.turns.length > 0) {
+        firstTurnPromise = null;
+        hideBackgroundModal();
+        applySaveData(data, true);
+        return;
+      }
+    } catch (e) { /* fall through to retry */ }
+    alert(t('firstTurnError'));
+    firstTurnPromise = triggerFirstTurn(pendingFirstAction);
+    return;
+  }
+
+  firstTurnPromise = null;
+  hideBackgroundModal();
+  await refreshSave(true);
+};
 
 function formatChapterText(text) {
   const paragraphs = (text || '').split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
@@ -554,7 +918,7 @@ function renderPage() {
 
   const secretBox = document.getElementById('secretInfoBox');
   if (debugModeOn) {
-    secretBox.textContent = `🔓 ${turn.secretInfo || '(rien de caché pour l\'instant)'}`;
+    secretBox.textContent = `🔍 ${turn.secretInfo || (currentLang === 'en' ? '(nothing hidden yet)' : "(rien de caché pour l'instant)")}`;
     secretBox.classList.remove('hidden');
   } else {
     secretBox.classList.add('hidden');
@@ -572,6 +936,7 @@ function renderPage() {
   }
 
   const content = document.getElementById('pageContent');
+  const OUTCOME_LABELS = { success: t('outcomeSuccess'), partial_success: t('outcomePartial'), failure: t('outcomeFailure') };
   const outcomeLabel = debugModeOn ? OUTCOME_LABELS[turn.outcome] : null;
   const outcomeHtml = outcomeLabel ? ` <span class="outcome-badge outcome-${turn.outcome}">${outcomeLabel}</span>` : '';
   const actionLine = turn.turnNumber === 0 ? '' : `<div class="player-action">→ ${escapeHtml(turn.playerAction)}${outcomeHtml}</div>`;
@@ -592,8 +957,8 @@ function renderPage() {
       renderSuggestions(turn.suggestedActions || []);
       document.getElementById('regenerateBtn').classList.toggle('hidden', turn.turnNumber < 1);
       document.getElementById('actionInput').placeholder = debugModeOn
-        ? 'Instruction au narrateur (hors-personnage)...'
-        : 'Que fais-tu ?';
+        ? t('authorInstructionPlaceholder')
+        : t('actionInputPlaceholder');
     }
   }
 }
@@ -618,9 +983,9 @@ function renderGameOver(gameOver) {
     banner.innerHTML = '';
     return;
   }
-  const label = gameOver.result === 'victory' ? 'Victoire' : 'Fin de l\'histoire';
+  const label = gameOver.result === 'victory' ? t('gameOverVictoryLabel') : t('gameOverEndLabel');
   const continueHtml = gameOver.result === 'victory'
-    ? '<button id="continuePlayingBtn" class="primary-btn">Continuer à jouer</button>'
+    ? `<button id="continuePlayingBtn" class="primary-btn">${t('continuePlayingBtn')}</button>`
     : '';
   banner.className = `game-over-banner game-over-${gameOver.result}`;
   banner.innerHTML = `<strong>${label}</strong><p>${escapeHtml(gameOver.text)}</p>${continueHtml}`;
@@ -637,7 +1002,7 @@ async function continuePlaying() {
     if (!res.ok) throw new Error(data.error);
     await refreshSave(true);
   } catch (e) {
-    alert('Impossible de continuer : ' + e.message);
+    alert(t('cannotContinue') + e.message);
   }
 }
 
@@ -659,7 +1024,7 @@ async function playAction(action) {
   const content = document.getElementById('pageContent');
   const pending = document.createElement('p');
   pending.className = 'loading';
-  pending.textContent = debugModeOn ? 'Le narrateur applique l\'instruction...' : 'Le narrateur réfléchit...';
+  pending.textContent = debugModeOn ? t('narratorApplyingInstruction') : t('narratorThinking');
   content.appendChild(pending);
   document.getElementById('suggestedActions').innerHTML = '';
 
@@ -672,12 +1037,12 @@ async function playAction(action) {
     });
     const text = await res.text();
     let data;
-    try { data = JSON.parse(text); } catch (e) { throw new Error(`Réponse du serveur illisible (HTTP ${res.status}).`); }
-    if (!res.ok) throw new Error(data.error || 'Erreur inconnue');
+    try { data = JSON.parse(text); } catch (e) { throw new Error(t('illegibleResponse')(res.status)); }
+    if (!res.ok) throw new Error(data.error || 'Unknown error');
     await refreshSave(true);
   } catch (e) {
     if (!(await attemptRecovery(updatedAtBefore))) {
-      pending.textContent = 'Erreur : ' + e.message + ' — réessaie.';
+      pending.textContent = t('errorPrefix') + e.message + t('retryHint');
     }
   }
 }
@@ -697,7 +1062,7 @@ document.getElementById('nextPageBtn').onclick = () => {
 
 document.getElementById('resumeFromPageBtn').onclick = async () => {
   const turn = currentTurns[currentPageIndex];
-  if (!confirm('Reprendre à partir de cette page ? Tout ce qui vient après sera définitivement perdu.')) return;
+  if (!confirm(t('rewindConfirm'))) return;
   try {
     const res = await fetch(`${API}/saves/${currentSaveId}/rewind`, {
       method: 'POST',
@@ -708,7 +1073,7 @@ document.getElementById('resumeFromPageBtn').onclick = async () => {
     if (!res.ok) throw new Error(data.error);
     await refreshSave(true);
   } catch (e) {
-    alert('Erreur : ' + e.message);
+    alert(t('errorPrefix') + e.message);
   }
 };
 
@@ -736,14 +1101,14 @@ document.getElementById('regenerateConfirmBtn').onclick = async () => {
     });
     const text = await res.text();
     let data;
-    try { data = JSON.parse(text); } catch (e) { throw new Error(`Réponse du serveur illisible (HTTP ${res.status}).`); }
+    try { data = JSON.parse(text); } catch (e) { throw new Error(t('illegibleResponse')(res.status)); }
     if (!res.ok) throw new Error(data.error);
     document.getElementById('regeneratePopover').classList.add('hidden');
     await refreshSave(true);
   } catch (e) {
     document.getElementById('regeneratePopover').classList.add('hidden');
     if (!(await attemptRecovery(updatedAtBefore))) {
-      alert('Erreur : ' + e.message + ' — la régénération a peut-être échoué, réessaie.');
+      alert(t('errorPrefix') + e.message + t('regenFailedHint'));
     }
   } finally {
     btn.disabled = false;
@@ -780,19 +1145,20 @@ document.getElementById('closeSettingsBtn').onclick = () => {
 async function loadCostSummary() {
   const c = await fetch(`${API}/costs`).then(r => r.json());
   const el = document.getElementById('costSummary');
-  const dollars = c.estimatedCostUsd != null ? `~$${c.estimatedCostUsd.toFixed(4)}` : '(inconnu)';
+  const locale = currentLang === 'en' ? 'en-US' : 'fr-FR';
+  const dollars = c.estimatedCostUsd != null ? `~$${c.estimatedCostUsd.toFixed(4)}` : t('costUnknown');
   el.innerHTML = `
-    <div class="cost-row"><span>Appels IA</span><strong>${c.calls}</strong></div>
-    <div class="cost-row"><span>Jetons entrée</span><strong>${c.inputTokens.toLocaleString('fr-FR')}</strong></div>
-    <div class="cost-row"><span>Jetons sortie</span><strong>${c.outputTokens.toLocaleString('fr-FR')}</strong></div>
-    <div class="cost-row"><span>Coût estimé</span><strong>${dollars}</strong></div>
-    ${c.hasUnknownCost ? '<p class="hint-inline">Certains appels (ex. OpenRouter) n\'ont pas de tarif connu et ne sont pas inclus dans l\'estimation.</p>' : ''}
+    <div class="cost-row"><span>${t('costCallsLabel')}</span><strong>${c.calls}</strong></div>
+    <div class="cost-row"><span>${t('costInputLabel')}</span><strong>${c.inputTokens.toLocaleString(locale)}</strong></div>
+    <div class="cost-row"><span>${t('costOutputLabel')}</span><strong>${c.outputTokens.toLocaleString(locale)}</strong></div>
+    <div class="cost-row"><span>${t('costEstimateLabel')}</span><strong>${dollars}</strong></div>
+    ${c.hasUnknownCost ? `<p class="hint-inline">${t('costUnknownHint')}</p>` : ''}
   `;
 }
 
 function updateChapterLengthLabel() {
   const idx = Number(document.getElementById('chapterLengthSlider').value);
-  document.getElementById('chapterLengthLabel').textContent = CHAPTER_LENGTH_LABELS[CHAPTER_LENGTH_VALUES[idx]] || '';
+  document.getElementById('chapterLengthLabel').textContent = t('chapterLengthOptions')[CHAPTER_LENGTH_VALUES[idx]] || '';
 }
 document.getElementById('chapterLengthSlider').oninput = updateChapterLengthLabel;
 
@@ -808,7 +1174,7 @@ async function loadSettings() {
   document.getElementById('imagesEnabled').checked = s.imagesEnabled;
   ['anthropic', 'openai', 'openrouter', 'gemini', 'stability', 'replicate'].forEach(p => {
     const field = document.getElementById(`key-${p}`);
-    field.placeholder = s.apiKeys[p] ? '•••••••• (déjà enregistrée)' : field.placeholder;
+    field.placeholder = s.apiKeys[p] ? t('keyAlreadySaved') : field.placeholder;
   });
 }
 
@@ -832,7 +1198,14 @@ document.getElementById('saveSettingsBtn').onclick = async () => {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body)
   });
-  document.getElementById('settingsStatus').textContent = 'Enregistré.';
+  // settings.language drives both the app's own interface language and the
+  // default proposed when creating a new world — apply it immediately
+  // rather than waiting for a reload.
+  currentLang = body.language || currentLang;
+  applyUiLanguage();
+  updateChapterLengthLabel();
+  await loadCostSummary();
+  document.getElementById('settingsStatus').textContent = t('savedStatus');
   ['anthropic', 'openai', 'openrouter', 'gemini', 'stability', 'replicate'].forEach(p => {
     document.getElementById(`key-${p}`).value = '';
   });
@@ -850,7 +1223,16 @@ function escapeHtml(str) {
 
 // ---------- Init ----------
 
-loadHome();
+(async () => {
+  try {
+    const s = await fetch(`${API}/settings`).then(r => r.json());
+    currentLang = s.language || 'fr';
+  } catch (e) {
+    currentLang = 'fr';
+  }
+  applyUiLanguage();
+  loadHome();
+})();
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {

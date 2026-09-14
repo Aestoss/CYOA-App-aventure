@@ -115,6 +115,56 @@ body {
 .creation-progress.hidden { display: none; }
 .big-btn { width: 100%; margin: 8px 0; }
 
+/* Home tabs */
+.home-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+}
+.home-tab-btn {
+  flex: 1;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-dim);
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 0.88rem;
+  padding: 12px 4px;
+  min-height: 44px;
+  cursor: pointer;
+}
+.home-tab-btn:hover { color: var(--text); }
+.home-tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+.home-tab-panel.hidden { display: none; }
+
+/* Background popup */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 11, 16, 0.78);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 50;
+}
+.modal-overlay.hidden { display: none; }
+.modal-box {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 22px;
+  max-width: 480px;
+  max-height: 84vh;
+  overflow-y: auto;
+}
+.modal-box h2 { font-family: var(--serif); font-weight: 600; margin: 0 0 12px; }
+.modal-text { font-family: var(--serif); font-size: 1.02rem; line-height: 1.6; margin-bottom: 20px; }
+.modal-text p { margin: 0 0 12px; }
+.modal-text p:last-child { margin-bottom: 0; }
+
 .create-panel h2 { font-family: var(--serif); font-weight: 600; margin-bottom: 4px; }
 .hint { color: var(--text-dim); font-size: 0.9rem; line-height: 1.4; }
 .hint-inline { font-weight: 400; font-size: 0.8rem; color: var(--text-dim); }
@@ -282,7 +332,7 @@ input[type="range"] { width: 100%; margin: 6px 0 4px; accent-color: var(--accent
 .tracked-item-name { color: var(--text-dim); }
 .tracked-item-value { color: var(--accent); font-weight: 600; }
 .tracked-item-hidden { border-style: dashed; }
-.tracked-item-hidden .tracked-item-name::before { content: "🔓 "; }
+.tracked-item-hidden .tracked-item-name::before { content: "🔍 "; }
 .outcome-badge { font-size: 0.8rem; }
 .outcome-badge.outcome-success { color: #7fc97f; }
 .outcome-badge.outcome-partial_success { color: var(--accent); }

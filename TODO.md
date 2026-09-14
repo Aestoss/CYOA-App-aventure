@@ -52,63 +52,6 @@ depuis une page passée → victoire → continuer. Un vrai bug a été trouvé 
 corrigé pendant le test (le conteneur des actions de la dernière page n'avait
 pas de règle CSS `.hidden`, donc restait visible même masqué en JS).
 
-## Pas encore fait
-
-- [ ] **Pourquoi Infinite Worlds pagine par tour** — question de recherche
-      devenue sans objet : on a implémenté la pagination directement sur
-      demande, plutôt que d'étudier le rationnel avant. Retiré de la liste.
-
-## Retours de relecture (14/09, session suivante)
-
-- [ ] **La langue ne s'applique pas correctement.** Choisir "English" dans
-      Réglages ne suffit pas si le monde a été créé à partir d'une idée
-      tapée en français : le reste du contexte envoyé à l'IA à chaque tour
-      (World Bible, instructions principales, scènes récentes) reste dans
-      la langue de création du monde, et l'IA a tendance à continuer dans
-      cette langue dominante malgré la consigne contraire. Diagnostic
-      donné à l'utilisateur en session ; correctif proposé ci-dessous.
-- [ ] **Emoji du mode auteur/secret à changer** : remplacer 🔓 (cadenas) par
-      🔍 (loupe) — jugé plus esthétique. Concerne le bouton `#authorModeBtn`
-      et le préfixe dans `#secretInfoBox` (`public/app.js`,
-      `public/index.html`).
-- [ ] **Popup "Background" au lancement d'une aventure** (comme dans
-      Infinite Worlds) : un nouveau champ de monde, long et distinct des
-      champs existants —
-      - différent de `description` (résumé court affiché dans la liste des
-        mondes) ;
-      - différent de `instructions` (s'adresse à l'IA, pas au joueur) ;
-      - c'est un texte narratif adressé au **joueur**, montré dans une
-        popup fixe (identique à chaque nouvelle aventure sur ce monde) qui
-        explique le contexte de l'histoire, l'enjeu, pourquoi le
-        personnage en est là.
-      Généré une fois à la création du monde (comme le reste), éditable
-      dans l'éditeur de monde.
-- [ ] **"Première action" fixe par monde** : un texte d'action prédéterminé
-      (généré/éditable comme le reste, toujours identique pour ce monde),
-      utilisé pour déclencher la génération du tout premier tour réel par
-      l'IA — au lieu du chapitre d'ouverture actuel, pré-écrit une seule
-      fois à la création du monde et simplement recopié tel quel dans
-      chaque nouvelle sauvegarde.
-- [ ] **Pré-chargement pendant la lecture du background** : pendant que le
-      joueur lit la popup, l'appel IA pour générer ce premier tour se
-      lance déjà en parallèle, pour que le monde (texte + 3 actions
-      suggérées) soit prêt dès qu'on ferme la popup — pas de temps de
-      chargement visible après.
-- [ ] **Réorganiser la page d'accueil** : remonter le bloc de création de
-      monde tout en haut de la page (avant la liste des sauvegardes et des
-      mondes, pas après).
-- [ ] **Page d'accueil en onglets séparés** (une fois qu'il y aura beaucoup
-      de mondes/sauvegardes, ça deviendra difficile à suivre en une seule
-      page) : trois onglets navigables — "Créer un monde", "Mes mondes",
-      "Mes sauvegardes" — le plus esthétique et intuitif possible plutôt
-      qu'un simple `<select>` d'onglets basique.
-- [ ] **Remonter automatiquement en haut de la page à chaque génération
-      d'un nouveau chapitre/tour** — actuellement après avoir joué une
-      action (ou une régénération), le scroll reste là où il était ; il
-      faudrait que la vue histoire remonte en haut (scroll to top) dès
-      que le nouveau tour s'affiche, pour commencer la lecture du chapitre
-      depuis le début sans avoir à remonter manuellement.
-
 ## Fait (15/09 — crash JSON brut, flèches de pagination invisibles)
 
 - [x] **Bug d'affichage : les flèches ‹ › de pagination étaient quasi
@@ -147,6 +90,64 @@ pas de règle CSS `.hidden`, donc restait visible même masqué en JS).
       recharge pas son script tant que l'onglet reste ouvert) — pas un
       problème d'architecture. À confirmer avec l'utilisateur après un
       rechargement complet de la page.
+
+## Fait (15/09, second lot — langue baked-in, i18n menus, tabs, background popup)
+
+- [x] **Langue de l'histoire figée par monde.** `world.language` est
+      maintenant choisi au moment de la création (sélecteur sur l'onglet
+      "Créer un monde", pré-rempli avec la langue courante des Réglages) et
+      utilisé pour tous les tours suivants — au lieu de relire
+      `settings.language` à chaque tour, qui pouvait entrer en conflit avec
+      un World Bible déjà écrit dans une autre langue. La retouche IA
+      (`aiEditWorld`) écrit aussi désormais dans la langue du monde. Les
+      mondes déjà créés avant ce changement retombent sur `'fr'` par défaut.
+- [x] **Menus/interface traduits (pas seulement le texte généré par l'IA).**
+      Diagnostic confirmé par l'utilisateur : "pour l'anglais ça marche
+      [le texte de l'histoire], mais pas le changement de langue dans les
+      menus". Cause : tous les libellés (boutons, titres, placeholders)
+      étaient codés en dur en français, `settings.language` ne pilotant que
+      la langue demandée à l'IA. Ajout d'un petit système i18n côté client
+      (`public/app.js` : dictionnaire `UI.fr`/`UI.en`, `t()`,
+      `applyUiLanguage()`, attributs `data-i18n`/`data-i18n-placeholder`/
+      `data-i18n-title` dans `public/index.html`) — Réglages → Langue des
+      réponses bascule maintenant aussi la langue de toute l'interface,
+      immédiatement, sans recharger la page.
+- [x] **Emoji du mode auteur/secret changé** : 🔓 → 🔍 partout
+      (`#authorModeBtn`, préfixe de `#secretInfoBox`, préfixe des objets
+      suivis cachés en CSS).
+- [x] **Page d'accueil réorganisée en 3 onglets** : "Créer un monde" / "Mes
+      mondes" / "Mes sauvegardes" (`.home-tabs`), plutôt qu'un unique flux
+      avec le bloc de création en bas. Onglet par défaut : "Mes
+      sauvegardes" s'il y en a, sinon "Créer un monde".
+- [x] **Popup "Background" + "première action" fixe + pré-chargement.**
+      Le monde généré inclut maintenant `background` (texte long adressé au
+      joueur, montré une fois dans une popup fixe après le choix du
+      personnage) et `firstAction` (action fixe qui déclenche le vrai
+      premier tour, généré par l'IA). Ordre retenu pour la question posée
+      dans les notes : le personnage est choisi **avant** la popup, donc ce
+      premier tour connaît déjà le personnage joué. L'appel IA du premier
+      tour est lancé en parallèle dès l'affichage de la popup (pas seulement
+      à sa fermeture) ; fermer la popup attend ce résultat s'il n'est pas
+      encore prêt. Le chapitre d'ouverture gratuit (`opening_chapter`) reste
+      utilisé tel quel pour les mondes créés avant ce changement (sans
+      `background`) — pas de rupture rétroactive.
+- [x] **Scroll automatique en haut à chaque nouveau tour/chapitre.**
+
+Vérifié en navigateur réel (Playwright) : onglet par défaut correct,
+sélecteur de langue à la création + ligne "Langue de ce monde" (non
+éditable) dans l'éditeur, popup background affichée avec le texte généré
+puis premier tour réel affiché après fermeture, bascule Réglages → English
+traduisant immédiatement onglets/boutons/panneau de coûts, cycle complet
+jeu/mode auteur/régénération/retour en arrière toujours fonctionnel, et
+un monde "ancien" sans `background` repatché manuellement en base confirme
+qu'il garde l'ancien chemin gratuit (aucune popup, aucun appel IA
+supplémentaire).
+
+## Pas encore fait
+
+- [ ] **Pourquoi Infinite Worlds pagine par tour** — question de recherche
+      devenue sans objet : on a implémenté la pagination directement sur
+      demande, plutôt que d'étudier le rationnel avant. Retiré de la liste.
 
 ---
 
