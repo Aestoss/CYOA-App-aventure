@@ -462,11 +462,47 @@ async function openSave(id) {
   await refreshSave(true);
 }
 
+async function fetchSaveData() {
+  const res = await fetch(`${API}/saves/${currentSaveId}${debugModeOn ? '?debug=1' : ''}`);
+  const text = await res.text();
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch (e) {
+    // A proxy/network hiccup can return a plain-text error body instead of
+    // JSON — surface something readable instead of a raw parse error.
+    throw new Error(`Réponse du serveur illisible (HTTP ${res.status}).`);
+  }
+  if (!res.ok) throw new Error(data.error || 'Erreur inconnue');
+  return data;
+}
+
+// A long AI call can have its response dropped by a proxy/network hiccup
+// even though the server finished the work and saved it — before showing
+// an error, check whether save.updatedAt actually moved since the call
+// started, and if so just show the real, successful result instead.
+async function attemptRecovery(updatedAtBefore) {
+  try {
+    const data = await fetchSaveData();
+    if (data.save.updatedAt !== updatedAtBefore) {
+      applySaveData(data, true);
+      return true;
+    }
+  } catch (e) {
+    // Recovery check itself failed — fall through and report the original error.
+  }
+  return false;
+}
+
 // Re-fetches the save and re-renders. jumpToLatest=true snaps to the newest
 // page (after playing/regenerating/rewinding); false keeps the current page
 // position (after just toggling mode auteur).
 async function refreshSave(jumpToLatest) {
-  const data = await fetch(`${API}/saves/${currentSaveId}${debugModeOn ? '?debug=1' : ''}`).then(r => r.json());
+  const data = await fetchSaveData();
+  applySaveData(data, jumpToLatest);
+}
+
+function applySaveData(data, jumpToLatest) {
   if (!data.save.activeCharacterId) {
     showCharacterSelect(data.world, data.playableCharacters, currentSaveId);
     return;
@@ -509,6 +545,9 @@ function renderPage() {
   const total = currentTurns.length;
   const isLatest = currentPageIndex === total - 1;
 
+  // A single-page save has nothing to navigate — hide the bar entirely
+  // rather than show two simultaneously-disabled, barely-visible arrows.
+  document.getElementById('pageNav').classList.toggle('hidden', total <= 1);
   document.getElementById('pageIndicator').textContent = `Page ${currentPageIndex + 1} / ${total}`;
   document.getElementById('prevPageBtn').disabled = currentPageIndex === 0;
   document.getElementById('nextPageBtn').disabled = isLatest;
@@ -592,10 +631,14 @@ function renderGameOver(gameOver) {
 }
 
 async function continuePlaying() {
-  const res = await fetch(`${API}/saves/${currentSaveId}/continue`, { method: 'POST' });
-  const data = await res.json();
-  if (!res.ok) return alert('Impossible de continuer : ' + data.error);
-  await refreshSave(true);
+  try {
+    const res = await fetch(`${API}/saves/${currentSaveId}/continue`, { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    await refreshSave(true);
+  } catch (e) {
+    alert('Impossible de continuer : ' + e.message);
+  }
 }
 
 function renderSuggestions(actions) {
@@ -620,17 +663,22 @@ async function playAction(action) {
   content.appendChild(pending);
   document.getElementById('suggestedActions').innerHTML = '';
 
+  const updatedAtBefore = currentSave.updatedAt;
   try {
     const res = await fetch(`${API}/saves/${currentSaveId}/turn`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ action, authorMode: debugModeOn, debug: debugModeOn })
     });
-    const data = await res.json();
+    const text = await res.text();
+    let data;
+    try { data = JSON.parse(text); } catch (e) { throw new Error(`Réponse du serveur illisible (HTTP ${res.status}).`); }
     if (!res.ok) throw new Error(data.error || 'Erreur inconnue');
     await refreshSave(true);
   } catch (e) {
-    pending.textContent = 'Erreur : ' + e.message;
+    if (!(await attemptRecovery(updatedAtBefore))) {
+      pending.textContent = 'Erreur : ' + e.message + ' — réessaie.';
+    }
   }
 }
 
@@ -650,14 +698,18 @@ document.getElementById('nextPageBtn').onclick = () => {
 document.getElementById('resumeFromPageBtn').onclick = async () => {
   const turn = currentTurns[currentPageIndex];
   if (!confirm('Reprendre à partir de cette page ? Tout ce qui vient après sera définitivement perdu.')) return;
-  const res = await fetch(`${API}/saves/${currentSaveId}/rewind`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ turnNumber: turn.turnNumber })
-  });
-  const data = await res.json();
-  if (!res.ok) return alert('Erreur : ' + data.error);
-  await refreshSave(true);
+  try {
+    const res = await fetch(`${API}/saves/${currentSaveId}/rewind`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ turnNumber: turn.turnNumber })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    await refreshSave(true);
+  } catch (e) {
+    alert('Erreur : ' + e.message);
+  }
 };
 
 document.getElementById('regenerateBtn').onclick = () => {
@@ -674,6 +726,7 @@ document.getElementById('regenerateConfirmBtn').onclick = async () => {
   const action = document.getElementById('regenerateActionInput').value.trim();
   const note = document.getElementById('regenerateNoteInput').value.trim();
   const btn = document.getElementById('regenerateConfirmBtn');
+  const updatedAtBefore = currentSave.updatedAt;
   btn.disabled = true;
   try {
     const res = await fetch(`${API}/saves/${currentSaveId}/turns/${turn.turnNumber}/regenerate`, {
@@ -681,12 +734,17 @@ document.getElementById('regenerateConfirmBtn').onclick = async () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ action, note, debug: debugModeOn })
     });
-    const data = await res.json();
+    const text = await res.text();
+    let data;
+    try { data = JSON.parse(text); } catch (e) { throw new Error(`Réponse du serveur illisible (HTTP ${res.status}).`); }
     if (!res.ok) throw new Error(data.error);
     document.getElementById('regeneratePopover').classList.add('hidden');
     await refreshSave(true);
   } catch (e) {
-    alert('Erreur : ' + e.message);
+    document.getElementById('regeneratePopover').classList.add('hidden');
+    if (!(await attemptRecovery(updatedAtBefore))) {
+      alert('Erreur : ' + e.message + ' — la régénération a peut-être échoué, réessaie.');
+    }
   } finally {
     btn.disabled = false;
   }
