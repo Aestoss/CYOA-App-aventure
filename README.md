@@ -7,7 +7,7 @@
 - Système de prompts en couches (Master Prompt / World Bible / Mémoire / Tours récents), comme détaillé dans le plan
 - Mémoire réelle : faits extraits stockés en base + résumé automatique tous les ~15-20 tours
 - Toggle images marche/arrêt, fonctionnel
-- Changement de fournisseur IA (Anthropic, OpenAI, OpenRouter) et de modèle d'image (Stability, Replicate) depuis les Réglages, sans toucher au code
+- Changement de fournisseur IA (Anthropic, OpenAI, OpenRouter, Google Gemini) et de modèle d'image (Stability, Replicate) depuis les Réglages, sans toucher au code
 - Testé de bout en bout avec un "fournisseur factice" (mock) qui simule des réponses IA sans clé — donc tout le mécanisme (création de monde, mémoire, résumé, réglages) est déjà vérifié comme fonctionnel
 
 ## État actuel — déjà en ligne

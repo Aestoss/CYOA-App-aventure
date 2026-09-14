@@ -57,6 +57,24 @@ async function callOpenRouter({ system, user, apiKey, model }) {
   return data.choices[0].message.content;
 }
 
+async function callGemini({ system, user, apiKey, model }) {
+  const m = model || 'gemini-2.0-flash';
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${apiKey}`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: system }] },
+        contents: [{ role: 'user', parts: [{ text: user }] }]
+      })
+    }
+  );
+  if (!res.ok) throw new Error(`Gemini API error ${res.status}: ${await res.text()}`);
+  const data = await res.json();
+  return (data.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('');
+}
+
 // Deterministic fake provider — no network, no key required. Used for local
 // testing and as a safe default so the app never fails with "no key set".
 async function callMock({ system, user }) {
@@ -84,7 +102,7 @@ async function callMock({ system, user }) {
   });
 }
 
-const providers = { anthropic: callAnthropic, openai: callOpenAI, openrouter: callOpenRouter, mock: callMock };
+const providers = { anthropic: callAnthropic, openai: callOpenAI, openrouter: callOpenRouter, gemini: callGemini, mock: callMock };
 
 async function generateText({ provider, system, user, apiKey, model }) {
   const fn = providers[provider] || providers.mock;

@@ -163,7 +163,7 @@ async function loadSettings() {
   document.getElementById('textModel').value = s.textModel || '';
   document.getElementById('imageProvider').value = s.imageProvider;
   document.getElementById('imagesEnabled').checked = s.imagesEnabled;
-  ['anthropic', 'openai', 'openrouter', 'stability', 'replicate'].forEach(p => {
+  ['anthropic', 'openai', 'openrouter', 'gemini', 'stability', 'replicate'].forEach(p => {
     const field = document.getElementById(`key-${p}`);
     field.placeholder = s.apiKeys[p] ? '•••••••• (déjà enregistrée)' : field.placeholder;
   });
@@ -171,7 +171,7 @@ async function loadSettings() {
 
 document.getElementById('saveSettingsBtn').onclick = async () => {
   const apiKeys = {};
-  ['anthropic', 'openai', 'openrouter', 'stability', 'replicate'].forEach(p => {
+  ['anthropic', 'openai', 'openrouter', 'gemini', 'stability', 'replicate'].forEach(p => {
     const val = document.getElementById(`key-${p}`).value.trim();
     if (val) apiKeys[p] = val; // only overwrite if the user typed something new
   });
@@ -188,7 +188,7 @@ document.getElementById('saveSettingsBtn').onclick = async () => {
     body: JSON.stringify(body)
   });
   document.getElementById('settingsStatus').textContent = 'Enregistré.';
-  ['anthropic', 'openai', 'openrouter', 'stability', 'replicate'].forEach(p => {
+  ['anthropic', 'openai', 'openrouter', 'gemini', 'stability', 'replicate'].forEach(p => {
     document.getElementById(`key-${p}`).value = '';
   });
   await loadSettings();
