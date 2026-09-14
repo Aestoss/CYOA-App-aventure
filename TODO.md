@@ -231,6 +231,17 @@ supplémentaire).
 
 ## Notes pour plus tard
 
+- ⚠️ **RAPPEL POUR LA SORTIE EN v1.0** (demandé explicitement par
+  l'utilisateur — à faire quand il annoncera que le projet est fini, pas
+  avant) : nettoyer Railway pour réduire les coûts d'utilisation —
+  1. Supprimer l'historique des anciens déploiements du service
+     `fogbound` (ne garder que le déploiement actif en production).
+  2. Vérifier qu'aucun service/outil superflu ne tourne dans le projet
+     Railway (ex. une solution de monitoring ou de gestion de logs
+     ajoutée en cours de route qui coûterait sans être indispensable) —
+     à l'heure de cette note, un seul service existe (`fogbound`), donc
+     ça revient surtout à confirmer que rien d'autre n'a été ajouté
+     depuis.
 - Le retour en arrière est volontairement destructif (pas de branches) —
   si le besoin de garder plusieurs versions en parallèle apparaît un jour,
   il faudra revoir `rewindToTurn` pour dupliquer la sauvegarde au lieu de
