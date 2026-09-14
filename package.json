@@ -1,5 +1,5 @@
 {
-  "name": "adventure-app",
+  "name": "fogbound",
   "version": "1.0.0",
   "description": "AI choose-your-own-adventure app with structured world memory",
   "main": "server.js",

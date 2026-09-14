@@ -13,6 +13,13 @@ produit que Fogbound cherche à égaler, à partir de :
 Sources citées à la fin. L'objectif : servir de cahier des charges pour
 combler l'écart entre Fogbound (actuel) et Infinite Worlds (référence).
 
+> **Statut : document d'analyse historique.** La feuille de route qu'il
+> propose (section 6, Phases A à G) est entièrement implémentée — voir
+> `CHANGELOG.md`. Conservé tel quel pour le contexte et l'analyse détaillée
+> des mécaniques d'Infinite Worlds, utile en référence pour toute évolution
+> future (ex. les "Trigger events / KIBs" de la section 2.8, jamais repris
+> côté Fogbound).
+
 ---
 
 ## 1. Architecture générale du moteur
