@@ -2,15 +2,24 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const db = require('./lib/db');
-const { createWorld, playTurn, getSettings } = require('./lib/gameEngine');
+const { createWorld, playTurn, getSettings, selectCharacter, continueAfterVictory, updateWorldInstructions } = require('./lib/gameEngine');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// secretInfo is deliberately hidden state (see docs/INFINITE_WORLDS_REFERENCE.md,
+// Phase E) — strip it before any world object reaches the client. Returns a
+// shallow copy so callers never accidentally mutate the live db record.
+function publicWorld(world) {
+  if (!world) return world;
+  const { secretInfo, ...rest } = world;
+  return rest;
+}
+
 app.get('/api/worlds', (req, res) => {
-  res.json(db.get('worlds').value());
+  res.json(db.get('worlds').value().map(publicWorld));
 });
 
 app.get('/api/worlds/:id', (req, res) => {
@@ -18,7 +27,11 @@ app.get('/api/worlds/:id', (req, res) => {
   if (!world) return res.status(404).json({ error: 'World not found' });
   const turns = db.get('turns').filter({ worldId: world.id }).sortBy('turnNumber').value();
   const characters = db.get('characters').filter({ worldId: world.id }).value();
-  res.json({ world, turns, characters });
+  const playableCharacters = db.get('playableCharacters').filter({ worldId: world.id }).value();
+  // ai_only tracked items are deliberately withheld from the client — that's
+  // the whole point of the visibility flag (hidden state, e.g. a secret plot flag).
+  const trackedItems = db.get('trackedItems').filter({ worldId: world.id, visibility: 'player_and_ai' }).value();
+  res.json({ world: publicWorld(world), turns, characters, playableCharacters, trackedItems });
 });
 
 app.post('/api/worlds', async (req, res) => {
@@ -26,9 +39,41 @@ app.post('/api/worlds', async (req, res) => {
     const { idea } = req.body;
     if (!idea || !idea.trim()) return res.status(400).json({ error: 'idea is required' });
     const result = await createWorld(idea.trim());
-    res.json(result);
+    res.json({ ...result, world: publicWorld(result.world) });
   } catch (e) {
     res.status(500).json({ error: e.message });
+  }
+});
+
+app.patch('/api/worlds/:id', (req, res) => {
+  try {
+    const { instructions, authorStyle, imageStyle, imageStylePrefix, imageStyleSuffix, description, objective, mature, contentWarnings } = req.body;
+    const world = updateWorldInstructions(req.params.id, {
+      instructions, authorStyle, imageStyle, imageStylePrefix, imageStyleSuffix, description, objective, mature, contentWarnings
+    });
+    res.json({ ok: true, world: publicWorld(world) });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.post('/api/worlds/:id/select-character', (req, res) => {
+  try {
+    const { characterId } = req.body;
+    if (!characterId) return res.status(400).json({ error: 'characterId is required' });
+    const character = selectCharacter(req.params.id, characterId);
+    res.json({ ok: true, character });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.post('/api/worlds/:id/continue', (req, res) => {
+  try {
+    const world = continueAfterVictory(req.params.id);
+    res.json({ ok: true, world: publicWorld(world) });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
   }
 });
 

@@ -4,6 +4,9 @@
   "description": "AI choose-your-own-adventure app with structured world memory",
   "main": "server.js",
   "type": "commonjs",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "start": "node server.js"
   },

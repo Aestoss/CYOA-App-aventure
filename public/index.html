@@ -30,17 +30,66 @@
     </div>
   </section>
 
+  <!-- Character selection view -->
+  <section id="view-character-select" class="view hidden">
+    <button id="backFromCharSelectBtn" class="text-btn">‹ Mes histoires</button>
+    <h2 id="charSelectTitle">Choisis ton personnage</h2>
+    <div id="matureWarning" class="mature-warning hidden"></div>
+    <div id="characterList" class="character-list"></div>
+  </section>
+
   <!-- Story / play view -->
   <section id="view-story" class="view hidden">
-    <button id="backBtn" class="text-btn">‹ Mes histoires</button>
+    <div class="story-header-row">
+      <button id="backBtn" class="text-btn">‹ Mes histoires</button>
+      <button id="editWorldBtn" class="icon-btn" aria-label="Modifier les instructions" title="Modifier les instructions">✏️</button>
+    </div>
     <h2 id="storyTitle"></h2>
+    <p id="storyCharacter" class="story-character hidden"></p>
+    <p id="storyObjective" class="story-objective hidden"></p>
+    <div id="trackedItemsPanel" class="tracked-items-panel hidden"></div>
     <div id="storyImage" class="story-image hidden"><img id="storyImageEl" alt=""></div>
     <div id="chapterFeed" class="chapter-feed"></div>
+    <div id="gameOverBanner" class="game-over-banner hidden"></div>
     <div id="suggestedActions" class="suggested-actions"></div>
     <form id="actionForm" class="action-form">
       <input id="actionInput" type="text" placeholder="Que fais-tu ?" autocomplete="off">
       <button type="submit" class="primary-btn">Envoyer</button>
     </form>
+  </section>
+
+  <!-- World edit view -->
+  <section id="view-world-edit" class="view hidden">
+    <button id="closeWorldEditBtn" class="text-btn">‹ Retour</button>
+    <h2>Modifier les instructions</h2>
+    <p class="hint">Ces instructions guident l'IA narratrice à chaque tour. Générées automatiquement à la création du monde, tu peux les ajuster ici.</p>
+    <label>Description <span class="hint-inline">(affichée dans la liste des histoires, sans effet sur le jeu)</span>
+      <textarea id="worldDescriptionInput" rows="2"></textarea>
+    </label>
+    <label>Objectif <span class="hint-inline">(affiché au joueur dès le premier tour, optionnel)</span>
+      <input id="worldObjectiveInput" type="text">
+    </label>
+    <label class="toggle-row"><span>Contenu mature (R)</span><input id="worldMatureInput" type="checkbox"></label>
+    <label>Avertissements de contenu <span class="hint-inline">(séparés par des virgules)</span>
+      <input id="worldContentWarningsInput" type="text" placeholder="violence, horreur...">
+    </label>
+    <label>Instructions principales
+      <textarea id="worldInstructionsInput" rows="10"></textarea>
+    </label>
+    <label>Style d'auteur <span class="hint-inline">(ex : "Neil Gaiman", "un romancier de thriller")</span>
+      <input id="worldAuthorStyleInput" type="text">
+    </label>
+    <label>Style visuel <span class="hint-inline">(description générale, ex : "aquarelle sombre, palette froide")</span>
+      <input id="worldImageStyleInput" type="text">
+    </label>
+    <label>Préfixe d'image <span class="hint-inline">(ajouté avant chaque prompt d'image)</span>
+      <input id="worldImageStylePrefixInput" type="text">
+    </label>
+    <label>Suffixe d'image <span class="hint-inline">(ajouté après chaque prompt d'image)</span>
+      <input id="worldImageStyleSuffixInput" type="text">
+    </label>
+    <button id="saveWorldEditBtn" class="primary-btn">Enregistrer</button>
+    <p id="worldEditStatus" class="hint"></p>
   </section>
 
   <!-- Settings view -->
@@ -56,6 +105,7 @@
           <option value="anthropic">Anthropic (Claude)</option>
           <option value="openai">OpenAI</option>
           <option value="openrouter">OpenRouter (plusieurs modèles)</option>
+          <option value="gemini">Google (Gemini)</option>
         </select>
       </label>
       <label>Modèle <span class="hint-inline">(optionnel, sinon valeur par défaut)</span>
@@ -64,6 +114,7 @@
       <label class="key-field">Clé API Anthropic <input id="key-anthropic" type="password" placeholder="sk-ant-..."></label>
       <label class="key-field">Clé API OpenAI <input id="key-openai" type="password" placeholder="sk-..."></label>
       <label class="key-field">Clé API OpenRouter <input id="key-openrouter" type="password" placeholder="sk-or-..."></label>
+      <label class="key-field">Clé API Gemini <span class="hint-inline">(gratuite pour tester)</span><input id="key-gemini" type="password" placeholder="AIza..."></label>
     </div>
 
     <div class="settings-group">

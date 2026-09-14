@@ -55,10 +55,14 @@ body {
 }
 
 .view.hidden { display: none; }
+.view label { display: block; font-size: 0.88rem; color: var(--text-dim); margin: 14px 0 4px; }
 
 /* Home / world list */
 .world-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 32px; }
 .world-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   text-align: left;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
@@ -69,6 +73,19 @@ body {
   font-family: var(--serif);
   font-size: 1.05rem;
   cursor: pointer;
+}
+.world-card-cover { width: 52px; height: 52px; object-fit: cover; border-radius: 4px; flex-shrink: 0; }
+.world-card-body { display: flex; flex-direction: column; min-width: 0; }
+.world-card-title { font-family: var(--serif); }
+.world-card-desc {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-family: var(--sans);
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  margin-top: 2px;
 }
 .world-card small { display: block; font-family: var(--sans); color: var(--text-dim); font-size: 0.8rem; margin-top: 4px; }
 
@@ -122,8 +139,60 @@ textarea:focus, input:focus, select:focus {
 }
 .text-btn:hover { color: var(--accent); }
 
+/* Character selection */
+.character-list { display: flex; flex-direction: column; gap: 14px; margin-top: 16px; }
+.character-card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+}
+.character-card h3 { font-family: var(--serif); font-weight: 600; margin: 0 0 6px; }
+.character-card p { color: var(--text-dim); font-size: 0.92rem; line-height: 1.5; margin: 0 0 10px; }
+.skill-list { list-style: none; margin: 0 0 14px; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 0.85rem; }
+.skill-list .skill-label { color: var(--text-dim); }
+
 /* Story view */
+.story-header-row { display: flex; align-items: center; justify-content: space-between; }
 #storyTitle { font-family: var(--serif); font-weight: 600; margin: 0 0 14px; }
+.story-character { color: var(--text-dim); font-size: 0.85rem; margin: -10px 0 14px; }
+.story-character.hidden { display: none; }
+.story-objective { color: var(--accent); font-size: 0.9rem; margin: -6px 0 16px; }
+.story-objective.hidden { display: none; }
+
+.mature-warning {
+  background: rgba(217, 119, 111, 0.12);
+  border: 1px solid rgba(217, 119, 111, 0.4);
+  color: #d9776f;
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-size: 0.88rem;
+  margin: 12px 0;
+}
+.mature-warning.hidden { display: none; }
+
+.tracked-items-panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.tracked-items-panel.hidden { display: none; }
+.tracked-item {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 6px 12px;
+  font-size: 0.82rem;
+  display: flex;
+  gap: 6px;
+}
+.tracked-item-name { color: var(--text-dim); }
+.tracked-item-value { color: var(--accent); font-weight: 600; }
+.outcome-badge { font-size: 0.8rem; }
+.outcome-badge.outcome-success { color: #7fc97f; }
+.outcome-badge.outcome-partial_success { color: var(--accent); }
+.outcome-badge.outcome-failure { color: #d9776f; }
 
 .story-image { margin-bottom: 16px; border-radius: 6px; overflow: hidden; border: 1px solid var(--border); }
 .story-image img { width: 100%; display: block; }
@@ -172,8 +241,23 @@ textarea:focus, input:focus, select:focus {
   background: var(--bg);
   padding: 8px 0 calc(12px + env(safe-area-inset-bottom));
 }
+.action-form.hidden { display: none; }
 .action-form input { margin: 0; flex: 1; }
 .action-form button { white-space: nowrap; }
+
+.game-over-banner {
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+  text-align: center;
+}
+.game-over-banner.hidden { display: none; }
+.game-over-banner strong { font-family: var(--serif); font-size: 1.1rem; display: block; margin-bottom: 6px; }
+.game-over-banner p { margin: 0 0 10px; color: var(--text-dim); line-height: 1.5; }
+.game-over-banner.game-over-victory { background: rgba(127, 201, 127, 0.12); border: 1px solid rgba(127, 201, 127, 0.4); }
+.game-over-banner.game-over-victory strong { color: #7fc97f; }
+.game-over-banner.game-over-defeat { background: rgba(217, 119, 111, 0.12); border: 1px solid rgba(217, 119, 111, 0.4); }
+.game-over-banner.game-over-defeat strong { color: #d9776f; }
 
 /* Settings */
 .settings-group {
