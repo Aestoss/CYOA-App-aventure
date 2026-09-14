@@ -420,10 +420,11 @@ app.get('/api/settings', (req, res) => {
 
 app.post('/api/settings', (req, res) => {
   const current = db.get('settings').value();
-  const { textProvider, textModel, language, chapterLength, imageProvider, imagesEnabled, apiKeys } = req.body;
+  const { textProvider, textModel, ollamaBaseUrl, language, chapterLength, imageProvider, imagesEnabled, apiKeys } = req.body;
   const next = {
     textProvider: textProvider ?? current.textProvider,
     textModel: textModel ?? current.textModel,
+    ollamaBaseUrl: ollamaBaseUrl ?? current.ollamaBaseUrl,
     language: language ?? current.language,
     chapterLength: chapterLength ?? current.chapterLength,
     imageProvider: imageProvider ?? current.imageProvider,

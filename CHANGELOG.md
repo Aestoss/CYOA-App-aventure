@@ -5,6 +5,44 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-14 — Sélecteur de modèle avec prix, fournisseur Ollama, correctif génération Anthropic
+
+- **Corrigé un bug bloquant** : avec une vraie clé Anthropic, la génération
+  ne répondait jamais (monde neuf ou sauvegarde existante). Cause réelle :
+  `max_tokens` était fixé à 1024 côté appel Anthropic, trop bas pour le
+  JSON complet d'un tour (voire pire pour la création de monde) — la
+  réponse était tronquée avant la fin, et `JSON.parse` échouait
+  silencieusement. Remonté à 8192, et le parseur détecte maintenant
+  spécifiquement une réponse tronquée pour un message d'erreur clair au
+  lieu d'un "Unexpected end of JSON input" opaque.
+- **Corrigé au passage** : les erreurs serveur (500) n'étaient jamais
+  loguées côté Railway, rendant ce genre de bug invisible ; la logique de
+  nouvelle tentative automatique retentait aussi des erreurs qui n'avaient
+  aucune chance de réussir au second essai (masquant le vrai problème
+  derrière ~25s d'attente). Un souci réseau IPv6 pouvant ajouter un délai
+  similaire côté conteneur a également été corrigé (IPv4 préféré).
+- **Sélecteur de modèle avec indication de prix** : liste déroulante par
+  fournisseur (Anthropic, OpenAI, OpenRouter, Gemini, Ollama) proposant les
+  modèles courants avec leur tarif approximatif par million de jetons,
+  tout en gardant le champ texte libre pour taper n'importe quel autre
+  identifiant de modèle.
+- **Support préparatoire d'Ollama (modèle local)** : nouveau fournisseur de
+  texte ciblant l'API compatible OpenAI d'Ollama (`/v1/chat/completions`),
+  avec adresse de serveur et clé optionnelle réglables dans Réglages.
+  Gratuit par nature (aucun tarif à estimer), mais un Ollama tournant en
+  local n'est joignable que si Fogbound tourne lui aussi en local ou via un
+  tunnel, puisque l'app elle-même est déployée sur Railway.
+- **Tarifs Anthropic affinés par génération de modèle** (`lib/pricing.js`) :
+  les entrées génériques 'haiku'/'opus'/'sonnet' confondaient des modèles à
+  prix très différents (ex. Sonnet 5 et Sonnet 4.6) ; des entrées plus
+  spécifiques passent maintenant en priorité.
+
+Vérifié : appel `callOllama` isolé contre un faux serveur imitant l'API
+OpenAI d'Ollama (requête/réponse/usage corrects), persistance des nouveaux
+réglages (`ollamaBaseUrl`, clé Ollama) via l'API, différenciation des tarifs
+par modèle Anthropic, non-régression du parcours complet en fournisseur
+factice (création de monde → sauvegarde → tour).
+
 ## 2026-09-14 — Portraits de personnage, éditeurs post-création, champs manquants
 
 Termine la liste "vrais absents" de la repasse comparative avec Infinite

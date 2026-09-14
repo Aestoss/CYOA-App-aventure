@@ -164,9 +164,13 @@ const UI = {
     providerLabel: 'Fournisseur',
     providerMock: 'Démo locale (sans clé)',
     providerOpenrouter: 'OpenRouter (plusieurs modèles)',
+    providerOllama: 'Ollama (modèle local)',
+    modelPresetLabel: 'Modèle préréglé', modelPresetCustom: '(manuel — voir le champ ci-dessous)',
     modelLabel: 'Modèle', modelHint: '(optionnel, sinon valeur par défaut)',
     keyAnthropicLabel: 'Clé API Anthropic', keyOpenaiLabel: 'Clé API OpenAI', keyOpenrouterLabel: 'Clé API OpenRouter',
     keyGeminiLabel: 'Clé API Gemini', keyGeminiHint: '(gratuite pour tester)',
+    ollamaBaseUrlLabel: 'Adresse du serveur Ollama', ollamaBaseUrlHint: '(local uniquement — pas accessible si Fogbound tourne sur Railway, sauf via un tunnel)',
+    keyOllamaLabel: 'Clé API Ollama', keyOllamaHint: '(généralement inutile en local)',
     settingsImagesHeading: 'Images', imagesEnabledLabel: "Génération d'images",
     keyStabilityLabel: 'Clé API Stability', keyReplicateLabel: 'Clé API Replicate',
     keyAlreadySaved: '•••••••• (déjà enregistrée)',
@@ -325,9 +329,13 @@ const UI = {
     providerLabel: 'Provider',
     providerMock: 'Local demo (no key)',
     providerOpenrouter: 'OpenRouter (multiple models)',
+    providerOllama: 'Ollama (local model)',
+    modelPresetLabel: 'Preset model', modelPresetCustom: '(manual — see field below)',
     modelLabel: 'Model', modelHint: '(optional, otherwise the default)',
     keyAnthropicLabel: 'Anthropic API key', keyOpenaiLabel: 'OpenAI API key', keyOpenrouterLabel: 'OpenRouter API key',
     keyGeminiLabel: 'Gemini API key', keyGeminiHint: '(free to try)',
+    ollamaBaseUrlLabel: 'Ollama server address', ollamaBaseUrlHint: "(local only — unreachable if Fogbound runs on Railway, unless tunneled)",
+    keyOllamaLabel: 'Ollama API key', keyOllamaHint: '(usually unnecessary locally)',
     settingsImagesHeading: 'Images', imagesEnabledLabel: 'Image generation',
     keyStabilityLabel: 'Stability API key', keyReplicateLabel: 'Replicate API key',
     keyAlreadySaved: '•••••••• (already saved)',
@@ -1563,17 +1571,75 @@ function updateChapterLengthLabel() {
 }
 document.getElementById('chapterLengthSlider').oninput = updateChapterLengthLabel;
 
+// Presets shown per-provider in #textModelPreset — convenience only. Picking
+// one just fills #textModel, the actual field that gets saved, so any model
+// id (including ones not listed here, or a self-hosted Ollama model name)
+// still works by typing it directly. $/1M token figures are for display only
+// (see lib/pricing.js, the source of truth used for real cost estimates).
+const MODEL_PRESETS = {
+  anthropic: [
+    { id: 'claude-sonnet-5', label: 'Claude Sonnet 5 — $2/$10 per 1M' },
+    { id: 'claude-opus-5', label: 'Claude Opus 5 — $5/$25 per 1M' },
+    { id: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5 — $1/$5 per 1M' },
+    { id: 'claude-fable-5-1', label: 'Claude Fable 5.1 — écriture créative' },
+    { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6 — $3/$15 per 1M' }
+  ],
+  openai: [
+    { id: 'gpt-4o', label: 'GPT-4o — $2.50/$10 per 1M' },
+    { id: 'gpt-4o-mini', label: 'GPT-4o mini — $0.15/$0.60 per 1M' }
+  ],
+  openrouter: [
+    { id: 'anthropic/claude-sonnet-4.6', label: 'Claude Sonnet 4.6 (via OpenRouter)' },
+    { id: 'openai/gpt-4o', label: 'GPT-4o (via OpenRouter)' },
+    { id: 'meta-llama/llama-3.1-70b-instruct', label: 'Llama 3.1 70B (via OpenRouter)' }
+  ],
+  gemini: [
+    { id: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash — $0.75/$3.75 per 1M' },
+    { id: 'gemini-3.6-pro', label: 'Gemini 3.6 Pro — $2/$12 per 1M' }
+  ],
+  ollama: [
+    { id: 'llama3.1', label: 'Llama 3.1 (local, gratuit)' },
+    { id: 'mistral', label: 'Mistral (local, gratuit)' },
+    { id: 'qwen2.5', label: 'Qwen 2.5 (local, gratuit)' }
+  ],
+  mock: []
+};
+
+function renderModelPresets(provider) {
+  const select = document.getElementById('textModelPreset');
+  const customLabel = select.options[0]; // "(custom / manual)" — always kept as the first option
+  select.innerHTML = '';
+  select.appendChild(customLabel);
+  (MODEL_PRESETS[provider] || []).forEach(({ id, label }) => {
+    const opt = document.createElement('option');
+    opt.value = id;
+    opt.textContent = label;
+    select.appendChild(opt);
+  });
+}
+
+document.getElementById('textProvider').onchange = () => {
+  renderModelPresets(document.getElementById('textProvider').value);
+};
+
+document.getElementById('textModelPreset').onchange = () => {
+  const presetId = document.getElementById('textModelPreset').value;
+  if (presetId) document.getElementById('textModel').value = presetId;
+};
+
 async function loadSettings() {
   const s = await fetch(`${API}/settings`).then(r => r.json());
   document.getElementById('textProvider').value = s.textProvider;
   document.getElementById('textModel').value = s.textModel || '';
+  renderModelPresets(s.textProvider);
+  document.getElementById('ollamaBaseUrl').value = s.ollamaBaseUrl || '';
   document.getElementById('responseLanguage').value = s.language || 'fr';
   const lengthIdx = CHAPTER_LENGTH_VALUES.indexOf(s.chapterLength);
   document.getElementById('chapterLengthSlider').value = lengthIdx >= 0 ? lengthIdx : 1;
   updateChapterLengthLabel();
   document.getElementById('imageProvider').value = s.imageProvider;
   document.getElementById('imagesEnabled').checked = s.imagesEnabled;
-  ['anthropic', 'openai', 'openrouter', 'gemini', 'stability', 'replicate'].forEach(p => {
+  ['anthropic', 'openai', 'openrouter', 'gemini', 'ollama', 'stability', 'replicate'].forEach(p => {
     const field = document.getElementById(`key-${p}`);
     field.placeholder = s.apiKeys[p] ? t('keyAlreadySaved') : field.placeholder;
   });
@@ -1581,13 +1647,14 @@ async function loadSettings() {
 
 document.getElementById('saveSettingsBtn').onclick = async () => {
   const apiKeys = {};
-  ['anthropic', 'openai', 'openrouter', 'gemini', 'stability', 'replicate'].forEach(p => {
+  ['anthropic', 'openai', 'openrouter', 'gemini', 'ollama', 'stability', 'replicate'].forEach(p => {
     const val = document.getElementById(`key-${p}`).value.trim();
     if (val) apiKeys[p] = val; // only overwrite if the user typed something new
   });
   const body = {
     textProvider: document.getElementById('textProvider').value,
     textModel: document.getElementById('textModel').value.trim(),
+    ollamaBaseUrl: document.getElementById('ollamaBaseUrl').value.trim(),
     language: document.getElementById('responseLanguage').value,
     chapterLength: CHAPTER_LENGTH_VALUES[Number(document.getElementById('chapterLengthSlider').value)] || 'medium',
     imageProvider: document.getElementById('imageProvider').value,
@@ -1607,7 +1674,7 @@ document.getElementById('saveSettingsBtn').onclick = async () => {
   updateChapterLengthLabel();
   await loadCostSummary();
   document.getElementById('settingsStatus').textContent = t('savedStatus');
-  ['anthropic', 'openai', 'openrouter', 'gemini', 'stability', 'replicate'].forEach(p => {
+  ['anthropic', 'openai', 'openrouter', 'gemini', 'ollama', 'stability', 'replicate'].forEach(p => {
     document.getElementById(`key-${p}`).value = '';
   });
   await loadSettings();

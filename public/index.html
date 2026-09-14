@@ -278,6 +278,12 @@
           <option value="openai">OpenAI</option>
           <option value="openrouter" data-i18n="providerOpenrouter"></option>
           <option value="gemini">Google (Gemini)</option>
+          <option value="ollama" data-i18n="providerOllama"></option>
+        </select>
+      </label>
+      <label><span data-i18n="modelPresetLabel"></span>
+        <select id="textModelPreset">
+          <option value="" data-i18n="modelPresetCustom"></option>
         </select>
       </label>
       <label><span data-i18n="modelLabel"></span> <span class="hint-inline" data-i18n="modelHint"></span>
@@ -287,6 +293,8 @@
       <label class="key-field"><span data-i18n="keyOpenaiLabel"></span> <input id="key-openai" type="password" placeholder="sk-..."></label>
       <label class="key-field"><span data-i18n="keyOpenrouterLabel"></span> <input id="key-openrouter" type="password" placeholder="sk-or-..."></label>
       <label class="key-field"><span data-i18n="keyGeminiLabel"></span> <span class="hint-inline" data-i18n="keyGeminiHint"></span><input id="key-gemini" type="password" placeholder="AIza..."></label>
+      <label class="key-field"><span data-i18n="ollamaBaseUrlLabel"></span> <span class="hint-inline" data-i18n="ollamaBaseUrlHint"></span><input id="ollamaBaseUrl" type="text" placeholder="http://localhost:11434"></label>
+      <label class="key-field"><span data-i18n="keyOllamaLabel"></span> <span class="hint-inline" data-i18n="keyOllamaHint"></span><input id="key-ollama" type="password" placeholder="(optionnel)"></label>
     </div>
 
     <div class="settings-group">

@@ -105,6 +105,31 @@ async function callGemini({ system, user, apiKey, model }) {
   };
 }
 
+// Ollama exposes an OpenAI-compatible endpoint (/v1/chat/completions) which is
+// far more stable to target than its native API shape — same request/response
+// contract as callOpenAI, just against a local (or tunneled) baseUrl instead
+// of a fixed hostname, and with no key required by default.
+async function callOllama({ system, user, apiKey, model, baseUrl }) {
+  const url = `${(baseUrl || 'http://localhost:11434').replace(/\/$/, '')}/v1/chat/completions`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}) },
+    body: JSON.stringify({
+      model: model || 'llama3.1',
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: user }
+      ]
+    })
+  });
+  if (!res.ok) await throwApiError('Ollama', res);
+  const data = await res.json();
+  return {
+    text: data.choices[0].message.content,
+    usage: { inputTokens: data.usage?.prompt_tokens || 0, outputTokens: data.usage?.completion_tokens || 0 }
+  };
+}
+
 // Deterministic fake provider — no network, no key required. Used for local
 // testing and as a safe default so the app never fails with "no key set".
 async function callMock({ system, user }) {
@@ -271,7 +296,7 @@ async function callMock({ system, user }) {
   };
 }
 
-const providers = { anthropic: callAnthropic, openai: callOpenAI, openrouter: callOpenRouter, gemini: callGemini, mock: callMock };
+const providers = { anthropic: callAnthropic, openai: callOpenAI, openrouter: callOpenRouter, gemini: callGemini, ollama: callOllama, mock: callMock };
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -294,12 +319,12 @@ function isRetryable(err) {
 
 const RETRY_DELAYS_MS = [1000, 2500]; // up to 2 retries (3 attempts total)
 
-async function generateText({ provider, system, user, apiKey, model }) {
+async function generateText({ provider, system, user, apiKey, model, baseUrl }) {
   const fn = providers[provider] || providers.mock;
   let lastError;
   for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
     try {
-      return await fn({ system, user, apiKey, model });
+      return await fn({ system, user, apiKey, model, baseUrl });
     } catch (e) {
       lastError = e;
       if (!isRetryable(e) || attempt === RETRY_DELAYS_MS.length) throw e;
