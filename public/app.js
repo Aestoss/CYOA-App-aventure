@@ -1598,9 +1598,9 @@ const MODEL_PRESETS = {
     { id: 'gemini-3.6-pro', label: 'Gemini 3.6 Pro — $2/$12 per 1M' }
   ],
   ollama: [
-    { id: 'llama3.1', label: 'Llama 3.1 (local, gratuit)' },
-    { id: 'mistral', label: 'Mistral (local, gratuit)' },
-    { id: 'qwen2.5', label: 'Qwen 2.5 (local, gratuit)' }
+    { id: 'llama3.1:8b', label: 'Llama 3.1 8B — rapide, ~5 Go VRAM' },
+    { id: 'qwen3:14b', label: 'Qwen 3 14B — bon compromis prose/JSON, ~9 Go VRAM' },
+    { id: 'mistral-small:22b', label: 'Mistral Small 22B — meilleure prose, ~13,5 Go VRAM' }
   ],
   mock: []
 };
