@@ -118,6 +118,9 @@ async function callMock({ system, user }) {
       victory_text: 'You understand the fog now — and it understands you. Whatever you choose next, the lighthouse will remember.',
       defeat_condition: 'The player character is lost in the fog with no way back to the lighthouse.',
       defeat_text: 'The fog closes in, and this time it does not let go. Your story ends here, somewhere in the grey.',
+      image_style: 'Moody painterly illustration, desaturated blues and greys, soft directional lighting.',
+      image_style_prefix: 'atmospheric painterly illustration,',
+      image_style_suffix: ', desaturated cold palette, soft lighting, fog, highly detailed',
       tracked_items: [
         {
           name: 'Inventory', data_type: 'text', visibility: 'player_and_ai', update_automatically: true,

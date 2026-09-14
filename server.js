@@ -47,8 +47,8 @@ app.post('/api/worlds', async (req, res) => {
 
 app.patch('/api/worlds/:id', (req, res) => {
   try {
-    const { instructions, authorStyle } = req.body;
-    const world = updateWorldInstructions(req.params.id, { instructions, authorStyle });
+    const { instructions, authorStyle, imageStyle, imageStylePrefix, imageStyleSuffix } = req.body;
+    const world = updateWorldInstructions(req.params.id, { instructions, authorStyle, imageStyle, imageStylePrefix, imageStyleSuffix });
     res.json({ ok: true, world: publicWorld(world) });
   } catch (e) {
     res.status(400).json({ error: e.message });

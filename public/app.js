@@ -263,6 +263,9 @@ document.getElementById('editWorldBtn').onclick = async () => {
   const data = await fetch(`${API}/worlds/${currentWorldId}`).then(r => r.json());
   document.getElementById('worldInstructionsInput').value = data.world.instructions || '';
   document.getElementById('worldAuthorStyleInput').value = data.world.authorStyle || '';
+  document.getElementById('worldImageStyleInput').value = data.world.imageStyle || '';
+  document.getElementById('worldImageStylePrefixInput').value = data.world.imageStylePrefix || '';
+  document.getElementById('worldImageStyleSuffixInput').value = data.world.imageStyleSuffix || '';
   showView('worldEdit');
 };
 
@@ -271,7 +274,10 @@ document.getElementById('closeWorldEditBtn').onclick = () => showView('story');
 document.getElementById('saveWorldEditBtn').onclick = async () => {
   const body = {
     instructions: document.getElementById('worldInstructionsInput').value,
-    authorStyle: document.getElementById('worldAuthorStyleInput').value
+    authorStyle: document.getElementById('worldAuthorStyleInput').value,
+    imageStyle: document.getElementById('worldImageStyleInput').value,
+    imageStylePrefix: document.getElementById('worldImageStylePrefixInput').value,
+    imageStyleSuffix: document.getElementById('worldImageStyleSuffixInput').value
   };
   const res = await fetch(`${API}/worlds/${currentWorldId}`, {
     method: 'PATCH',
