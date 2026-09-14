@@ -175,6 +175,44 @@ supplémentaire).
         Changement non trivial ; à cadrer avant de s'y lancer (quel(s)
         fournisseur(s) prioriser, SSE vs WebSocket, que faire pour le
         fournisseur mock qui ne "streame" rien).
+- [ ] **Streamer le texte des chapitres au fur et à mesure, comme Infinite
+      Worlds.** Demande utilisateur : sur Infinite Worlds, le texte d'un
+      nouveau tour apparaît progressivement (mot par mot / phrase par
+      phrase) pendant que la suite est encore en train d'être générée,
+      plutôt que d'attendre le bloc complet comme actuellement (le chapitre
+      entier s'affiche d'un coup une fois `playTurn` totalement terminé).
+      Objectif double : donner l'impression que ça avance (moins frustrant
+      pendant l'attente) et, si c'est vraiment possible, afficher le tout
+      début du chapitre plus tôt plutôt que d'attendre la fin de la
+      génération complète du JSON du tour.
+      - Nuance importante à trancher avant d'implémenter : `chapter_text`
+        n'est qu'un champ du JSON structuré renvoyé par le modèle pour un
+        tour (avec `outcome`, `tracked_item_updates`, `state_updates`,
+        `suggested_actions`, etc., voir `lib/gameEngine.js`/
+        `lib/promptBuilder.js`). Avec l'API standard (non-streamée)
+        actuelle, il faut que le JSON entier soit reçu et valide
+        (`parseModelJSON`) avant de pouvoir en extraire quoi que ce soit,
+        donc `chapter_text` n'est disponible ni plus tôt ni séparément des
+        autres champs. Pour un vrai gain de latence perçue sur le début du
+        texte, il faudrait soit (a) demander `chapter_text` en flux SSE
+        *avant* le reste du JSON (changement de format de sortie demandé
+        au modèle, plus fragile à parser), soit (b) accepter un vrai
+        streaming JSON incrémental côté serveur pour détecter dès que le
+        champ `chapter_text` est complet et le pousser au client avant que
+        le reste du tour ait fini d'arriver.
+      - Recoupe la note ci-dessus sur la barre de progression de création
+        de monde (même prérequis technique : streaming API côté
+        `providers/textProviders.js`, canal SSE/WebSocket `server.js` →
+        client). Si un jour ce chantier de streaming est fait, il vaudrait
+        la peine de le faire une fois pour les deux usages (création de
+        monde ET génération de tour) plutôt que deux fois séparément.
+      - Sans streaming réel, une version "cosmétique" light est possible en
+        attendant : une fois la réponse complète reçue, afficher
+        `chapter_text` avec un effet d'apparition progressive côté client
+        uniquement (ex. mot par mot avec un petit délai) — ça améliore le
+        ressenti pendant la lecture, mais ne réduit pas le temps d'attente
+        réel avant que le premier mot apparaisse, contrairement au vrai
+        streaming.
 - [ ] **Slider de longueur des chapitres : granularité 100 → 1000 mots,
       par pas de 100.** Remplacer les 3 paliers actuels (court/moyen/long
       ≈ 200/400/800 mots, `CHAPTER_LENGTH_VALUES` dans `public/app.js`,
