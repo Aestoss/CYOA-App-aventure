@@ -58,7 +58,7 @@ async function callOpenRouter({ system, user, apiKey, model }) {
 }
 
 async function callGemini({ system, user, apiKey, model }) {
-  const m = model || 'gemini-2.0-flash';
+  const m = model || 'gemini-3.6-flash';
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${apiKey}`,
     {
