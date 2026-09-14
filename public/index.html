@@ -52,20 +52,52 @@
   <section id="view-story" class="view hidden">
     <div class="story-header-row">
       <button id="backBtn" class="text-btn">‹ Mes histoires</button>
-      <button id="editWorldBtn" class="icon-btn" aria-label="Modifier le monde" title="Modifier le monde">✏️</button>
+      <div class="story-header-actions">
+        <button id="authorModeBtn" class="icon-btn" aria-label="Mode auteur" title="Mode auteur (voir le caché, parler au narrateur)">🔓</button>
+        <button id="editWorldBtn" class="icon-btn" aria-label="Modifier le monde" title="Modifier le monde">✏️</button>
+      </div>
     </div>
     <h2 id="storyTitle"></h2>
     <p id="storyCharacter" class="story-character hidden"></p>
     <p id="storyObjective" class="story-objective hidden"></p>
+
+    <div class="page-nav">
+      <button id="prevPageBtn" class="icon-btn" aria-label="Page précédente">‹</button>
+      <span id="pageIndicator" class="page-indicator"></span>
+      <button id="nextPageBtn" class="icon-btn" aria-label="Page suivante">›</button>
+    </div>
+
+    <div id="secretInfoBox" class="secret-info-box hidden"></div>
     <div id="trackedItemsPanel" class="tracked-items-panel hidden"></div>
     <div id="storyImage" class="story-image hidden"><img id="storyImageEl" alt=""></div>
-    <div id="chapterFeed" class="chapter-feed"></div>
+    <div id="pageContent" class="chapter-feed"></div>
     <div id="gameOverBanner" class="game-over-banner hidden"></div>
-    <div id="suggestedActions" class="suggested-actions"></div>
-    <form id="actionForm" class="action-form">
-      <input id="actionInput" type="text" placeholder="Que fais-tu ?" autocomplete="off">
-      <button type="submit" class="primary-btn">Envoyer</button>
-    </form>
+
+    <div id="pastPageActions" class="past-page-actions hidden">
+      <button id="resumeFromPageBtn" class="primary-btn">⏪ Reprendre à partir d'ici</button>
+      <p class="hint">Tout ce qui vient après cette page sera perdu.</p>
+    </div>
+
+    <div id="latestPageActions" class="latest-page-actions">
+      <div id="regeneratePopover" class="regenerate-popover hidden">
+        <label>Action <input type="text" id="regenerateActionInput"></label>
+        <label>Note pour le narrateur <span class="hint-inline">(optionnel — "je veux qu'il se passe plutôt...")</span>
+          <input type="text" id="regenerateNoteInput">
+        </label>
+        <div class="regenerate-popover-actions">
+          <button id="regenerateConfirmBtn" class="primary-btn">Régénérer</button>
+          <button id="regenerateCancelBtn" class="text-btn">Annuler</button>
+        </div>
+      </div>
+      <div id="suggestedActions" class="suggested-actions"></div>
+      <div class="action-row">
+        <button id="regenerateBtn" class="icon-btn hidden" aria-label="Régénérer ce tour" title="Régénérer ce tour">🔄</button>
+        <form id="actionForm" class="action-form">
+          <input id="actionInput" type="text" placeholder="Que fais-tu ?" autocomplete="off">
+          <button type="submit" class="primary-btn">Envoyer</button>
+        </form>
+      </div>
+    </div>
   </section>
 
   <!-- World editor: opens right after creating a world, and via ✏️ later -->
@@ -134,6 +166,15 @@
 
     <div class="settings-group">
       <h3>Texte</h3>
+      <label>Langue des réponses
+        <select id="responseLanguage">
+          <option value="fr">Français</option>
+          <option value="en">English</option>
+        </select>
+      </label>
+      <label>Longueur des chapitres <span id="chapterLengthLabel" class="hint-inline"></span>
+        <input type="range" id="chapterLengthSlider" min="0" max="2" step="1" value="1">
+      </label>
       <label>Fournisseur
         <select id="textProvider">
           <option value="mock">Démo locale (sans clé)</option>

@@ -19,6 +19,16 @@ Toutes les phases de la feuille de route `docs/INFINITE_WORLDS_REFERENCE.md` (A 
 - **Suppression** de mondes (en cascade sur leurs sauvegardes) et de sauvegardes individuelles, avec confirmation.
 - **Suivi des coûts** : jetons + estimation en $ par appel IA, visible dans Réglages.
 - Barre de progression pendant la génération d'un monde.
+
+**Puis un troisième lot (pagination façon Infinite Worlds, voir `TODO.md`) :**
+- **Une page par tour**, navigable (‹ ›), plutôt qu'un flux continu.
+- **Retour en arrière destructif** : reprendre depuis une page passée efface tout ce qui suit et restaure l'état exact du jeu à cet instant.
+- **Régénérer le dernier tour** : action modifiée, ou action d'origine + note de recadrage pour l'IA.
+- **Langue des réponses** (français/anglais) et **longueur des chapitres** (court/moyen/long) réglables.
+- **Réussite/échec caché au joueur** par défaut.
+- **Mode auteur** (🔓) : révèle l'état caché (secretInfo, objets IA-seule) et permet d'envoyer une instruction directe au narrateur, hors-personnage.
+- **Mise en page plus lisible** (paragraphes) pour le texte généré.
+
 - Frontend complet (une seule page web, installable sur téléphone)
 - Système de prompts en couches (Master Prompt / World Bible / Mémoire / Tours récents), comme détaillé dans le plan
 - Mémoire réelle : faits extraits stockés en base + résumé automatique tous les ~15-20 tours

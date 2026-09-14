@@ -4,80 +4,71 @@ Backlog de fonctionnalités demandées, à implémenter seulement quand
 explicitement demandé (rien ici n'est fait tant que la case n'est pas cochée).
 Ce fichier s'alimente au fil des demandes — ne pas hésiter à en rajouter.
 
-## Fait (lot du 14/09)
+## Fait (lot du 14/09 — monde/sauvegarde, éditeur, coûts)
 
-- [x] **Barre de progression pendant la génération d'un monde** (indéterminée,
-      avec message d'étape qui tourne — pas de vraie progression puisque
-      l'appel IA est unique et non streamé).
-- [x] **Ouvrir l'éditeur de monde juste après la création**, avant la
-      sélection de personnage / le premier tour.
-- [x] **Édition des personnages depuis l'écran de sélection de personnage**
-      (édition en ligne dans la carte du personnage).
-- [x] **Bouton "Ajouter un personnage"** dans l'éditeur de monde.
-- [x] **Bouton "Générer un personnage par IA"** dans l'éditeur.
-- [x] **Bouton "Retoucher avec l'IA"** dans l'éditeur de monde (retouche
-      légère, ne touche jamais aux personnages/objets/chapitre d'ouverture).
-- [x] **Distinguer "monde" et "sauvegarde".** Un monde est un modèle
-      réutilisable (`POST /api/worlds/:id/saves` démarre toujours une aventure
-      neuve) ; une sauvegarde est une partie en cours et indépendante
-      (compétences, objets suivis, personnages rencontrés, état caché —
-      chacun a sa propre copie par sauvegarde).
-- [x] **Suppression des mondes/sauvegardes** depuis la liste des histoires
-      (avec confirmation ; supprimer un monde supprime en cascade toutes ses
-      sauvegardes).
-- [x] **Suivi des coûts de génération** : jetons + estimation $ par appel IA,
-      visible dans Réglages → Coûts. Estimation approximative (tarifs
-      éditables dans `lib/pricing.js`), OpenRouter affiché en jetons seuls
-      (pas de tarif fixe possible).
+- [x] Barre de progression pendant la génération d'un monde (indéterminée).
+- [x] Ouvrir l'éditeur de monde juste après la création.
+- [x] Édition des personnages depuis l'écran de sélection de personnage.
+- [x] Bouton "Ajouter un personnage" dans l'éditeur de monde.
+- [x] Bouton "Générer un personnage par IA" dans l'éditeur.
+- [x] Bouton "Retoucher avec l'IA" dans l'éditeur de monde.
+- [x] Distinguer "monde" (modèle réutilisable) et "sauvegarde" (partie en
+      cours indépendante).
+- [x] Suppression des mondes/sauvegardes (cascade + confirmation).
+- [x] Suivi des coûts de génération (jetons + estimation $, Réglages → Coûts).
 
-Testé de bout en bout dans un vrai navigateur (Playwright) : création →
-éditeur → ajout/génération/édition de personnages → retouche IA → sélection
-avec édition en ligne → tour de jeu → victoire → continuer → deuxième
-aventure indépendante depuis le même monde → suppression sauvegarde/monde
-en cascade → coûts.
+## Fait (second lot du 14/09 — pagination, retour en arrière, régénération)
 
-## Nouveau lot (demandé le 14/09, pas encore fait)
+- [x] **Pagination façon Infinite Worlds** : chaque tour est une page
+      (`GET /api/saves/:id` renvoie tous les tours, un seul affiché à la fois),
+      navigation ‹ › avec indicateur "Page N / Total".
+- [x] **Longueur des chapitres réglable** : slider dans Réglages
+      (court ~200 mots / moyen ~400 / long ~800 mots).
+- [x] **Retour en arrière destructif** : depuis une page passée, "⏪ Reprendre
+      à partir d'ici" supprime tout ce qui suit (tours, faits mémorisés) et
+      restaure exactement l'état du jeu (objets suivis, personnages, secret)
+      à cet instant, via un instantané stocké sur chaque tour
+      (`turn.snapshot`, `rewindToTurn` dans `lib/gameEngine.js`).
+- [x] **Régénérer un tour** (🔄 sur la dernière page uniquement) : soit en
+      modifiant l'action envoyée à l'IA, soit en gardant l'action d'origine
+      et en ajoutant une note de recadrage ("je veux qu'il se passe plutôt...")
+      — les deux passent par `regenerateTurn` (rewind + rejoue).
+- [x] **Sélection de la langue** des réponses (français/anglais) dans Réglages.
+- [x] **Réussite/échec caché au joueur par défaut** — `outcome`/`skillUsed`
+      ne sont plus renvoyés par l'API sauf en mode auteur.
+- [x] **Mode auteur** (🔓 dans la vue histoire) : révèle secretInfo et les
+      objets `ai_only` (par page, via l'instantané du tour), et transforme la
+      zone de saisie en instruction directe au narrateur (hors-personnage,
+      pas de jet de compétence) plutôt qu'une action du personnage.
+- [x] **Mise en page plus lisible** : consigne de paragraphes courts dans le
+      prompt + découpage du texte en `<p>` côté affichage (au lieu d'un bloc
+      unique où les retours à la ligne ne s'affichaient pas).
 
-- [ ] **Sélection de la langue de sortie** des réponses de l'IA — prévoir
-      anglais et français pour commencer.
-- [ ] **Revenir en arrière sur les tours** : pouvoir sélectionner un tour
-      passé et reprendre la partie à partir de là (annule les tours suivants,
-      ou crée une branche — à trancher au moment de l'implémentation).
-- [ ] **Cacher la réussite/l'échec au joueur.** Actuellement affiché comme un
-      badge (✅/⚠️/❌) à côté de l'action — à retirer de l'interface tout en
-      gardant `outcome`/`skill_used` en interne pour la narration.
-- [ ] **Mode "auteur" / debug** : pouvoir afficher les informations
-      normalement cachées (secretInfo, valeurs des objets `ai_only`) et
-      envoyer une instruction directe à l'IA narratrice en contournant la
-      case normale "que fais-tu ?" (équivalent d'un "quoi qu'il arrive,
-      fais X" adressé au MJ plutôt qu'au personnage).
-- [ ] **Étudier pourquoi Infinite Worlds affiche chaque tour comme une page
-      séparée** (plutôt qu'un flux continu comme chez nous) — comprendre
-      l'intérêt (lisibilité ? limite de contexte affiché ? rythme narratif ?)
-      avant de décider si Fogbound doit faire pareil.
-- [ ] **Les tours sont plus courts que sur Infinite World** — allonger le
-      texte généré par tour (revoir la fourchette de mots dans le prompt).
-- [ ] **Mise en page du texte à améliorer** : les réponses manquent de
-      structure/retours à la ligne, ce qui les rend difficiles à lire —
-      demander à l'IA une mise en forme plus lisible (paragraphes séparés,
-      dialogues sur leur propre ligne...).
+Testé de bout en bout en navigateur réel (Playwright) : réglages langue/
+longueur persistants → création → pagination (précédent/suivant, désactivation
+aux bornes) → mode auteur (secretInfo visible + instruction directe) →
+régénération (action modifiée, puis note seule) → retour en arrière destructif
+depuis une page passée → victoire → continuer. Un vrai bug a été trouvé et
+corrigé pendant le test (le conteneur des actions de la dernière page n'avait
+pas de règle CSS `.hidden`, donc restait visible même masqué en JS).
+
+## Pas encore fait
+
+- [ ] **Pourquoi Infinite Worlds pagine par tour** — question de recherche
+      devenue sans objet : on a implémenté la pagination directement sur
+      demande, plutôt que d'étudier le rationnel avant. Retiré de la liste.
 
 ---
 
-## Notes pour plus tard (pistes, pas des décisions)
+## Notes pour plus tard
 
-- Le "retour en arrière sur les tours" et le mode "auteur" touchent tous les
-  deux à la façon dont une sauvegarde est mutée — à concevoir ensemble plutôt
-  que séparément si les deux sont demandés en même temps (ex. revenir en
-  arrière doit aussi purger `memoryFacts`/`saveTrackedItemValues` postérieurs
-  au tour choisi, pas seulement les lignes de `turns`).
-- Cacher réussite/échec au joueur est un pur changement d'affichage
-  (`renderChapters` dans `public/app.js`) — aucun changement côté serveur/IA
-  nécessaire, l'info existe déjà, elle est juste actuellement montrée.
-- Pour la longueur/mise en forme des tours : ajuster les instructions
-  `chapter_text` dans `lib/promptBuilder.js` (`MASTER_PROMPT`) — fourchette de
-  mots plus large + consigne explicite de paragraphes courts/retours à la
-  ligne. Vérifier aussi que le rendu HTML (`escapeHtml` + `innerHTML`) affiche
-  bien les sauts de ligne (actuellement le texte est mis dans un seul
-  `<div>`, un `\n` ne s'affichera pas sans `white-space: pre-line` ou un
-  découpage en `<p>`).
+- Le retour en arrière est volontairement destructif (pas de branches) —
+  si le besoin de garder plusieurs versions en parallèle apparaît un jour,
+  il faudra revoir `rewindToTurn` pour dupliquer la sauvegarde au lieu de
+  tronquer `turns` sur place.
+- Le mode auteur est une bascule de session (variable JS `debugModeOn`,
+  jamais persistée) — s'il doit un jour survivre à un rechargement de page,
+  prévoir un paramètre d'URL ou un stockage local.
+- La régénération ne s'applique qu'à la dernière page (pas aux pages
+  passées) — pour regénérer un tour plus ancien, il faut d'abord "reprendre
+  à partir d'ici" juste avant, puis rejouer.

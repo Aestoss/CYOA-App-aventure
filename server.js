@@ -6,7 +6,7 @@ const {
   createWorld, getWorld, updateWorld, aiEditWorld, deleteWorld,
   addCharacter, generateCharacterWithAI, updateCharacter, deleteCharacter,
   createSave, getSave, selectCharacter, continueAfterVictory, deleteSave,
-  playTurn, getSettings
+  playTurn, rewindToTurn, regenerateTurn, getSettings
 } = require('./lib/gameEngine');
 const { getTotalCosts, getWorldCosts } = require('./lib/costTracker');
 
@@ -32,6 +32,22 @@ function worldPublicTrackedItemDefs(worldId) {
   // ai_only tracked items are deliberately withheld from the client — that's
   // the whole point of the visibility flag (hidden state, e.g. a secret plot flag).
   return db.get('trackedItemDefs').filter({ worldId, visibility: 'player_and_ai' }).value();
+}
+
+// Turns carry a full state snapshot (see gameEngine.captureSnapshot) so a
+// past page can show tracked items as they were at that point in the story.
+// outcome/skillUsed are deliberately not shown to the player by default —
+// only "mode auteur" (debug=true) reveals them, along with ai_only items.
+function publicTurn(turn, { debug, itemDefs }) {
+  if (!turn) return turn;
+  const snapshot = turn.snapshot || { trackedItemValues: [], secretInfo: '' };
+  const visibleDefs = debug ? itemDefs : itemDefs.filter(d => d.visibility === 'player_and_ai');
+  const trackedItems = visibleDefs.map(def => {
+    const row = snapshot.trackedItemValues.find(v => v.itemDefId === def.id);
+    return { name: def.name, value: row ? row.value : def.initialValue, visibility: def.visibility };
+  });
+  const { snapshot: _snapshot, outcome, skillUsed, ...rest } = turn;
+  return debug ? { ...rest, outcome, skillUsed, trackedItems, secretInfo: snapshot.secretInfo || '' } : { ...rest, trackedItems };
 }
 
 // ---------- Worlds (reusable templates) ----------
@@ -160,7 +176,8 @@ app.get('/api/saves', (req, res) => {
 app.post('/api/worlds/:id/saves', (req, res) => {
   try {
     const result = createSave(req.params.id);
-    res.json({ save: publicSave(result.save), openingTurn: result.openingTurn });
+    const itemDefs = db.get('trackedItemDefs').filter({ worldId: req.params.id }).value();
+    res.json({ save: publicSave(result.save), openingTurn: publicTurn(result.openingTurn, { debug: false, itemDefs }) });
   } catch (e) {
     res.status(400).json({ error: e.message });
   }
@@ -168,23 +185,17 @@ app.post('/api/worlds/:id/saves', (req, res) => {
 
 app.get('/api/saves/:id', (req, res) => {
   try {
+    const debug = req.query.debug === '1' || req.query.debug === 'true';
     const save = getSave(req.params.id);
     const world = getWorld(save.worldId);
-    const turns = db.get('turns').filter({ saveId: save.id }).sortBy('turnNumber').value();
-    const characters = db.get('saveCharacters').filter({ saveId: save.id }).value();
-    const itemDefs = worldPublicTrackedItemDefs(world.id);
-    const itemValues = db.get('saveTrackedItemValues').filter({ saveId: save.id }).value();
-    const trackedItems = itemDefs.map(def => {
-      const row = itemValues.find(v => v.itemDefId === def.id);
-      return { name: def.name, value: row ? row.value : def.initialValue };
-    });
+    const itemDefs = db.get('trackedItemDefs').filter({ worldId: world.id }).value();
+    const turns = db.get('turns').filter({ saveId: save.id }).sortBy('turnNumber').value()
+      .map(t => publicTurn(t, { debug, itemDefs }));
     res.json({
-      save: publicSave(save),
+      save: debug ? save : publicSave(save),
       world,
       turns,
-      characters,
-      playableCharacters: worldPlayableCharacters(world.id),
-      trackedItems
+      playableCharacters: worldPlayableCharacters(world.id)
     });
   } catch (e) {
     res.status(404).json({ error: e.message });
@@ -222,12 +233,38 @@ app.post('/api/saves/:id/continue', (req, res) => {
 
 app.post('/api/saves/:id/turn', async (req, res) => {
   try {
-    const { action } = req.body;
+    const { action, authorMode, debug } = req.body;
     if (!action || !action.trim()) return res.status(400).json({ error: 'action is required' });
-    const turn = await playTurn(req.params.id, action.trim());
-    res.json(turn);
+    const save = getSave(req.params.id);
+    const turn = await playTurn(req.params.id, action.trim(), { authorMode: Boolean(authorMode) });
+    const itemDefs = db.get('trackedItemDefs').filter({ worldId: save.worldId }).value();
+    res.json(publicTurn(turn, { debug: Boolean(debug), itemDefs }));
   } catch (e) {
     res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/saves/:id/turns/:turnNumber/regenerate', async (req, res) => {
+  try {
+    const { action, note, debug } = req.body;
+    const turnNumber = Number(req.params.turnNumber);
+    const save = getSave(req.params.id);
+    const turn = await regenerateTurn(req.params.id, turnNumber, { action, note });
+    const itemDefs = db.get('trackedItemDefs').filter({ worldId: save.worldId }).value();
+    res.json(publicTurn(turn, { debug: Boolean(debug), itemDefs }));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/saves/:id/rewind', (req, res) => {
+  try {
+    const { turnNumber } = req.body;
+    if (typeof turnNumber !== 'number') return res.status(400).json({ error: 'turnNumber is required' });
+    const save = rewindToTurn(req.params.id, turnNumber);
+    res.json({ ok: true, save: publicSave(save) });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
   }
 });
 
@@ -255,10 +292,12 @@ app.get('/api/settings', (req, res) => {
 
 app.post('/api/settings', (req, res) => {
   const current = db.get('settings').value();
-  const { textProvider, textModel, imageProvider, imagesEnabled, apiKeys } = req.body;
+  const { textProvider, textModel, language, chapterLength, imageProvider, imagesEnabled, apiKeys } = req.body;
   const next = {
     textProvider: textProvider ?? current.textProvider,
     textModel: textModel ?? current.textModel,
+    language: language ?? current.language,
+    chapterLength: chapterLength ?? current.chapterLength,
     imageProvider: imageProvider ?? current.imageProvider,
     imagesEnabled: typeof imagesEnabled === 'boolean' ? imagesEnabled : current.imagesEnabled,
     apiKeys: { ...current.apiKeys, ...(apiKeys || {}) }

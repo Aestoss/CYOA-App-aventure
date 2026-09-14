@@ -18,10 +18,16 @@ const CREATION_STEPS = [
   'Dernières touches...'
 ];
 
+const CHAPTER_LENGTH_VALUES = ['short', 'medium', 'long'];
+const CHAPTER_LENGTH_LABELS = { short: 'Court (~200 mots)', medium: 'Moyen (~400 mots)', long: 'Long (~800 mots)' };
+
 let currentSaveId = null;   // active save while in the story / character-select views
 let currentWorldId = null;  // active world while in the world-editor view
 let currentWorldSkills = []; // world.skills, needed to render character skill inputs
-let lastImageUrl = null;
+let currentSave = null;     // last-fetched save object (gameOver, activeCharacterId, secretInfo if debug)
+let currentTurns = [];      // all turns of the open save, oldest first — one "page" each
+let currentPageIndex = 0;   // which turn is currently displayed
+let debugModeOn = false;    // "mode auteur": reveals hidden info + turns the action box into a direct narrator instruction
 let previousView = 'home';
 
 function showView(name) {
@@ -448,19 +454,29 @@ document.getElementById('backFromCharSelectBtn').onclick = () => {
   loadHome();
 };
 
-// ---------- Story ----------
+// ---------- Story (one page per turn, like Infinite Worlds) ----------
 
 async function openSave(id) {
   currentSaveId = id;
-  const data = await fetch(`${API}/saves/${id}`).then(r => r.json());
+  debugModeOn = false;
+  await refreshSave(true);
+}
+
+// Re-fetches the save and re-renders. jumpToLatest=true snaps to the newest
+// page (after playing/regenerating/rewinding); false keeps the current page
+// position (after just toggling mode auteur).
+async function refreshSave(jumpToLatest) {
+  const data = await fetch(`${API}/saves/${currentSaveId}${debugModeOn ? '?debug=1' : ''}`).then(r => r.json());
   if (!data.save.activeCharacterId) {
-    showCharacterSelect(data.world, data.playableCharacters, id);
+    showCharacterSelect(data.world, data.playableCharacters, currentSaveId);
     return;
   }
   currentWorldId = data.world.id;
+  currentSave = data.save;
+  currentTurns = data.turns;
+  currentPageIndex = jumpToLatest ? currentTurns.length - 1 : Math.min(currentPageIndex, currentTurns.length - 1);
+
   showView('story');
-  const feed = document.getElementById('chapterFeed');
-  feed.innerHTML = '<p class="loading">Chargement de l\'histoire...</p>';
   document.getElementById('storyTitle').textContent = data.world.title;
   const activeCharacter = (data.playableCharacters || []).find(c => c.id === data.save.activeCharacterId);
   const charEl = document.getElementById('storyCharacter');
@@ -477,9 +493,70 @@ async function openSave(id) {
   } else {
     objectiveEl.classList.add('hidden');
   }
-  renderChapters(data.turns);
-  renderGameOver(data.save.gameOver);
-  renderTrackedItems(data.trackedItems || []);
+  document.getElementById('authorModeBtn').classList.toggle('active', debugModeOn);
+  document.getElementById('regeneratePopover').classList.add('hidden');
+  renderPage();
+}
+
+function formatChapterText(text) {
+  const paragraphs = (text || '').split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
+  const list = paragraphs.length ? paragraphs : [(text || '').trim()];
+  return list.map(p => `<p>${escapeHtml(p)}</p>`).join('');
+}
+
+function renderPage() {
+  const turn = currentTurns[currentPageIndex];
+  const total = currentTurns.length;
+  const isLatest = currentPageIndex === total - 1;
+
+  document.getElementById('pageIndicator').textContent = `Page ${currentPageIndex + 1} / ${total}`;
+  document.getElementById('prevPageBtn').disabled = currentPageIndex === 0;
+  document.getElementById('nextPageBtn').disabled = isLatest;
+
+  const secretBox = document.getElementById('secretInfoBox');
+  if (debugModeOn) {
+    secretBox.textContent = `🔓 ${turn.secretInfo || '(rien de caché pour l\'instant)'}`;
+    secretBox.classList.remove('hidden');
+  } else {
+    secretBox.classList.add('hidden');
+  }
+
+  renderTrackedItems(turn.trackedItems || []);
+
+  const wrap = document.getElementById('storyImage');
+  const img = document.getElementById('storyImageEl');
+  if (turn.imageUrl) {
+    img.src = turn.imageUrl;
+    wrap.classList.remove('hidden');
+  } else {
+    wrap.classList.add('hidden');
+  }
+
+  const content = document.getElementById('pageContent');
+  const outcomeLabel = debugModeOn ? OUTCOME_LABELS[turn.outcome] : null;
+  const outcomeHtml = outcomeLabel ? ` <span class="outcome-badge outcome-${turn.outcome}">${outcomeLabel}</span>` : '';
+  const actionLine = turn.turnNumber === 0 ? '' : `<div class="player-action">→ ${escapeHtml(turn.playerAction)}${outcomeHtml}</div>`;
+  content.innerHTML = `<div class="chapter">${actionLine}${formatChapterText(turn.chapterText)}</div>`;
+
+  const gameOver = isLatest ? currentSave.gameOver : null;
+  renderGameOver(gameOver);
+
+  const pastActions = document.getElementById('pastPageActions');
+  const latestActions = document.getElementById('latestPageActions');
+  if (!isLatest) {
+    pastActions.classList.remove('hidden');
+    latestActions.classList.add('hidden');
+  } else {
+    pastActions.classList.add('hidden');
+    latestActions.classList.toggle('hidden', Boolean(gameOver));
+    if (!gameOver) {
+      renderSuggestions(turn.suggestedActions || []);
+      document.getElementById('regenerateBtn').classList.toggle('hidden', turn.turnNumber < 1);
+      document.getElementById('actionInput').placeholder = debugModeOn
+        ? 'Instruction au narrateur (hors-personnage)...'
+        : 'Que fais-tu ?';
+    }
+  }
 }
 
 function renderTrackedItems(items) {
@@ -491,18 +568,15 @@ function renderTrackedItems(items) {
   }
   panel.classList.remove('hidden');
   panel.innerHTML = items
-    .map(i => `<div class="tracked-item"><span class="tracked-item-name">${escapeHtml(i.name)}</span><span class="tracked-item-value">${escapeHtml(String(i.value))}</span></div>`)
+    .map(i => `<div class="tracked-item${i.visibility === 'ai_only' ? ' tracked-item-hidden' : ''}"><span class="tracked-item-name">${escapeHtml(i.name)}</span><span class="tracked-item-value">${escapeHtml(String(i.value))}</span></div>`)
     .join('');
 }
 
 function renderGameOver(gameOver) {
   const banner = document.getElementById('gameOverBanner');
-  const actions = document.getElementById('suggestedActions');
-  const form = document.getElementById('actionForm');
   if (!gameOver) {
     banner.classList.add('hidden');
-    banner.textContent = '';
-    form.classList.remove('hidden');
+    banner.innerHTML = '';
     return;
   }
   const label = gameOver.result === 'victory' ? 'Victoire' : 'Fin de l\'histoire';
@@ -511,52 +585,17 @@ function renderGameOver(gameOver) {
     : '';
   banner.className = `game-over-banner game-over-${gameOver.result}`;
   banner.innerHTML = `<strong>${label}</strong><p>${escapeHtml(gameOver.text)}</p>${continueHtml}`;
+  banner.classList.remove('hidden');
   if (gameOver.result === 'victory') {
     document.getElementById('continuePlayingBtn').onclick = continuePlaying;
   }
-  actions.innerHTML = '';
-  form.classList.add('hidden');
 }
 
 async function continuePlaying() {
   const res = await fetch(`${API}/saves/${currentSaveId}/continue`, { method: 'POST' });
   const data = await res.json();
   if (!res.ok) return alert('Impossible de continuer : ' + data.error);
-  renderGameOver(null);
-  const saveData = await fetch(`${API}/saves/${currentSaveId}`).then(r => r.json());
-  renderSuggestions(saveData.turns[saveData.turns.length - 1]?.suggestedActions || []);
-}
-
-function renderChapters(turns) {
-  const feed = document.getElementById('chapterFeed');
-  feed.innerHTML = '';
-  turns.forEach(t => {
-    const div = document.createElement('div');
-    div.className = 'chapter';
-    const outcomeLabel = OUTCOME_LABELS[t.outcome];
-    const outcomeHtml = outcomeLabel ? ` <span class="outcome-badge outcome-${t.outcome}">${outcomeLabel}</span>` : '';
-    const actionLine = t.turnNumber === 0 ? '' : `<div class="player-action">→ ${escapeHtml(t.playerAction)}${outcomeHtml}</div>`;
-    div.innerHTML = `${actionLine}<div>${escapeHtml(t.chapterText)}</div>`;
-    feed.appendChild(div);
-    if (t.imageUrl) lastImageUrl = t.imageUrl;
-  });
-  feed.scrollIntoView({ block: 'end' });
-  updateImage(turns[turns.length - 1]);
-  renderSuggestions(turns[turns.length - 1]?.suggestedActions || []);
-}
-
-function updateImage(lastTurn) {
-  const wrap = document.getElementById('storyImage');
-  const img = document.getElementById('storyImageEl');
-  if (lastTurn && lastTurn.imageUrl) {
-    lastImageUrl = lastTurn.imageUrl;
-  }
-  if (lastImageUrl) {
-    img.src = lastImageUrl;
-    wrap.classList.remove('hidden');
-  } else {
-    wrap.classList.add('hidden');
-  }
+  await refreshSave(true);
 }
 
 function renderSuggestions(actions) {
@@ -574,27 +613,22 @@ function renderSuggestions(actions) {
 async function playAction(action) {
   const input = document.getElementById('actionInput');
   input.value = '';
-  const feed = document.getElementById('chapterFeed');
+  const content = document.getElementById('pageContent');
   const pending = document.createElement('p');
   pending.className = 'loading';
-  pending.textContent = 'Le narrateur réfléchit...';
-  feed.appendChild(pending);
-  pending.scrollIntoView({ block: 'end' });
+  pending.textContent = debugModeOn ? 'Le narrateur applique l\'instruction...' : 'Le narrateur réfléchit...';
+  content.appendChild(pending);
   document.getElementById('suggestedActions').innerHTML = '';
 
   try {
     const res = await fetch(`${API}/saves/${currentSaveId}/turn`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ action })
+      body: JSON.stringify({ action, authorMode: debugModeOn, debug: debugModeOn })
     });
-    const turn = await res.json();
-    if (!res.ok) throw new Error(turn.error || 'Erreur inconnue');
-    pending.remove();
-    const data = await fetch(`${API}/saves/${currentSaveId}`).then(r => r.json());
-    renderChapters(data.turns);
-    renderGameOver(data.save.gameOver);
-    renderTrackedItems(data.trackedItems || []);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Erreur inconnue');
+    await refreshSave(true);
   } catch (e) {
     pending.textContent = 'Erreur : ' + e.message;
   }
@@ -606,9 +640,66 @@ document.getElementById('actionForm').onsubmit = (e) => {
   if (val) playAction(val);
 };
 
+document.getElementById('prevPageBtn').onclick = () => {
+  if (currentPageIndex > 0) { currentPageIndex--; renderPage(); }
+};
+document.getElementById('nextPageBtn').onclick = () => {
+  if (currentPageIndex < currentTurns.length - 1) { currentPageIndex++; renderPage(); }
+};
+
+document.getElementById('resumeFromPageBtn').onclick = async () => {
+  const turn = currentTurns[currentPageIndex];
+  if (!confirm('Reprendre à partir de cette page ? Tout ce qui vient après sera définitivement perdu.')) return;
+  const res = await fetch(`${API}/saves/${currentSaveId}/rewind`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ turnNumber: turn.turnNumber })
+  });
+  const data = await res.json();
+  if (!res.ok) return alert('Erreur : ' + data.error);
+  await refreshSave(true);
+};
+
+document.getElementById('regenerateBtn').onclick = () => {
+  const turn = currentTurns[currentPageIndex];
+  document.getElementById('regenerateActionInput').value = turn.playerAction;
+  document.getElementById('regenerateNoteInput').value = '';
+  document.getElementById('regeneratePopover').classList.remove('hidden');
+};
+document.getElementById('regenerateCancelBtn').onclick = () => {
+  document.getElementById('regeneratePopover').classList.add('hidden');
+};
+document.getElementById('regenerateConfirmBtn').onclick = async () => {
+  const turn = currentTurns[currentPageIndex];
+  const action = document.getElementById('regenerateActionInput').value.trim();
+  const note = document.getElementById('regenerateNoteInput').value.trim();
+  const btn = document.getElementById('regenerateConfirmBtn');
+  btn.disabled = true;
+  try {
+    const res = await fetch(`${API}/saves/${currentSaveId}/turns/${turn.turnNumber}/regenerate`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action, note, debug: debugModeOn })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    document.getElementById('regeneratePopover').classList.add('hidden');
+    await refreshSave(true);
+  } catch (e) {
+    alert('Erreur : ' + e.message);
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+document.getElementById('authorModeBtn').onclick = async () => {
+  debugModeOn = !debugModeOn;
+  await refreshSave(false);
+};
+
 document.getElementById('backBtn').onclick = () => {
   currentSaveId = null;
-  lastImageUrl = null;
+  debugModeOn = false;
   showView('home');
   loadHome();
 };
@@ -641,10 +732,20 @@ async function loadCostSummary() {
   `;
 }
 
+function updateChapterLengthLabel() {
+  const idx = Number(document.getElementById('chapterLengthSlider').value);
+  document.getElementById('chapterLengthLabel').textContent = CHAPTER_LENGTH_LABELS[CHAPTER_LENGTH_VALUES[idx]] || '';
+}
+document.getElementById('chapterLengthSlider').oninput = updateChapterLengthLabel;
+
 async function loadSettings() {
   const s = await fetch(`${API}/settings`).then(r => r.json());
   document.getElementById('textProvider').value = s.textProvider;
   document.getElementById('textModel').value = s.textModel || '';
+  document.getElementById('responseLanguage').value = s.language || 'fr';
+  const lengthIdx = CHAPTER_LENGTH_VALUES.indexOf(s.chapterLength);
+  document.getElementById('chapterLengthSlider').value = lengthIdx >= 0 ? lengthIdx : 1;
+  updateChapterLengthLabel();
   document.getElementById('imageProvider').value = s.imageProvider;
   document.getElementById('imagesEnabled').checked = s.imagesEnabled;
   ['anthropic', 'openai', 'openrouter', 'gemini', 'stability', 'replicate'].forEach(p => {
@@ -662,6 +763,8 @@ document.getElementById('saveSettingsBtn').onclick = async () => {
   const body = {
     textProvider: document.getElementById('textProvider').value,
     textModel: document.getElementById('textModel').value.trim(),
+    language: document.getElementById('responseLanguage').value,
+    chapterLength: CHAPTER_LENGTH_VALUES[Number(document.getElementById('chapterLengthSlider').value)] || 'medium',
     imageProvider: document.getElementById('imageProvider').value,
     imagesEnabled: document.getElementById('imagesEnabled').checked,
     apiKeys
