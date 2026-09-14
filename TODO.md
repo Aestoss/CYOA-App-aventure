@@ -94,6 +94,29 @@ pas de règle CSS `.hidden`, donc restait visible même masqué en JS).
       lance déjà en parallèle, pour que le monde (texte + 3 actions
       suggérées) soit prêt dès qu'on ferme la popup — pas de temps de
       chargement visible après.
+- [ ] **Réorganiser la page d'accueil** : remonter le bloc de création de
+      monde tout en haut de la page (avant la liste des sauvegardes et des
+      mondes, pas après).
+- [ ] **Page d'accueil en onglets séparés** (une fois qu'il y aura beaucoup
+      de mondes/sauvegardes, ça deviendra difficile à suivre en une seule
+      page) : trois onglets navigables — "Créer un monde", "Mes mondes",
+      "Mes sauvegardes" — le plus esthétique et intuitif possible plutôt
+      qu'un simple `<select>` d'onglets basique.
+- [ ] **Bug d'affichage : les flèches ‹ › de pagination sont quasi
+      invisibles.** Sur une sauvegarde qui n'a qu'un seul tour (juste après
+      création), les DEUX flèches sont désactivées en même temps (pas de
+      page précédente, pas de page suivante) et tombent à 30% d'opacité
+      sur un gris déjà discret (`--text-dim`) — sur mobile ça peut donner
+      l'impression qu'il n'y a aucun bouton de navigation du tout.
+      Confirmé par l'utilisateur en review : "les boutons ‹ › n'apparaissaient
+      pas du tout". Piste de correctif : garder les boutons bien visibles
+      même désactivés (contraste suffisant), ou n'afficher la barre de
+      pagination que lorsqu'il y a réellement plus d'une page.
+- [ ] **Problème de régénération signalé, détail à préciser.** Les logs
+      serveur montrent un appel `POST /api/saves/:id/turns/:n/regenerate`
+      réussi (HTTP 200, ~11s, réponse IA reçue) au moment où l'utilisateur
+      a rencontré le souci — donc pas un crash serveur. Symptôme précis
+      encore à obtenir avant de pouvoir corriger.
 
 ---
 
