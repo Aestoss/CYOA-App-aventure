@@ -2,9 +2,13 @@ const API = '/api';
 
 const views = {
   home: document.getElementById('view-home'),
+  characterSelect: document.getElementById('view-character-select'),
   story: document.getElementById('view-story'),
   settings: document.getElementById('view-settings')
 };
+
+const SKILL_LABELS = { 1: 'Untrained', 2: 'Unskilled', 3: 'Competent', 4: 'Highly skilled', 5: 'Exceptional' };
+const OUTCOME_LABELS = { success: '✅ Réussite', partial_success: '⚠️ Réussite partielle', failure: '❌ Échec' };
 
 function showView(name) {
   Object.values(views).forEach(v => v.classList.add('hidden'));
@@ -44,7 +48,7 @@ document.getElementById('createWorldBtn').onclick = async () => {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Erreur inconnue');
     document.getElementById('ideaInput').value = '';
-    await openWorld(data.world.id);
+    showCharacterSelect(data.world, data.playableCharacters || []);
   } catch (e) {
     alert('Impossible de créer le monde : ' + e.message);
   } finally {
@@ -53,15 +57,69 @@ document.getElementById('createWorldBtn').onclick = async () => {
   }
 };
 
+// ---------- Character selection ----------
+
+function showCharacterSelect(world, playableCharacters) {
+  currentWorldId = world.id;
+  showView('characterSelect');
+  document.getElementById('charSelectTitle').textContent = `Choisis ton personnage — ${world.title}`;
+  const list = document.getElementById('characterList');
+  list.innerHTML = '';
+  playableCharacters.forEach(c => {
+    const card = document.createElement('div');
+    card.className = 'character-card';
+    const skillsHtml = Object.entries(c.skills || {})
+      .map(([skill, value]) => `<li>${escapeHtml(skill)}: ${value} <span class="skill-label">(${SKILL_LABELS[value] || 'Non noté'})</span></li>`)
+      .join('');
+    card.innerHTML = `
+      <h3>${escapeHtml(c.name)}</h3>
+      <p>${escapeHtml(c.description)}</p>
+      <ul class="skill-list">${skillsHtml}</ul>
+      <button class="primary-btn choose-character-btn">Choisir ${escapeHtml(c.name)}</button>
+    `;
+    card.querySelector('.choose-character-btn').onclick = () => chooseCharacter(world.id, c.id);
+    list.appendChild(card);
+  });
+}
+
+async function chooseCharacter(worldId, characterId) {
+  const res = await fetch(`${API}/worlds/${worldId}/select-character`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ characterId })
+  });
+  const data = await res.json();
+  if (!res.ok) return alert('Impossible de choisir ce personnage : ' + data.error);
+  await openWorld(worldId);
+}
+
+document.getElementById('backFromCharSelectBtn').onclick = () => {
+  currentWorldId = null;
+  showView('home');
+  loadWorldList();
+};
+
 // ---------- Story ----------
 
 async function openWorld(id) {
   currentWorldId = id;
+  const data = await fetch(`${API}/worlds/${id}`).then(r => r.json());
+  if (!data.world.activeCharacterId) {
+    showCharacterSelect(data.world, data.playableCharacters || []);
+    return;
+  }
   showView('story');
   const feed = document.getElementById('chapterFeed');
   feed.innerHTML = '<p class="loading">Chargement de l\'histoire...</p>';
-  const data = await fetch(`${API}/worlds/${id}`).then(r => r.json());
   document.getElementById('storyTitle').textContent = data.world.title;
+  const activeCharacter = (data.playableCharacters || []).find(c => c.id === data.world.activeCharacterId);
+  const charEl = document.getElementById('storyCharacter');
+  if (activeCharacter) {
+    charEl.textContent = `Tu joues ${activeCharacter.name}`;
+    charEl.classList.remove('hidden');
+  } else {
+    charEl.classList.add('hidden');
+  }
   renderChapters(data.turns);
 }
 
@@ -71,7 +129,9 @@ function renderChapters(turns) {
   turns.forEach(t => {
     const div = document.createElement('div');
     div.className = 'chapter';
-    const actionLine = t.turnNumber === 0 ? '' : `<div class="player-action">→ ${escapeHtml(t.playerAction)}</div>`;
+    const outcomeLabel = OUTCOME_LABELS[t.outcome];
+    const outcomeHtml = outcomeLabel ? ` <span class="outcome-badge outcome-${t.outcome}">${outcomeLabel}</span>` : '';
+    const actionLine = t.turnNumber === 0 ? '' : `<div class="player-action">→ ${escapeHtml(t.playerAction)}${outcomeHtml}</div>`;
     div.innerHTML = `${actionLine}<div>${escapeHtml(t.chapterText)}</div>`;
     feed.appendChild(div);
     if (t.imageUrl) lastImageUrl = t.imageUrl;

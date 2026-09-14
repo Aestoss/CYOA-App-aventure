@@ -89,6 +89,19 @@ async function callMock({ system, user }) {
       setting: 'A lighthouse city built from sea-glass, perched above a fogbound coast.',
       tone: 'quiet mystery',
       rules: ['The fog hides more than weather', 'Glass remembers what it reflects'],
+      skills: ['Intuition', 'Nerve', 'Charm', 'Lore'],
+      playable_characters: [
+        {
+          name: 'Wren Ashby',
+          description: 'A shipwrecked cartographer with a sharp eye for detail and a fear of deep water.',
+          skills: { Intuition: 4, Nerve: 2, Charm: 3, Lore: 3 }
+        },
+        {
+          name: 'Corvin Blackwell',
+          description: 'A disgraced glass-smith who insists the fog once spoke to him.',
+          skills: { Intuition: 3, Nerve: 3, Charm: 2, Lore: 5 }
+        }
+      ],
       starting_characters: [{ name: 'Keeper Oduya', role: 'lighthouse keeper', description: 'Guarded, watchful, knows more than she says.' }],
       starting_scene: 'You arrive at the lighthouse steps as the evening fog rolls in.',
       opening_chapter: 'The fog reaches the steps before you do, curling around your ankles like something curious. Keeper Oduya watches from the doorway, lantern unlit. "You\'re early," she says, though you were told nothing about a schedule.'
@@ -96,6 +109,8 @@ async function callMock({ system, user }) {
   }
   return JSON.stringify({
     chapter_text: 'You step forward, and the fog seems to lean in around you, as if listening. Somewhere above, the lighthouse lens turns without a keeper\'s hand.',
+    outcome: 'n/a',
+    skill_used: null,
     state_updates: { location: 'Lighthouse steps', new_facts: [], characters_changed: [], inventory_changed: [] },
     image_prompt: 'A foggy lighthouse at dusk, glass architecture, a lone figure on stone steps',
     suggested_actions: ['Call out to the Keeper', 'Climb the steps', 'Look for another way in']

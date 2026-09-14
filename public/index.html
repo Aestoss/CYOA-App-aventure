@@ -30,10 +30,18 @@
     </div>
   </section>
 
+  <!-- Character selection view -->
+  <section id="view-character-select" class="view hidden">
+    <button id="backFromCharSelectBtn" class="text-btn">‹ Mes histoires</button>
+    <h2 id="charSelectTitle">Choisis ton personnage</h2>
+    <div id="characterList" class="character-list"></div>
+  </section>
+
   <!-- Story / play view -->
   <section id="view-story" class="view hidden">
     <button id="backBtn" class="text-btn">‹ Mes histoires</button>
     <h2 id="storyTitle"></h2>
+    <p id="storyCharacter" class="story-character hidden"></p>
     <div id="storyImage" class="story-image hidden"><img id="storyImageEl" alt=""></div>
     <div id="chapterFeed" class="chapter-feed"></div>
     <div id="suggestedActions" class="suggested-actions"></div>

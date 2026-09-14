@@ -2,7 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const db = require('./lib/db');
-const { createWorld, playTurn, getSettings } = require('./lib/gameEngine');
+const { createWorld, playTurn, getSettings, selectCharacter } = require('./lib/gameEngine');
 
 const app = express();
 app.use(cors());
@@ -18,7 +18,8 @@ app.get('/api/worlds/:id', (req, res) => {
   if (!world) return res.status(404).json({ error: 'World not found' });
   const turns = db.get('turns').filter({ worldId: world.id }).sortBy('turnNumber').value();
   const characters = db.get('characters').filter({ worldId: world.id }).value();
-  res.json({ world, turns, characters });
+  const playableCharacters = db.get('playableCharacters').filter({ worldId: world.id }).value();
+  res.json({ world, turns, characters, playableCharacters });
 });
 
 app.post('/api/worlds', async (req, res) => {
@@ -29,6 +30,17 @@ app.post('/api/worlds', async (req, res) => {
     res.json(result);
   } catch (e) {
     res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/worlds/:id/select-character', (req, res) => {
+  try {
+    const { characterId } = req.body;
+    if (!characterId) return res.status(400).json({ error: 'characterId is required' });
+    const character = selectCharacter(req.params.id, characterId);
+    res.json({ ok: true, character });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
   }
 });
 

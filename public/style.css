@@ -122,8 +122,27 @@ textarea:focus, input:focus, select:focus {
 }
 .text-btn:hover { color: var(--accent); }
 
+/* Character selection */
+.character-list { display: flex; flex-direction: column; gap: 14px; margin-top: 16px; }
+.character-card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+}
+.character-card h3 { font-family: var(--serif); font-weight: 600; margin: 0 0 6px; }
+.character-card p { color: var(--text-dim); font-size: 0.92rem; line-height: 1.5; margin: 0 0 10px; }
+.skill-list { list-style: none; margin: 0 0 14px; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 0.85rem; }
+.skill-list .skill-label { color: var(--text-dim); }
+
 /* Story view */
 #storyTitle { font-family: var(--serif); font-weight: 600; margin: 0 0 14px; }
+.story-character { color: var(--text-dim); font-size: 0.85rem; margin: -10px 0 14px; }
+.story-character.hidden { display: none; }
+.outcome-badge { font-size: 0.8rem; }
+.outcome-badge.outcome-success { color: #7fc97f; }
+.outcome-badge.outcome-partial_success { color: var(--accent); }
+.outcome-badge.outcome-failure { color: #d9776f; }
 
 .story-image { margin-bottom: 16px; border-radius: 6px; overflow: hidden; border: 1px solid var(--border); }
 .story-image img { width: 100%; display: block; }
