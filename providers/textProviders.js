@@ -24,7 +24,14 @@ async function callAnthropic({ system, user, apiKey, model }) {
     },
     body: JSON.stringify({
       model: model || 'claude-sonnet-4-6',
-      max_tokens: 1024,
+      // Anthropic requires max_tokens explicitly (unlike OpenAI/Gemini,
+      // which default generously on their own). 1024 was too small once
+      // the full turn JSON (chapter_text + outcome + tracked_item_updates +
+      // secret_info + state_updates + image_prompt + suggested_actions) or
+      // the world-creation schema (much bigger) is accounted for — Claude
+      // would hit the cap mid-response and get cut off before the closing
+      // brace, so parseModelJSON's JSON.parse failed on truncated input.
+      max_tokens: 8192,
       system,
       messages: [{ role: 'user', content: user }]
     })
