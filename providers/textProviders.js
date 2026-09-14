@@ -5,6 +5,15 @@ const fetch = require('node-fetch');
 // to be raw JSON per the prompt's instructions. `usage` feeds the cost tracker
 // (lib/costTracker.js) — zero counts when a provider genuinely has none to report.
 
+// Attaches the HTTP status to the thrown error so generateText() can tell a
+// transient overload (429/5xx — worth retrying) from a permanent failure
+// (bad key, bad request — retrying would just fail the same way again).
+async function throwApiError(providerName, res) {
+  const err = new Error(`${providerName} API error ${res.status}: ${await res.text()}`);
+  err.status = res.status;
+  throw err;
+}
+
 async function callAnthropic({ system, user, apiKey, model }) {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -20,7 +29,7 @@ async function callAnthropic({ system, user, apiKey, model }) {
       messages: [{ role: 'user', content: user }]
     })
   });
-  if (!res.ok) throw new Error(`Anthropic API error ${res.status}: ${await res.text()}`);
+  if (!res.ok) await throwApiError('Anthropic', res);
   const data = await res.json();
   return {
     text: data.content.map(b => b.text || '').join(''),
@@ -40,7 +49,7 @@ async function callOpenAI({ system, user, apiKey, model }) {
       ]
     })
   });
-  if (!res.ok) throw new Error(`OpenAI API error ${res.status}: ${await res.text()}`);
+  if (!res.ok) await throwApiError('OpenAI', res);
   const data = await res.json();
   return {
     text: data.choices[0].message.content,
@@ -60,7 +69,7 @@ async function callOpenRouter({ system, user, apiKey, model }) {
       ]
     })
   });
-  if (!res.ok) throw new Error(`OpenRouter API error ${res.status}: ${await res.text()}`);
+  if (!res.ok) await throwApiError('OpenRouter', res);
   const data = await res.json();
   return {
     text: data.choices[0].message.content,
@@ -81,7 +90,7 @@ async function callGemini({ system, user, apiKey, model }) {
       })
     }
   );
-  if (!res.ok) throw new Error(`Gemini API error ${res.status}: ${await res.text()}`);
+  if (!res.ok) await throwApiError('Gemini', res);
   const data = await res.json();
   return {
     text: (data.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join(''),
@@ -254,9 +263,35 @@ async function callMock({ system, user }) {
 
 const providers = { anthropic: callAnthropic, openai: callOpenAI, openrouter: callOpenRouter, gemini: callGemini, mock: callMock };
 
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// 429 (rate limited) and 5xx (server-side/overload, e.g. the "high demand"
+// 503 Gemini returns) are worth a short automatic retry — the same request
+// often succeeds moments later. A missing status means the request never
+// got an HTTP response at all (DNS/connection failure), which is the same
+// kind of transient condition. Anything else (401 bad key, 400 bad
+// request...) would just fail identically again, so it isn't retried.
+function isRetryableStatus(status) {
+  return status === undefined || status === 429 || (status >= 500 && status < 600);
+}
+
+const RETRY_DELAYS_MS = [1000, 2500]; // up to 2 retries (3 attempts total)
+
 async function generateText({ provider, system, user, apiKey, model }) {
   const fn = providers[provider] || providers.mock;
-  return fn({ system, user, apiKey, model });
+  let lastError;
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+    try {
+      return await fn({ system, user, apiKey, model });
+    } catch (e) {
+      lastError = e;
+      if (!isRetryableStatus(e.status) || attempt === RETRY_DELAYS_MS.length) throw e;
+      await sleep(RETRY_DELAYS_MS[attempt]);
+    }
+  }
+  throw lastError; // unreachable, but keeps the return type honest
 }
 
 module.exports = { generateText };
