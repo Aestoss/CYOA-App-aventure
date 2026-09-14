@@ -4,14 +4,21 @@ Ce guide est fait pour être suivi seul, sans que je sois là en direct.
 Suis les étapes dans l'ordre ; chacune est indépendante, tu peux t'arrêter
 et reprendre plus tard.
 
+**État : les étapes 0 à 2 sont déjà faites.** Le code est sur GitHub
+(`Aestoss/CYOA-App-aventure`) et déployé sur Railway :
+**https://fogbound-production.up.railway.app**. Il reste les étapes 3
+(clés API), 3bis (stockage persistant, nouveau — important) et 4
+(téléphone).
+
 **Résumé en un coup d'œil :**
 
 | Étape | Ce que tu fais | Temps |
 |---|---|---|
-| 0. Tester en local | Vérifier que tout marche sur ton PC + ton téléphone (via wifi) | ~5 min |
-| 1. GitHub | Mettre le code en ligne dans un dépôt | ~5 min |
-| 2. Railway | Héberger l'app pour de vrai, avec une adresse web | ~5 min |
+| ~~0. Tester en local~~ | ✅ Fait | — |
+| ~~1. GitHub~~ | ✅ Fait — `Aestoss/CYOA-App-aventure` | — |
+| ~~2. Railway~~ | ✅ Fait — `fogbound-production.up.railway.app` | — |
 | 3. Clés API | Connecter Claude (et une API d'image, en option) | ~5 min |
+| 3bis. Stockage persistant | Éviter de perdre tes histoires à chaque mise à jour | ~5 min |
 | 4. Téléphone | Installer l'app comme une icône sur ton écran d'accueil | ~1 min |
 
 ---
@@ -105,6 +112,24 @@ je peux détailler cette partie si besoin.)*
 
 ---
 
+## Étape 3bis — Stockage persistant (important, à faire une fois)
+
+Par défaut, Railway redémarre le conteneur de l'app avec un disque vide à
+chaque redéploiement (nouveau push sur GitHub). Or l'app stocke tes
+histoires dans un simple fichier (`data/db.json`, voir `lib/db.js`) — sans
+disque permanent, cette base repart de zéro à chaque mise à jour du code.
+
+1. Dans le projet Railway → service **fogbound** → onglet **Volumes**
+2. **Create Volume** → point de montage : `/data`
+3. Onglet **Variables** du service → ajoute `DATA_DIR` = `/data`
+4. Railway redéploie automatiquement — tes histoires survivront désormais
+   aux mises à jour futures
+
+*(Cette étape n'a encore pas été faite sur le déploiement actuel — tant
+qu'elle n'est pas faite, considère les histoires jouées comme temporaires.)*
+
+---
+
 ## Étape 4 — Installer sur ton téléphone
 
 1. Ouvre le lien Railway sur ton téléphone
@@ -123,7 +148,7 @@ méthode qu'à l'Étape 1 (Option A ou B) — Railway redéploie automatiquement
 
 ## Pourquoi certaines étapes restent manuelles
 
-Je n'ai pas accès à ton compte GitHub ni à un compte Railway — aucun
-identifiant, aucun connecteur disponible ici pour le faire à ta place.
-Chaque étape ci-dessus est réduite au minimum de clics possible ; aucune
-n'exige d'écrire de code.
+Coller une clé API dans les Réglages ⚙ reste volontairement une action que
+tu fais toi-même : c'est un secret personnel, il ne doit passer ni par le
+code ni par un tiers. Pour le reste (GitHub, Railway), je peux agir
+directement quand c'est connecté à la session — demande-le si besoin.

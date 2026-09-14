@@ -10,20 +10,26 @@
 - Changement de fournisseur IA (Anthropic, OpenAI, OpenRouter) et de modèle d'image (Stability, Replicate) depuis les Réglages, sans toucher au code
 - Testé de bout en bout avec un "fournisseur factice" (mock) qui simule des réponses IA sans clé — donc tout le mécanisme (création de monde, mémoire, résumé, réglages) est déjà vérifié comme fonctionnel
 
-## Ce qui manque encore pour que ce soit "ton" app, en ligne
+## État actuel — déjà en ligne
 
-Ceci n'est pas encore déployé sur internet — c'est le code complet, testé
-en local dans mon environnement de travail. Il reste une étape unique de
-mise en ligne, que je peux faire avec toi pas à pas la prochaine fois :
+L'app est déployée sur Railway et fonctionne : **https://fogbound-production.up.railway.app**
+(connectée au dépôt GitHub `Aestoss/CYOA-App-aventure`, redéploiement
+automatique à chaque push sur `main`).
 
-1. Créer un compte gratuit sur Railway ou Render
-2. Connecter ce code (je peux le pousser sur un dépôt GitHub pour toi)
-3. Coller tes clés API (Anthropic, et Stability si tu veux les images) dans
-   les réglages en ligne — jamais dans le code
-4. Ouvrir le lien obtenu sur ton téléphone → "Ajouter à l'écran d'accueil"
+Il reste deux choses pour que ce soit vraiment "ton" app au quotidien :
 
-Aucune de ces étapes ne demande de terminal ou de ligne de commande de ton
-côté — seulement des clics dans des interfaces web.
+1. **Coller une vraie clé API** dans Réglages ⚙ en ligne (Anthropic, OpenAI
+   ou OpenRouter) — pour l'instant le service tourne en mode "Démo locale"
+   (`mock`), donc les histoires ne sont pas encore générées par une IA
+   réelle. Jamais dans le code, jamais sur GitHub.
+2. **Stockage persistant** : le service Railway n'a pas encore de volume
+   attaché. Sans ça, la base de données (fichier JSON local, voir
+   `lib/db.js`) est réinitialisée à chaque redéploiement — tu perdrais tes
+   histoires en cours à la prochaine mise à jour du code. Voir DEPLOY.md
+   pour l'ajouter (5 min, quelques clics dans Railway).
+
+Une fois ces deux points réglés : ouvre le lien sur ton téléphone →
+"Ajouter à l'écran d'accueil".
 
 ## Comment j'ai testé (pour référence)
 
