@@ -39,7 +39,10 @@
 
   <!-- Story / play view -->
   <section id="view-story" class="view hidden">
-    <button id="backBtn" class="text-btn">‹ Mes histoires</button>
+    <div class="story-header-row">
+      <button id="backBtn" class="text-btn">‹ Mes histoires</button>
+      <button id="editWorldBtn" class="icon-btn" aria-label="Modifier les instructions" title="Modifier les instructions">✏️</button>
+    </div>
     <h2 id="storyTitle"></h2>
     <p id="storyCharacter" class="story-character hidden"></p>
     <div id="trackedItemsPanel" class="tracked-items-panel hidden"></div>
@@ -51,6 +54,21 @@
       <input id="actionInput" type="text" placeholder="Que fais-tu ?" autocomplete="off">
       <button type="submit" class="primary-btn">Envoyer</button>
     </form>
+  </section>
+
+  <!-- World edit view -->
+  <section id="view-world-edit" class="view hidden">
+    <button id="closeWorldEditBtn" class="text-btn">‹ Retour</button>
+    <h2>Modifier les instructions</h2>
+    <p class="hint">Ces instructions guident l'IA narratrice à chaque tour. Générées automatiquement à la création du monde, tu peux les ajuster ici.</p>
+    <label>Instructions principales
+      <textarea id="worldInstructionsInput" rows="10"></textarea>
+    </label>
+    <label>Style d'auteur <span class="hint-inline">(ex : "Neil Gaiman", "un romancier de thriller")</span>
+      <input id="worldAuthorStyleInput" type="text">
+    </label>
+    <button id="saveWorldEditBtn" class="primary-btn">Enregistrer</button>
+    <p id="worldEditStatus" class="hint"></p>
   </section>
 
   <!-- Settings view -->

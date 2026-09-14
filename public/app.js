@@ -4,6 +4,7 @@ const views = {
   home: document.getElementById('view-home'),
   characterSelect: document.getElementById('view-character-select'),
   story: document.getElementById('view-story'),
+  worldEdit: document.getElementById('view-world-edit'),
   settings: document.getElementById('view-settings')
 };
 
@@ -254,6 +255,37 @@ document.getElementById('backBtn').onclick = () => {
   lastImageUrl = null;
   showView('home');
   loadWorldList();
+};
+
+// ---------- World edit ----------
+
+document.getElementById('editWorldBtn').onclick = async () => {
+  const data = await fetch(`${API}/worlds/${currentWorldId}`).then(r => r.json());
+  document.getElementById('worldInstructionsInput').value = data.world.instructions || '';
+  document.getElementById('worldAuthorStyleInput').value = data.world.authorStyle || '';
+  showView('worldEdit');
+};
+
+document.getElementById('closeWorldEditBtn').onclick = () => showView('story');
+
+document.getElementById('saveWorldEditBtn').onclick = async () => {
+  const body = {
+    instructions: document.getElementById('worldInstructionsInput').value,
+    authorStyle: document.getElementById('worldAuthorStyleInput').value
+  };
+  const res = await fetch(`${API}/worlds/${currentWorldId}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  const data = await res.json();
+  const status = document.getElementById('worldEditStatus');
+  if (!res.ok) {
+    status.textContent = 'Erreur : ' + data.error;
+    return;
+  }
+  status.textContent = 'Enregistré.';
+  setTimeout(() => { status.textContent = ''; }, 2000);
 };
 
 // ---------- Settings ----------

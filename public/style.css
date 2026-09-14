@@ -55,6 +55,7 @@ body {
 }
 
 .view.hidden { display: none; }
+.view label { display: block; font-size: 0.88rem; color: var(--text-dim); margin: 14px 0 4px; }
 
 /* Home / world list */
 .world-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 32px; }
@@ -136,6 +137,7 @@ textarea:focus, input:focus, select:focus {
 .skill-list .skill-label { color: var(--text-dim); }
 
 /* Story view */
+.story-header-row { display: flex; align-items: center; justify-content: space-between; }
 #storyTitle { font-family: var(--serif); font-weight: 600; margin: 0 0 14px; }
 .story-character { color: var(--text-dim); font-size: 0.85rem; margin: -10px 0 14px; }
 .story-character.hidden { display: none; }

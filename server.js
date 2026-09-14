@@ -2,7 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const db = require('./lib/db');
-const { createWorld, playTurn, getSettings, selectCharacter, continueAfterVictory } = require('./lib/gameEngine');
+const { createWorld, playTurn, getSettings, selectCharacter, continueAfterVictory, updateWorldInstructions } = require('./lib/gameEngine');
 
 const app = express();
 app.use(cors());
@@ -33,6 +33,16 @@ app.post('/api/worlds', async (req, res) => {
     res.json(result);
   } catch (e) {
     res.status(500).json({ error: e.message });
+  }
+});
+
+app.patch('/api/worlds/:id', (req, res) => {
+  try {
+    const { instructions, authorStyle } = req.body;
+    const world = updateWorldInstructions(req.params.id, { instructions, authorStyle });
+    res.json({ ok: true, world });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
   }
 });
 

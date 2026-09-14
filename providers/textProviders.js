@@ -89,6 +89,8 @@ async function callMock({ system, user }) {
       setting: 'A lighthouse city built from sea-glass, perched above a fogbound coast.',
       tone: 'quiet mystery',
       rules: ['The fog hides more than weather', 'Glass remembers what it reflects'],
+      instructions: 'This story takes place in a lighthouse city built from sea-glass. I have just arrived, unannounced but expected by the reclusive Keeper Oduya. The fog surrounding the city is not ordinary weather — things glimpsed in it are sometimes true and sometimes not, and the city\'s glass architecture seems to remember what has happened near it. Pace the story slowly at first, letting me explore the lighthouse and earn or lose the Keeper\'s trust before revealing what the fog actually is.',
+      author_style: 'a literary novelist writing quiet, atmospheric mystery — spare prose, precise sensory detail, understatement over spectacle',
       skills: ['Intuition', 'Nerve', 'Charm', 'Lore'],
       playable_characters: [
         {
