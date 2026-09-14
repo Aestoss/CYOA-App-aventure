@@ -34,6 +34,7 @@
   <section id="view-character-select" class="view hidden">
     <button id="backFromCharSelectBtn" class="text-btn">‹ Mes histoires</button>
     <h2 id="charSelectTitle">Choisis ton personnage</h2>
+    <div id="matureWarning" class="mature-warning hidden"></div>
     <div id="characterList" class="character-list"></div>
   </section>
 
@@ -45,6 +46,7 @@
     </div>
     <h2 id="storyTitle"></h2>
     <p id="storyCharacter" class="story-character hidden"></p>
+    <p id="storyObjective" class="story-objective hidden"></p>
     <div id="trackedItemsPanel" class="tracked-items-panel hidden"></div>
     <div id="storyImage" class="story-image hidden"><img id="storyImageEl" alt=""></div>
     <div id="chapterFeed" class="chapter-feed"></div>
@@ -61,6 +63,16 @@
     <button id="closeWorldEditBtn" class="text-btn">‹ Retour</button>
     <h2>Modifier les instructions</h2>
     <p class="hint">Ces instructions guident l'IA narratrice à chaque tour. Générées automatiquement à la création du monde, tu peux les ajuster ici.</p>
+    <label>Description <span class="hint-inline">(affichée dans la liste des histoires, sans effet sur le jeu)</span>
+      <textarea id="worldDescriptionInput" rows="2"></textarea>
+    </label>
+    <label>Objectif <span class="hint-inline">(affiché au joueur dès le premier tour, optionnel)</span>
+      <input id="worldObjectiveInput" type="text">
+    </label>
+    <label class="toggle-row"><span>Contenu mature (R)</span><input id="worldMatureInput" type="checkbox"></label>
+    <label>Avertissements de contenu <span class="hint-inline">(séparés par des virgules)</span>
+      <input id="worldContentWarningsInput" type="text" placeholder="violence, horreur...">
+    </label>
     <label>Instructions principales
       <textarea id="worldInstructionsInput" rows="10"></textarea>
     </label>

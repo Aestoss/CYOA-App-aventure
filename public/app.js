@@ -28,7 +28,9 @@ async function loadWorldList() {
   worlds.slice().reverse().forEach(w => {
     const btn = document.createElement('button');
     btn.className = 'world-card';
-    btn.innerHTML = `${escapeHtml(w.title)}<small>${escapeHtml(w.tone || '')}</small>`;
+    const cover = w.coverImageUrl ? `<img class="world-card-cover" src="${w.coverImageUrl}" alt="">` : '';
+    const desc = w.description ? `<span class="world-card-desc">${escapeHtml(w.description)}</span>` : '';
+    btn.innerHTML = `${cover}<span class="world-card-body"><span class="world-card-title">${escapeHtml(w.title)}</span>${desc}<small>${escapeHtml(w.tone || '')}</small></span>`;
     btn.onclick = () => openWorld(w.id);
     list.appendChild(btn);
   });
@@ -64,6 +66,14 @@ function showCharacterSelect(world, playableCharacters) {
   currentWorldId = world.id;
   showView('characterSelect');
   document.getElementById('charSelectTitle').textContent = `Choisis ton personnage — ${world.title}`;
+  const warningEl = document.getElementById('matureWarning');
+  if (world.mature) {
+    const warnings = (world.contentWarnings || []).join(', ');
+    warningEl.textContent = `⚠️ Contenu mature${warnings ? ' : ' + warnings : ''}`;
+    warningEl.classList.remove('hidden');
+  } else {
+    warningEl.classList.add('hidden');
+  }
   const list = document.getElementById('characterList');
   list.innerHTML = '';
   playableCharacters.forEach(c => {
@@ -120,6 +130,13 @@ async function openWorld(id) {
     charEl.classList.remove('hidden');
   } else {
     charEl.classList.add('hidden');
+  }
+  const objectiveEl = document.getElementById('storyObjective');
+  if (data.world.objective) {
+    objectiveEl.textContent = `🎯 ${data.world.objective}`;
+    objectiveEl.classList.remove('hidden');
+  } else {
+    objectiveEl.classList.add('hidden');
   }
   renderChapters(data.turns);
   renderGameOver(data.world.gameOver);
@@ -261,6 +278,10 @@ document.getElementById('backBtn').onclick = () => {
 
 document.getElementById('editWorldBtn').onclick = async () => {
   const data = await fetch(`${API}/worlds/${currentWorldId}`).then(r => r.json());
+  document.getElementById('worldDescriptionInput').value = data.world.description || '';
+  document.getElementById('worldObjectiveInput').value = data.world.objective || '';
+  document.getElementById('worldMatureInput').checked = Boolean(data.world.mature);
+  document.getElementById('worldContentWarningsInput').value = (data.world.contentWarnings || []).join(', ');
   document.getElementById('worldInstructionsInput').value = data.world.instructions || '';
   document.getElementById('worldAuthorStyleInput').value = data.world.authorStyle || '';
   document.getElementById('worldImageStyleInput').value = data.world.imageStyle || '';
@@ -273,6 +294,10 @@ document.getElementById('closeWorldEditBtn').onclick = () => showView('story');
 
 document.getElementById('saveWorldEditBtn').onclick = async () => {
   const body = {
+    description: document.getElementById('worldDescriptionInput').value,
+    objective: document.getElementById('worldObjectiveInput').value || null,
+    mature: document.getElementById('worldMatureInput').checked,
+    contentWarnings: document.getElementById('worldContentWarningsInput').value.split(',').map(s => s.trim()).filter(Boolean),
     instructions: document.getElementById('worldInstructionsInput').value,
     authorStyle: document.getElementById('worldAuthorStyleInput').value,
     imageStyle: document.getElementById('worldImageStyleInput').value,

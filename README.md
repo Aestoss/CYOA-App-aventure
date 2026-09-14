@@ -9,6 +9,9 @@
 - Instructions principales + style d'auteur générés à la création du monde, éditables ensuite depuis l'écran d'histoire (✏️) (Phase D)
 - PNJ enrichis (fiche complète, résumé court, apparence, lieu) — fiche complète transmise à l'IA seulement quand le PNJ est apparu récemment, sinon juste le résumé — et état caché (« secret info ») cumulatif jamais exposé au client (Phase E)
 - Style visuel par monde (description + préfixe/suffixe) appliqué automatiquement à chaque prompt d'image généré par le narrateur, pour des illustrations visuellement cohérentes d'un tour à l'autre ; éditable comme les instructions (Phase F)
+- Confort auteur : description + objectif affiché au joueur + image de couverture (générée si les images sont activées) + contenu mature/avertissements + numéro de version qui s'incrémente à chaque édition (Phase G)
+
+Toutes les phases de la feuille de route `docs/INFINITE_WORLDS_REFERENCE.md` (A à G) sont implémentées et testées de bout en bout avec le fournisseur mock.
 - Frontend complet (une seule page web, installable sur téléphone)
 - Système de prompts en couches (Master Prompt / World Bible / Mémoire / Tours récents), comme détaillé dans le plan
 - Mémoire réelle : faits extraits stockés en base + résumé automatique tous les ~15-20 tours

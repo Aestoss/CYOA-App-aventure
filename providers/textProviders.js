@@ -86,6 +86,10 @@ async function callMock({ system, user }) {
   if (isWorldCreation) {
     return JSON.stringify({
       title: 'The Glass Lighthouse',
+      description: 'A shipwrecked stranger arrives at a lighthouse city built from sea-glass, where the fog hides more than weather.',
+      objective: 'Find out what Keeper Oduya is hiding, and why the fog answers to her.',
+      mature_content: false,
+      content_warnings: [],
       setting: 'A lighthouse city built from sea-glass, perched above a fogbound coast.',
       tone: 'quiet mystery',
       rules: ['The fog hides more than weather', 'Glass remembers what it reflects'],
