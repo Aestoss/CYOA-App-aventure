@@ -55,33 +55,37 @@ JSON interne (guide GitHub) entre parenthèses quand connu.
 
 ### 2.1 Introducing the story
 
+**Légende État Fogbound :** ✅ implémenté et éditable par l'auteur
+(manuellement et/ou via la retouche IA) · ⚠️ généré à la création mais pas
+éditable ensuite, ou équivalent partiel · ❌ absent.
+
 | Champ | Description | État Fogbound |
 |---|---|---|
-| Title (`title`) | Nom du monde | ✅ (`world.title`) |
-| Track version number / Version (`version`, `autoAdvanceVersion`) | Numéro de version du monde, incrémenté automatiquement à chaque édition — sert quand l'auteur republie des mises à jour d'un monde partagé | ❌ absent |
-| Description (`description`) | Résumé affiché dans le menu de sélection, **n'affecte pas le gameplay** | ⚠️ on a `tone`, pas de description dédiée pure UI |
-| "Show additional text on character selection screen" | Texte optionnel affiché à l'étape de choix du personnage | ❌ absent (pas d'étape de choix de personnage du tout) |
-| Preview image + génération IA alternative / upload | Image affichée dans la liste des mondes | ❌ absent (pas d'image de couverture) |
-| Background story (`background`) | Texte montré au joueur **avant** le début — influence la suite de l'histoire | ⚠️ proche de `setting`/`startingScene` mais moins riche |
-| First action (`firstInput`) | Première action prise automatiquement par le personnage au démarrage (ex. "Look around and reflect on my new situation") | ❌ chez nous le tour 0 est généré directement en narration, pas comme une "action" rejouable |
-| Objective (`objective`) | Objectif montré au joueur dès le premier tour ; l'IA narrative en a connaissance en continu | ❌ absent |
+| Title (`title`) | Nom du monde | ⚠️ généré (`world.title`), éditable seulement via la retouche IA — pas de champ texte direct dans l'éditeur |
+| Track version number / Version (`version`, `autoAdvanceVersion`) | Numéro de version du monde, incrémenté automatiquement à chaque édition — sert quand l'auteur republie des mises à jour d'un monde partagé | ⚠️ `world.version` existe et s'incrémente bien à chaque édition, mais **n'est affiché nulle part dans l'interface** — invisible pour l'auteur |
+| Description (`description`) | Résumé affiché dans le menu de sélection, **n'affecte pas le gameplay** | ✅ `world.description`, éditable, affichée dans la liste des mondes |
+| "Show additional text on character selection screen" | Texte optionnel affiché à l'étape de choix du personnage | ❌ absent (seul un avertissement contenu mature peut s'afficher à cette étape) |
+| Preview image + génération IA alternative / upload | Image affichée dans la liste des mondes | ⚠️ `coverImageUrl` généré automatiquement à la création si les images sont activées — **aucun bouton pour la régénérer ou en uploader une autre ensuite** |
+| Background story (`background`) | Texte montré au joueur **avant** le début — influence la suite de l'histoire | ✅ `world.background`, généré à la création, montré en popup avant le premier tour, éditable depuis peu (corrigé suite à ta remarque) |
+| First action (`firstInput`) | Première action prise automatiquement par le personnage au démarrage (ex. "Look around and reflect on my new situation") | ✅ `world.firstAction`, déclenche le vrai premier tour généré par IA après la popup background, éditable (même correctif) |
+| Objective (`objective`) | Objectif montré au joueur dès le premier tour ; l'IA narrative en a connaissance en continu | ✅ `world.objective`, éditable, affiché en jeu et transmis à l'IA à chaque tour |
 
 ### 2.2 Main instructions
 
 | Champ | Description | État Fogbound |
 |---|---|---|
-| Detail and instructions (`instructions`) | **Le champ le plus important** : contexte complet donné à l'IA — cadre, sujet du jeu, rôle du personnage joueur, instructions de narration. Convention : référer au perso joueur en "I" ("In this story I am trying to..."). Avertissement officiel : au-delà de quelques milliers de mots, le coût par tour augmente (mais certains mondes dépassent plusieurs milliers de mots sans problème) | ⚠️ `MASTER_PROMPT` fixe + World Bible générée, mais pas de zone libre longue éditable par l'utilisateur |
+| Detail and instructions (`instructions`) | **Le champ le plus important** : contexte complet donné à l'IA — cadre, sujet du jeu, rôle du personnage joueur, instructions de narration. Convention : référer au perso joueur en "I" ("In this story I am trying to..."). Avertissement officiel : au-delà de quelques milliers de mots, le coût par tour augmente (mais certains mondes dépassent plusieurs milliers de mots sans problème) | ✅ `world.instructions`, généré à la création (même convention "I"), zone de texte libre longue, éditable |
 | Extra instruction blocks | Blocs nommés (ex. "Know", "Int") ajoutés à la fin des instructions principales avant envoi à l'IA — utile pour l'organisation ou pour servir de cible aux *triggers* | ❌ absent |
-| Author style (`authorStyle`) | Style d'écriture : "a bestselling novelist", un auteur précis ("Neil Gaiman"), ou un genre ("a writer of Children's books") | ❌ absent (ton fixe imposé par le Master Prompt) |
-| Design notes | Notes internes à l'auteur, sans effet sur le jeu — contient typiquement le prompt original tapé par l'utilisateur avant expansion par l'IA de génération de monde | ❌ absent |
-| Mature content (`nsfw`) + Content warnings (`contentWarnings`) | Case à cocher "contenu mature (R)" déclenchant un avertissement au joueur, + liste libre de catégories de contenu sensible | ❌ absent |
+| Author style (`authorStyle`) | Style d'écriture : "a bestselling novelist", un auteur précis ("Neil Gaiman"), ou un genre ("a writer of Children's books") | ✅ `world.authorStyle`, généré, éditable, transmis à l'IA à chaque tour |
+| Design notes | Notes internes à l'auteur, sans effet sur le jeu — contient typiquement le prompt original tapé par l'utilisateur avant expansion par l'IA de génération de monde | ❌ absent — l'idée d'origine tapée par le joueur (`playerIdea`) n'est même pas conservée sur le monde une fois la génération faite |
+| Mature content (`nsfw`) + Content warnings (`contentWarnings`) | Case à cocher "contenu mature (R)" déclenchant un avertissement au joueur, + liste libre de catégories de contenu sensible | ✅ `world.mature` + `world.contentWarnings`, éditables, avertissement affiché à la sélection du personnage |
 
 ### 2.3 Image style
 
 | Champ | Description | État Fogbound |
 |---|---|---|
-| Image model (`imageModel`) | Modèle d'image actif (Flux.1, DreamShaper, ...) — bouton "Change image model" | ⚠️ on a un choix de *provider* (Stability/Replicate) mais pas de modèle précis exposé |
-| Style details (`imageStyle`, `illustrationStyle*LowPriority/HighPriority`, `imageStyle*Pre/Post`) | Presets de style visuel, distincts pour "personnage" et "non-personnage" (décor), avec texte préfixe/suffixe ajouté automatiquement à chaque prompt d'image | ❌ absent — chez nous le `image_prompt` est généré en roue libre par le narrateur sans cadrage de style |
+| Image model (`imageModel`) | Modèle d'image actif (Flux.1, DreamShaper, ...) — bouton "Change image model" | ⚠️ choix de *provider* (Stability/Replicate/démo) dans Réglages, mais pas de modèle précis exposé, et pas par monde (réglage global) |
+| Style details (`imageStyle`, `illustrationStyle*LowPriority/HighPriority`, `imageStyle*Pre/Post`) | Presets de style visuel, distincts pour "personnage" et "non-personnage" (décor), avec texte préfixe/suffixe ajouté automatiquement à chaque prompt d'image | ⚠️ `world.imageStyle` + `imageStylePrefix`/`imageStyleSuffix` généré et éditable, appliqué automatiquement à chaque `image_prompt` — mais **un seul style pour tout**, pas de distinction personnage vs décor |
 
 Le guide JSON précise deux approches de prompt d'image bien distinctes
 selon le modèle (voir §4).
@@ -100,35 +104,47 @@ C'est la section la plus structurante et **la plus absente chez Fogbound**.
 fixes globalement) — ex. fantasy: "Magic", "Combat" ; Jane Austen: "Wealth",
 "Wit". Recommandation officielle : 4 à 6 skills.
 
+État Fogbound : ✅ `world.skills` (string[]), généré à la création (4-6,
+comme recommandé), utilisé pour la résolution de réussite/échec à chaque
+tour. ⚠️ éditable seulement via la retouche IA (renommer/ajouter/retirer
+un skill en langage naturel) — pas de petite liste éditable à la main.
+
 **Characters** (`possibleCharacters`) : liste de personnages jouables
 proposés au choix du joueur avant de commencer. Chacun a :
 - `name`, `description` (influence réellement le gameplay : si la fiche
   mentionne une compétence en philatélie ou aux armes de siège, l'IA en
-  tiendra compte) ;
+  tiendra compte) — ✅ équivalent chez Fogbound (`playableCharacters`),
+  CRUD complet dans l'éditeur : ajout manuel, génération IA depuis une
+  description, édition, suppression (aussi possible depuis l'écran de
+  sélection lui-même) ;
 - `portrait` (+ génération IA alternative / upload) — **uniquement affiché
-  à l'écran de sélection, jamais montré en jeu** ;
+  à l'écran de sélection, jamais montré en jeu** — ❌ absent chez Fogbound,
+  aucune image par personnage ;
 - `skills` : objet `{skillName: valeur numérique}`, avec un libellé
   qualitatif par palier observé dans la capture (2 = "Unskilled", 3 =
-  "Competent", 4 = "Highly skilled", 5 = "Exceptional") ;
+  "Competent", 4 = "Highly skilled", 5 = "Exceptional") — ✅ identique dans
+  l'esprit (`character.skills`, 1-5, libellés qualitatifs affichés à la
+  sélection) ;
 - `initialTrackedItemValues` : valeurs de départ des objets suivis
-  spécifiques à ce personnage (inventaire, relations, etc.).
+  spécifiques à ce personnage (inventaire, relations, etc.) — ❌ absent,
+  les objets suivis n'ont qu'une seule valeur initiale par monde, pas de
+  variation par personnage.
 
 **Customization settings** : au niveau monde, quels champs le joueur a le
 droit de modifier une fois le personnage choisi (`allowChangeCharacterName`,
 `...Description`, `...Skills`, `...ItemValues`, `...Portrait`,
 `...NewPortrait` dans le JSON — via `permissionsOnceShared`).
 
-Chez Fogbound : **aucun choix de personnage, aucun skill, aucune
-résolution de réussite/échec.** L'action du joueur est toujours acceptée
-et narrée sans confrontation à une capacité. C'est la lacune la plus
-citée par l'utilisateur ("l'app ne sert à rien sinon").
+État Fogbound : ❌ absent — aucun réglage de permission granulaire ; le
+joueur peut éditer un personnage avant de le choisir (écran de sélection)
+mais rien de comparable à "quels champs modifiables une fois en jeu".
 
-Note d'incertitude : aucune source consultée ne décrit de générateur
-aléatoire (dés) explicite — tout indique que c'est le **modèle de langage
-lui-même** qui juge, de façon narrative, le succès ou l'échec en tenant
-compte de la valeur numérique du skill et de la difficulté implicite de
-l'action, guidé par les instructions du monde (`descriptionRequest`). Pas
-de RNG serveur documenté.
+Résolution de réussite/échec : ✅ implémentée (Phase A) — l'IA choisit le
+skill pertinent, compare au niveau du personnage et à la difficulté
+implicite de l'action, renvoie `outcome` (success/partial/failure/n/a),
+caché au joueur par défaut (visible en mode auteur 🔍). Comme Infinite
+Worlds, aucun générateur aléatoire (dés) : c'est le modèle de langage
+lui-même qui juge narrativement, sans RNG serveur.
 
 ### 2.5 Items to track / Inventaire (`trackedItems`)
 
@@ -150,9 +166,15 @@ Le wiki avertit que l'IA n'est pas toujours fiable pour décider seule des
 mises à jour — recommande de dupliquer le suivi dans le `secretInfo` (voir
 2.6) pour plus de cohérence.
 
-Chez Fogbound : `memoryFacts` est un fourre-tout de phrases libres, sans
-typage, sans visibilité différenciée, sans instructions de mise à jour
-dédiées par catégorie. C'est un embryon de la même idée mais sans structure.
+État Fogbound : ✅ implémenté (Phase C) — `trackedItemDefs` typés (text/
+number), avec description, visibilité (`player_and_ai`/`ai_only`),
+`updateAutomatically` et `updateInstructions` dédiées, exactement comme
+décrit. `memoryFacts` existe en plus, en complément, pour des faits libres
+non structurés (proche de l'esprit `secretInfo`/notes de personnage).
+⚠️ **Mais aucune interface pour ajouter, éditer ou supprimer un tracked
+item après la création du monde** — ils sont générés une fois (2-5 par
+monde) puis figés ; seules leurs *valeurs* évoluent en jeu, pas leur
+définition.
 
 ### 2.6 Secret info — état caché
 
@@ -165,8 +187,12 @@ de lieux, etc. Le guide donne des catégories types : `CharCurrent`,
 `CharPersona`, `CharPhilosophy`, `CharMotive`, `CharAbility`, `CharQuirk`,
 `CharRelation`, `CharBody`, `CharNeeds`, `LocationDetails`.
 
-Chez Fogbound : totalement absent. `memoryFacts` est toujours implicitement
-visible/utilisable de la même façon, pas de distinction caché/visible.
+État Fogbound : ✅ implémenté (Phase E) — `save.secretInfo`, bloc cumulatif
+mis à jour par l'IA chaque tour (`secret_info` dans la réponse), jamais
+exposé au client par défaut, révélé seulement en mode auteur (🔍). Pas de
+sous-catégories nommées comme `CharMotive`/`CharQuirk`/etc. — c'est un seul
+bloc de texte libre plutôt qu'une structure par catégorie, mais le principe
+(caché, cumulatif, réécrit en entier chaque tour) est le même.
 
 ### 2.7 NPCs (Other Characters)
 
@@ -177,10 +203,16 @@ récemment — cf. §1), `appearance`, `location` (lieu par défaut),
 `secret_info` (motivations cachées), `names` (surnoms), et des champs
 dédiés à l'image (`img_appearance`, `img_clothing`).
 
-Chez Fogbound : `characters` existe en base mais seulement générés/mis à
-jour dynamiquement par l'IA pendant le jeu — aucune fiche pré-écrite par
-l'auteur au moment de la création du monde, pas de notion "vu récemment
-→ fiche complète, sinon → résumé".
+État Fogbound : ✅ implémenté (Phase E) — `worldNpcs` pré-écrits à la
+création du monde (`name`, `role`, `detail`, `oneLiner`, `appearance`,
+`location`), copiés dans chaque nouvelle sauvegarde (`saveCharacters`) et
+mis à jour en jeu ensuite. La logique "vu récemment → fiche complète,
+sinon → résumé" est bien implémentée (`buildTurnPrompt`, recherche du nom
+dans les dernières scènes). ⚠️ Pas de champ `secret_info` par PNJ (le
+secret est un seul bloc au niveau de la sauvegarde, pas par personnage), et
+**aucune interface pour éditer/ajouter/supprimer un PNJ** après la
+création — comme les tracked items, ils sont générés une fois puis figés
+côté auteur (seul leur état évolue en jeu).
 
 ### 2.8 Trigger events / Keyword Instruction Blocks (KIBs)
 
@@ -207,7 +239,11 @@ l'ajout de nouveaux faits).
   tour, vraisemblablement en incluant la condition dans le prompt système
   et en demandant un champ de sortie booléen).
 
-Chez Fogbound : absent — aucune fin de partie n'est possible.
+État Fogbound : ✅ implémenté (Phase B) — `victoryCondition`/`victoryText`
+et `defeatCondition`/`defeatText`, optionnels, jugés par l'IA à chaque tour
+(`game_over` dans la réponse). Une défaite termine l'histoire pour de bon ;
+une victoire peut être suivie ("continuer à jouer"). ⚠️ Éditables
+seulement via la retouche IA, pas de champ texte direct dans l'éditeur.
 
 ### 2.10 Show optional features
 
@@ -283,22 +319,54 @@ mineurs.
 
 ---
 
-## 5. Écart Fogbound → Infinite Worlds (synthèse priorisée)
+## 5. Écart actualisé Fogbound → Infinite Worlds — pour arbitrage
 
-| # | Fonctionnalité | Présent chez Fogbound | Impact si absent | Priorité |
-|---|---|---|---|---|
-| 1 | Skills par monde + résolution de réussite/échec | Non | Le jeu accepte toujours tout — pas de "jeu" à proprement parler | **Critique** |
-| 2 | Sélection de personnage jouable avant de commencer (avec skills) | Non | Pas de rejouabilité, pas d'incarnation | **Critique** |
-| 3 | Tracked items / inventaire typé avec instructions de mise à jour | Embryon (`memoryFacts` non typé) | Pas de suivi fiable d'objets/jauges | Haute |
-| 4 | Conditions de victoire/défaite | Non | Les histoires n'ont jamais de fin | Haute |
-| 5 | Zone "Main instructions" librement éditable par monde + Author style | Non (prompt fixe) | Tous les mondes sonnent pareil, pas de contrôle auteur | Haute |
-| 6 | NPCs pré-écrits par l'auteur (fiche + secret_info) | Non (générés à la volée seulement) | Moins de cohérence/profondeur des PNJ | Moyenne |
-| 7 | secretInfo (état caché structuré) | Non | Cohérence narrative plus fragile sur le long terme | Moyenne |
-| 8 | Style d'image structuré (pré/suffixe, personnage vs décor) | Non (prompt libre) | Images incohérentes visuellement d'un tour à l'autre | Moyenne |
-| 9 | Objectif de la partie affiché au joueur | Non | Moins de direction pour le joueur | Moyenne |
-| 10 | Version/description/image de couverture du monde | Non | Confort de gestion multi-mondes | Basse |
-| 11 | Triggers / Keyword Instruction Blocks | Non | Fonctionnalité avancée, pas bloquante au début | Basse |
-| 12 | Contenu mature + avertissements | Non | Pertinent seulement si contenu adulte envisagé | Basse |
+Repasse complète demandée en session (post Phases A-G + lots suivants) :
+la synthèse ci-dessous d'origine était devenue fausse — presque tout ce
+qu'elle listait "absent" est maintenant implémenté (détail champ par champ
+en section 2, mis à jour). Cette liste-ci ne garde que ce qui **manque
+réellement encore aujourd'hui**, ou n'est qu'**éditable indirectement**
+(via retouche IA plutôt qu'un champ dédié), pour trancher ce qui vaut la
+peine d'être ajouté.
+
+**Vrais absents (aucun équivalent chez Fogbound) :**
+
+| # | Fonctionnalité Infinite Worlds | Impact si ajouté | Effort estimé |
+|---|---|---|---|
+| 1 | Portrait par personnage jouable (image générée/uploadée, écran de sélection uniquement) | Sélection de personnage plus visuelle/immersive | Moyen — génération d'image déjà en place pour la couverture, réutilisable |
+| 2 | Éditeur pour les tracked items après création (ajouter/éditer/supprimer un objet suivi) | Aujourd'hui figés une fois générés — l'auteur ne peut pas corriger/enrichir sans passer par une régénération complète | Moyen — CRUD similaire à celui déjà fait pour les personnages jouables |
+| 3 | Éditeur pour les PNJ après création (ajouter/éditer/supprimer, secret par PNJ) | Même limite que les tracked items — PNJ figés à la création | Moyen, même mécanique |
+| 4 | Valeurs initiales de tracked items différentes par personnage | Un personnage "riche" et un "pauvre" partagent aujourd'hui le même inventaire de départ | Faible-moyen |
+| 5 | Distinction style d'image personnage vs décor | Actuellement un seul style pour tout — moins de contrôle fin que "personnage" vs "environnement" | Faible-moyen |
+| 6 | Extra instruction blocks + Triggers/Keyword Instruction Blocks | Fonctionnalité avancée (changer les instructions activement selon des mots-clés en jeu) | Élevé — mécanisme entier à concevoir, aucun équivalent actuel |
+| 7 | "Design notes" (conserver l'idée d'origine tapée par le joueur) | Utile pour se souvenir de l'intention de départ, aucun effet sur le jeu | Très faible |
+| 8 | "Show additional text on character selection screen" | Texte auteur dédié à l'étape de sélection (au-delà de l'avertissement contenu mature) | Très faible |
+| 9 | Choix du modèle d'image précis par monde (pas juste le provider) | Plus de contrôle visuel par monde | Faible-moyen selon les providers |
+
+**Techniquement présents, mais éditables seulement via la retouche IA
+(pas de champ dédié dans le formulaire manuel) :**
+
+| # | Champ | Pourquoi ça pourrait valoir un champ dédié |
+|---|---|---|
+| 10 | Titre du monde | Renommer un monde est une action ponctuelle très courante — passer par une "retouche IA" pour ça est disproportionné |
+| 11 | Skills (liste des 4-6 compétences) | Renommer/ajouter un skill précis est plus fiable en direct qu'en langage naturel |
+| 12 | Setting / Tone / Rules | Champs structurants, actuellement seulement modifiables en "décris le changement en langage naturel" |
+| 13 | Conditions et textes de victoire/défaite | Pareil — un champ texte direct serait plus prévisible qu'une retouche IA |
+
+**Générés mais invisibles ou non actionnables dans l'interface :**
+
+| # | Champ | Problème concret |
+|---|---|---|
+| 14 | Numéro de version (`world.version`) | S'incrémente bien à chaque édition mais n'est affiché **nulle part** — invisible pour l'auteur |
+| 15 | Image de couverture (`coverImageUrl`) | Générée une fois à la création si les images sont activées, aucun bouton pour la régénérer ou en mettre une autre ensuite |
+
+**Déjà couvert, pour mémoire (pas d'action nécessaire) :** skills +
+résolution de réussite/échec, sélection de personnage, tracked items
+typés (génération), conditions de victoire/défaite, instructions
+principales + style d'auteur, PNJ enrichis (génération) + secretInfo,
+style d'image (un seul, sans distinction perso/décor), objectif affiché,
+contenu mature + avertissements, description + background + première
+action, langue par monde.
 
 ---
 
