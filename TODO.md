@@ -71,6 +71,29 @@ pas de règle CSS `.hidden`, donc restait visible même masqué en JS).
       🔍 (loupe) — jugé plus esthétique. Concerne le bouton `#authorModeBtn`
       et le préfixe dans `#secretInfoBox` (`public/app.js`,
       `public/index.html`).
+- [ ] **Popup "Background" au lancement d'une aventure** (comme dans
+      Infinite Worlds) : un nouveau champ de monde, long et distinct des
+      champs existants —
+      - différent de `description` (résumé court affiché dans la liste des
+        mondes) ;
+      - différent de `instructions` (s'adresse à l'IA, pas au joueur) ;
+      - c'est un texte narratif adressé au **joueur**, montré dans une
+        popup fixe (identique à chaque nouvelle aventure sur ce monde) qui
+        explique le contexte de l'histoire, l'enjeu, pourquoi le
+        personnage en est là.
+      Généré une fois à la création du monde (comme le reste), éditable
+      dans l'éditeur de monde.
+- [ ] **"Première action" fixe par monde** : un texte d'action prédéterminé
+      (généré/éditable comme le reste, toujours identique pour ce monde),
+      utilisé pour déclencher la génération du tout premier tour réel par
+      l'IA — au lieu du chapitre d'ouverture actuel, pré-écrit une seule
+      fois à la création du monde et simplement recopié tel quel dans
+      chaque nouvelle sauvegarde.
+- [ ] **Pré-chargement pendant la lecture du background** : pendant que le
+      joueur lit la popup, l'appel IA pour générer ce premier tour se
+      lance déjà en parallèle, pour que le monde (texte + 3 actions
+      suggérées) soit prêt dès qu'on ferme la popup — pas de temps de
+      chargement visible après.
 
 ---
 
@@ -96,3 +119,14 @@ pas de règle CSS `.hidden`, donc restait visible même masqué en JS).
   `buildTurnPrompt` au lieu de `settings.language`, et assumer qu'un monde
   déjà créé garde sa langue (pas de traduction rétroactive du World Bible/
   des tours passés — trop coûteux et fragile pour la valeur apportée).
+- **Background + première action** : ça change le modèle actuel où le
+  chapitre d'ouverture est gratuit (pré-écrit une fois à la création du
+  monde, recopié à l'identique dans chaque sauvegarde). Si le premier tour
+  devient un vrai appel IA déclenché par la "première action", ça coûte un
+  appel par nouvelle aventure — mais permet un tour d'ouverture qui connaît
+  déjà le personnage choisi (plus personnalisé). Point à trancher avant
+  d'implémenter : le choix du personnage doit-il se faire *avant* la popup
+  background (pour que ce premier tour le connaisse), ou le premier tour
+  reste-t-il générique comme aujourd'hui ? Ça détermine si "première
+  action" doit rester neutre (comme `opening_chapter` actuellement) ou peut
+  référencer le personnage.
