@@ -102,21 +102,44 @@ pas de règle CSS `.hidden`, donc restait visible même masqué en JS).
       page) : trois onglets navigables — "Créer un monde", "Mes mondes",
       "Mes sauvegardes" — le plus esthétique et intuitif possible plutôt
       qu'un simple `<select>` d'onglets basique.
-- [ ] **Bug d'affichage : les flèches ‹ › de pagination sont quasi
-      invisibles.** Sur une sauvegarde qui n'a qu'un seul tour (juste après
-      création), les DEUX flèches sont désactivées en même temps (pas de
-      page précédente, pas de page suivante) et tombent à 30% d'opacité
-      sur un gris déjà discret (`--text-dim`) — sur mobile ça peut donner
-      l'impression qu'il n'y a aucun bouton de navigation du tout.
-      Confirmé par l'utilisateur en review : "les boutons ‹ › n'apparaissaient
-      pas du tout". Piste de correctif : garder les boutons bien visibles
-      même désactivés (contraste suffisant), ou n'afficher la barre de
-      pagination que lorsqu'il y a réellement plus d'une page.
-- [ ] **Problème de régénération signalé, détail à préciser.** Les logs
-      serveur montrent un appel `POST /api/saves/:id/turns/:n/regenerate`
-      réussi (HTTP 200, ~11s, réponse IA reçue) au moment où l'utilisateur
-      a rencontré le souci — donc pas un crash serveur. Symptôme précis
-      encore à obtenir avant de pouvoir corriger.
+## Fait (15/09 — crash JSON brut, flèches de pagination invisibles)
+
+- [x] **Bug d'affichage : les flèches ‹ › de pagination étaient quasi
+      invisibles.** Confirmé par capture d'écran de l'utilisateur (l'erreur
+      brute apparaissait juste en dessous, voir point suivant). Cause :
+      sur une sauvegarde à un seul tour, les DEUX flèches étaient
+      désactivées en même temps à 30% d'opacité sur un gris déjà discret.
+      Corrigé : la barre `#pageNav` est maintenant entièrement masquée
+      quand il n'y a qu'une seule page, et les flèches actives ont un
+      contour/texte couleur accent nettement visible par rapport à l'état
+      désactivé. Vérifié en navigateur réel (Playwright) : masquée sur une
+      sauvegarde fraîche (1 tour), visible avec un net contraste dès 2
+      tours.
+- [x] **Crash "Unexpected token 'u', "upstream error" is not valid JSON"
+      affiché brut au joueur** (capture d'écran fournie par l'utilisateur).
+      Cause réelle : un appel IA long peut voir sa réponse HTTP tronquée/
+      remplacée par un texte d'erreur (proxy Railway, coupure réseau) alors
+      même que le serveur a déjà fini et enregistré le tour avec succès —
+      le `res.json()` non protégé plantait alors avec ce message brut.
+      Corrigé : chaque appel réseau lié à une sauvegarde (jouer un tour,
+      régénérer, continuer, revenir en arrière) analyse maintenant la
+      réponse de façon défensive, et en cas d'échec, re-récupère la
+      sauvegarde et compare `updatedAt` à sa valeur d'avant l'appel — si le
+      serveur a bien réussi entre-temps, le vrai résultat s'affiche au lieu
+      d'une erreur (sinon, un message lisible s'affiche, plus jamais
+      l'erreur JS brute). Testé en navigateur réel avec une réponse
+      simulée corrompue après un vrai succès serveur : la page se met bien
+      à jour avec le contenu réel, sans erreur visible.
+      Concernant "le mode page ne s'active pas avant de faire une
+      régénération" : audit du code n'a trouvé aucune voie
+      d'affichage concaténé/historique (rien de type `chapterFeed` ou
+      boucle sur tous les tours) — et un test en navigateur réel confirme
+      que la pagination est active dès le tour 1, sans lien avec une
+      régénération. Hypothèse retenue : un onglet resté ouvert avec
+      l'ancien JS chargé avant ce lot de fonctionnalités (une PWA ne
+      recharge pas son script tant que l'onglet reste ouvert) — pas un
+      problème d'architecture. À confirmer avec l'utilisateur après un
+      rechargement complet de la page.
 
 ---
 
