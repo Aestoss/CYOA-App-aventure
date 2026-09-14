@@ -329,42 +329,49 @@ réellement encore aujourd'hui**, ou n'est qu'**éditable indirectement**
 (via retouche IA plutôt qu'un champ dédié), pour trancher ce qui vaut la
 peine d'être ajouté.
 
-**Vrais absents (aucun équivalent chez Fogbound) :**
+**Restant non fait — délibérément mis de côté :**
 
-| # | Fonctionnalité Infinite Worlds | Impact si ajouté | Effort estimé |
-|---|---|---|---|
-| 1 | Portrait par personnage jouable (image générée/uploadée, écran de sélection uniquement) | Sélection de personnage plus visuelle/immersive | Moyen — génération d'image déjà en place pour la couverture, réutilisable |
-| 2 | Éditeur pour les tracked items après création (ajouter/éditer/supprimer un objet suivi) | Aujourd'hui figés une fois générés — l'auteur ne peut pas corriger/enrichir sans passer par une régénération complète | Moyen — CRUD similaire à celui déjà fait pour les personnages jouables |
-| 3 | Éditeur pour les PNJ après création (ajouter/éditer/supprimer, secret par PNJ) | Même limite que les tracked items — PNJ figés à la création | Moyen, même mécanique |
-| 4 | Valeurs initiales de tracked items différentes par personnage | Un personnage "riche" et un "pauvre" partagent aujourd'hui le même inventaire de départ | Faible-moyen |
-| 5 | Distinction style d'image personnage vs décor | Actuellement un seul style pour tout — moins de contrôle fin que "personnage" vs "environnement" | Faible-moyen |
-| 6 | Extra instruction blocks + Triggers/Keyword Instruction Blocks | Fonctionnalité avancée (changer les instructions activement selon des mots-clés en jeu) | Élevé — mécanisme entier à concevoir, aucun équivalent actuel |
-| 7 | "Design notes" (conserver l'idée d'origine tapée par le joueur) | Utile pour se souvenir de l'intention de départ, aucun effet sur le jeu | Très faible |
-| 8 | "Show additional text on character selection screen" | Texte auteur dédié à l'étape de sélection (au-delà de l'avertissement contenu mature) | Très faible |
-| 9 | Choix du modèle d'image précis par monde (pas juste le provider) | Plus de contrôle visuel par monde | Faible-moyen selon les providers |
-
-**Techniquement présents, mais éditables seulement via la retouche IA
-(pas de champ dédié dans le formulaire manuel) :**
-
-| # | Champ | Pourquoi ça pourrait valoir un champ dédié |
+| # | Fonctionnalité Infinite Worlds | Pourquoi mis de côté |
 |---|---|---|
-| 10 | Titre du monde | Renommer un monde est une action ponctuelle très courante — passer par une "retouche IA" pour ça est disproportionné |
-| 11 | Skills (liste des 4-6 compétences) | Renommer/ajouter un skill précis est plus fiable en direct qu'en langage naturel |
-| 12 | Setting / Tone / Rules | Champs structurants, actuellement seulement modifiables en "décris le changement en langage naturel" |
-| 13 | Conditions et textes de victoire/défaite | Pareil — un champ texte direct serait plus prévisible qu'une retouche IA |
+| 1 | Extra instruction blocks + Triggers/Keyword Instruction Blocks | Seul item resté "Élevé" en effort — un vrai sous-système à concevoir (détection de mots-clés en jeu, réécriture active de blocs d'instructions), pas un simple champ. Mis de côté volontairement en attendant un feu vert explicite dédié, plutôt que bâclé dans le même lot que le reste. |
+| 2 | Distinction style d'image personnage vs décor | Secondaire une fois les portraits par personnage en place (ils utilisent déjà le style du monde) — writeup gardé si le besoin se fait sentir. |
 
-**Générés mais invisibles ou non actionnables dans l'interface :**
+**Fait (15/09, troisième lot — portraits, éditeurs post-création, valeurs
+par personnage, champs directs) :** tout le reste de la liste "vrais
+absents" et "éditable seulement via retouche IA" du lot précédent est
+maintenant implémenté :
 
-| # | Champ | Problème concret |
-|---|---|---|
-| 14 | Numéro de version (`world.version`) | S'incrémente bien à chaque édition mais n'est affiché **nulle part** — invisible pour l'auteur |
-| 15 | Image de couverture (`coverImageUrl`) | Générée une fois à la création si les images sont activées, aucun bouton pour la régénérer ou en mettre une autre ensuite |
+- **Portrait par personnage jouable** : généré automatiquement (IA + génération
+  de personnage) quand les images sont activées, bouton "Régénérer le
+  portrait" sinon/toujours, affiché à l'écran de sélection et dans
+  l'éditeur — jamais montré en jeu (comme Infinite Worlds). Génération
+  d'image désactivée dans Réglages → erreur claire au clic sur
+  "régénérer", pas de plantage ; la génération automatique à la création
+  d'un personnage est simplement sautée.
+- **Éditeur de tracked items après création** (ajouter/éditer/supprimer) —
+  supprimer un objet nettoie les valeurs de sauvegardes existantes ; en
+  ajouter un nouveau ne casse rien pour les parties en cours (retombent
+  sur la valeur par défaut tant qu'elles ne l'ont pas rencontré).
+- **Éditeur de PNJ après création** (ajouter/éditer/supprimer) — les
+  sauvegardes déjà commencées gardent leur propre copie, non affectée.
+- **Valeurs initiales de tracked items par personnage** — un personnage
+  peut démarrer avec une valeur différente (ex. plus de confiance, plus
+  d'argent) ; appliqué au moment de choisir le personnage (pas à la
+  création de la sauvegarde, puisque le personnage n'est pas encore
+  connu à cet instant).
+- **Design notes**, **texte additionnel à l'écran de sélection**, **modèle
+  d'image par monde** (supporté pour Replicate ; Stability n'a pas de
+  paramètre de modèle simple, son endpoint fixe reste utilisé tel quel).
+- **Titre, skills, setting/tone/rules, conditions et textes de
+  victoire/défaite** : champs dédiés dans le formulaire manuel, plus
+  besoin de passer par la retouche IA pour ça.
+- **Numéro de version affiché**, **bouton de régénération de l'image de
+  couverture**.
 
 **Déjà couvert, pour mémoire (pas d'action nécessaire) :** skills +
 résolution de réussite/échec, sélection de personnage, tracked items
-typés (génération), conditions de victoire/défaite, instructions
-principales + style d'auteur, PNJ enrichis (génération) + secretInfo,
-style d'image (un seul, sans distinction perso/décor), objectif affiché,
+typés, conditions de victoire/défaite, instructions principales + style
+d'auteur, PNJ enrichis + secretInfo, style d'image, objectif affiché,
 contenu mature + avertissements, description + background + première
 action, langue par monde.
 

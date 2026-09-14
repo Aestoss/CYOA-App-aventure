@@ -5,6 +5,43 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-14 — Portraits de personnage, éditeurs post-création, champs manquants
+
+Termine la liste "vrais absents" de la repasse comparative avec Infinite
+Worlds — seul reste volontairement de côté : Triggers/Keyword Instruction
+Blocks (sous-système entier, effort trop élevé pour ce lot, en attente
+d'un feu vert dédié).
+
+- **Portrait par personnage jouable** : généré automatiquement à la
+  création (monde et personnages IA) quand les images sont activées ;
+  bouton "Régénérer le portrait" sinon ; affiché à l'écran de sélection et
+  dans l'éditeur, jamais en jeu (comme Infinite Worlds). Génération
+  d'images désactivée → erreur claire au lieu d'un plantage, génération
+  automatique simplement sautée à la création.
+- **Éditeur de tracked items après création** : ajouter/éditer/supprimer
+  un objet suivi (inventaire, jauges...) sans repasser par une
+  régénération complète du monde. Supprimer un objet nettoie les valeurs
+  des sauvegardes existantes ; en ajouter un nouveau ne casse rien pour
+  les parties en cours.
+- **Éditeur de PNJ après création** : même chose pour les personnages non
+  joueurs — les sauvegardes déjà commencées gardent leur propre copie.
+- **Valeurs initiales de tracked items par personnage** : un personnage
+  peut démarrer avec une valeur différente d'un objet suivi (ex. plus de
+  confiance, plus d'argent) — appliqué au moment de choisir le personnage.
+- **Champs directs** pour titre, skills, setting/tone/rules, conditions et
+  textes de victoire/défaite (avant : retouche IA uniquement), texte
+  additionnel à l'écran de sélection, notes de conception (idée d'origine,
+  sans effet sur le jeu), modèle d'image par monde (Replicate ; Stability
+  garde son endpoint fixe, pas de paramètre de modèle simple côté API).
+- **Corrigé au passage** : l'estimation de coût Gemini (`lib/pricing.js`)
+  utilisait un tarif obsolète, sous-évaluant le coût réel d'un facteur 10.
+
+Vérifié de bout en bout : génération de portrait avec/sans images
+activées, CRUD complet tracked items/PNJ via l'API et l'interface,
+override de valeur initiale appliqué à la bonne sauvegarde (vérifié en
+base), tous les nouveaux champs de l'éditeur pré-remplis et persistants,
+texte de sélection de personnage affiché sur l'écran réel.
+
 ## 2026-09-14 — Éditeur de monde : champs jusque-là indirects rendus directement éditables
 
 Suite à la repasse comparative avec Infinite Worlds (`docs/INFINITE_WORLDS_REFERENCE.md`,

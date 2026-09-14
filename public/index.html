@@ -70,6 +70,7 @@
   <section id="view-character-select" class="view hidden">
     <button id="backFromCharSelectBtn" class="text-btn" data-i18n="backToStories"></button>
     <h2 id="charSelectTitle">Choisis ton personnage</h2>
+    <p id="characterSelectText" class="hint hidden"></p>
     <div id="matureWarning" class="mature-warning hidden"></div>
     <div id="characterList" class="character-list"></div>
   </section>
@@ -157,6 +158,15 @@
       <label><span data-i18n="worldContentWarningsLabel"></span> <span class="hint-inline" data-i18n="worldContentWarningsHint"></span>
         <input id="worldContentWarningsInput" type="text" data-i18n-placeholder="worldContentWarningsPlaceholder">
       </label>
+      <label><span data-i18n="worldCharacterSelectTextLabel"></span> <span class="hint-inline" data-i18n="worldCharacterSelectTextHint"></span>
+        <input id="worldCharacterSelectTextInput" type="text">
+      </label>
+      <label><span data-i18n="worldImageModelLabel"></span> <span class="hint-inline" data-i18n="worldImageModelHint"></span>
+        <input id="worldImageModelInput" type="text" data-i18n-placeholder="worldImageModelPlaceholder">
+      </label>
+      <label><span data-i18n="worldDesignNotesLabel"></span> <span class="hint-inline" data-i18n="worldDesignNotesHint"></span>
+        <textarea id="worldDesignNotesInput" rows="2"></textarea>
+      </label>
       <label><span data-i18n="worldSettingLabel"></span> <span class="hint-inline" data-i18n="worldSettingHint"></span>
         <textarea id="worldSettingInput" rows="3"></textarea>
       </label>
@@ -206,6 +216,20 @@
       <label><span data-i18n="worldDefeatTextLabel"></span>
         <textarea id="worldDefeatTextInput" rows="2"></textarea>
       </label>
+    </div>
+
+    <div class="settings-group">
+      <h3 data-i18n="trackedItemsHeading"></h3>
+      <p class="hint" data-i18n="trackedItemsHint"></p>
+      <div id="trackedItemsEditList" class="tracked-item-edit-list"></div>
+      <button id="addTrackedItemBtn" class="text-btn" data-i18n="addTrackedItemBtn"></button>
+    </div>
+
+    <div class="settings-group">
+      <h3 data-i18n="npcsHeading"></h3>
+      <p class="hint" data-i18n="npcsHint"></p>
+      <div id="npcEditList" class="npc-edit-list"></div>
+      <button id="addNpcBtn" class="text-btn" data-i18n="addNpcBtn"></button>
     </div>
 
     <div class="settings-group">

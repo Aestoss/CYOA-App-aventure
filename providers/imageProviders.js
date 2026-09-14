@@ -2,6 +2,10 @@ const fetch = require('node-fetch');
 
 // Returns a URL (or base64 data URL) for the generated image, or null.
 
+// Stability's v2beta "core" endpoint is a single fixed model — it has no
+// per-request model parameter to override, unlike Replicate. Model choice
+// on Stability would mean switching to an entirely different endpoint
+// (ultra/sd3/core each are separate models), which is out of scope here.
 async function callStability({ prompt, apiKey }) {
   const res = await fetch('https://api.stability.ai/v2beta/stable-image/generate/core', {
     method: 'POST',
@@ -18,12 +22,12 @@ async function callStability({ prompt, apiKey }) {
   return `data:image/png;base64,${data.image}`;
 }
 
-async function callReplicate({ prompt, apiKey }) {
+async function callReplicate({ prompt, apiKey, model }) {
   const start = await fetch('https://api.replicate.com/v1/predictions', {
     method: 'POST',
     headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
     body: JSON.stringify({
-      version: 'black-forest-labs/flux-schnell',
+      version: model || 'black-forest-labs/flux-schnell',
       input: { prompt }
     })
   });
@@ -41,10 +45,10 @@ async function callMock({ prompt }) {
 
 const providers = { stability: callStability, replicate: callReplicate, mock: callMock, none: callMock };
 
-async function generateImage({ provider, prompt, apiKey }) {
+async function generateImage({ provider, prompt, apiKey, model }) {
   if (!prompt) return null;
   const fn = providers[provider] || providers.mock;
-  return fn({ prompt, apiKey });
+  return fn({ prompt, apiKey, model });
 }
 
 module.exports = { generateImage };

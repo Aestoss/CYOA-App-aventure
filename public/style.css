@@ -263,6 +263,28 @@ input[type="range"] { width: 100%; margin: 6px 0 4px; accent-color: var(--accent
 .skill-edit-row input { margin: 0; flex: 1; }
 .skill-edit-row .skill-remove-btn { width: 40px; height: 40px; flex-shrink: 0; font-size: 0.95rem; }
 
+/* Character portrait (world editor + character selection) */
+.portrait-row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.character-portrait-img { width: 64px; height: 64px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); flex-shrink: 0; }
+.character-portrait-img.hidden { display: none; }
+.character-card .portrait-row { justify-content: center; margin-bottom: 12px; }
+.character-card .character-portrait-img { width: 96px; height: 96px; border-radius: 10px; }
+
+/* Tracked items / NPC editors (world editor) */
+.tracked-item-edit-list, .npc-edit-list { display: flex; flex-direction: column; gap: 12px; margin-bottom: 12px; }
+.tracked-item-edit-card, .npc-edit-card {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+}
+.tracked-item-edit-card input[type="text"], .tracked-item-edit-card textarea,
+.npc-edit-card input[type="text"], .npc-edit-card textarea { margin: 0 0 8px; }
+.tracked-item-edit-row { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+.tracked-item-edit-row select { margin: 0; flex: 1; min-width: 140px; }
+.tracked-item-edit-row label.toggle-inline { display: flex; align-items: center; gap: 6px; font-size: 0.85rem; color: var(--text-dim); margin: 0; white-space: nowrap; }
+.tracked-item-edit-row label.toggle-inline input { width: auto; margin: 0; }
+
 /* Story view */
 .story-header-row { display: flex; align-items: center; justify-content: space-between; }
 .story-header-actions { display: flex; gap: 8px; }

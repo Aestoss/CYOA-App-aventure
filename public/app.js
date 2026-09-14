@@ -93,6 +93,10 @@ const UI = {
     worldMatureLabel: 'Contenu mature (R)',
     worldContentWarningsLabel: 'Avertissements de contenu', worldContentWarningsHint: '(séparés par des virgules)',
     worldContentWarningsPlaceholder: 'violence, horreur...',
+    worldCharacterSelectTextLabel: 'Texte à la sélection du personnage', worldCharacterSelectTextHint: '(optionnel, affiché en plus de l\'avertissement contenu mature)',
+    worldImageModelLabel: "Modèle d'image", worldImageModelHint: '(optionnel — remplace le modèle par défaut du fournisseur, ex. Replicate)',
+    worldImageModelPlaceholder: 'ex : black-forest-labs/flux-schnell',
+    worldDesignNotesLabel: "Notes de conception", worldDesignNotesHint: "(usage personnel, jamais envoyé à l'IA, sans effet sur le jeu — l'idée d'origine par défaut)",
     worldInstructionsLabel: 'Instructions principales',
     worldAuthorStyleLabel: "Style d'auteur", worldAuthorStyleHint: '(ex : "Neil Gaiman", "un romancier de thriller")',
     worldImageStyleLabel: 'Style visuel', worldImageStyleHint: '(description générale, ex : "aquarelle sombre, palette froide")',
@@ -105,6 +109,29 @@ const UI = {
     worldSkillsHeading: 'Compétences',
     worldSkillsHint: "Utilisées par l'IA pour juger la réussite ou l'échec des actions (4 à 6 recommandées). Renommer ou supprimer une compétence ne met pas à jour les personnages déjà créés.",
     addSkillBtn: '+ Ajouter une compétence',
+    regeneratePortraitBtn: '🖼️ Régénérer le portrait',
+    startingItemValuesHint: "Valeurs de départ spécifiques à ce personnage — laisser vide pour utiliser la valeur par défaut de l'objet.",
+    trackedItemsHeading: 'Objets suivis',
+    trackedItemsHint: "Inventaire, jauges, réputation... Ajouter un nouvel objet n'affecte pas les parties en cours (elles gardent la valeur par défaut tant qu'elles ne l'ont pas rencontré).",
+    addTrackedItemBtn: '+ Ajouter un objet suivi',
+    newTrackedItemDefaultName: 'Nouvel objet',
+    trackedItemNamePlaceholder: 'Nom (ex : Inventaire)',
+    trackedItemDescPlaceholder: 'À quoi ça sert et pourquoi',
+    dataTypeText: 'Texte', dataTypeNumber: 'Nombre',
+    visibilityPlayerAndAi: 'Joueur + IA', visibilityAiOnly: 'IA seule (caché)',
+    updateAutomaticallyLabel: 'Mise à jour auto',
+    updateInstructionsPlaceholder: 'Instructions de mise à jour (si mise à jour auto)',
+    initialValuePlaceholder: 'Valeur initiale',
+    npcsHeading: 'Personnages non-joueurs (PNJ)',
+    npcsHint: "Pré-écrits par toi, rencontrés en jeu. Éditer ou supprimer un PNJ ici n'affecte pas les parties déjà en cours (chacune garde sa propre copie).",
+    addNpcBtn: '+ Ajouter un PNJ',
+    newNpcDefaultName: 'Nouveau PNJ',
+    npcNamePlaceholder: 'Nom',
+    npcRolePlaceholder: 'Rôle',
+    npcDetailPlaceholder: 'Fiche complète (personnalité, motivations...)',
+    npcOneLinerPlaceholder: "Résumé court (utilisé quand le PNJ n'est pas apparu récemment)",
+    npcAppearancePlaceholder: 'Apparence physique',
+    npcLocationPlaceholder: 'Lieu habituel',
     victoryDefeatHeading: 'Fin de partie',
     worldVictoryConditionLabel: 'Condition de victoire', worldConditionHint: '(vide = désactivée)',
     worldVictoryTextLabel: 'Texte affiché en cas de victoire',
@@ -227,6 +254,10 @@ const UI = {
     worldMatureLabel: 'Mature content (R)',
     worldContentWarningsLabel: 'Content warnings', worldContentWarningsHint: '(comma-separated)',
     worldContentWarningsPlaceholder: 'violence, horror...',
+    worldCharacterSelectTextLabel: 'Text at character selection', worldCharacterSelectTextHint: '(optional, shown alongside the mature-content warning)',
+    worldImageModelLabel: 'Image model', worldImageModelHint: "(optional — overrides the provider's default model, e.g. on Replicate)",
+    worldImageModelPlaceholder: 'e.g. black-forest-labs/flux-schnell',
+    worldDesignNotesLabel: 'Design notes', worldDesignNotesHint: "(personal use, never sent to the AI, no effect on gameplay — defaults to the original idea)",
     worldInstructionsLabel: 'Main instructions',
     worldAuthorStyleLabel: 'Author style', worldAuthorStyleHint: '(e.g. "Neil Gaiman", "a thriller novelist")',
     worldImageStyleLabel: 'Visual style', worldImageStyleHint: '(general description, e.g. "dark watercolor, cool palette")',
@@ -239,6 +270,29 @@ const UI = {
     worldSkillsHeading: 'Skills',
     worldSkillsHint: "Used by the AI to judge whether actions succeed or fail (4-6 recommended). Renaming or removing a skill doesn't update characters already created.",
     addSkillBtn: '+ Add a skill',
+    regeneratePortraitBtn: '🖼️ Regenerate portrait',
+    startingItemValuesHint: "Starting values specific to this character — leave blank to use the item's default value.",
+    trackedItemsHeading: 'Tracked items',
+    trackedItemsHint: "Inventory, gauges, reputation... Adding a new item doesn't affect saves already in progress (they keep the default value until they encounter it).",
+    addTrackedItemBtn: '+ Add a tracked item',
+    newTrackedItemDefaultName: 'New item',
+    trackedItemNamePlaceholder: 'Name (e.g. Inventory)',
+    trackedItemDescPlaceholder: "What it's for and why it matters",
+    dataTypeText: 'Text', dataTypeNumber: 'Number',
+    visibilityPlayerAndAi: 'Player + AI', visibilityAiOnly: 'AI only (hidden)',
+    updateAutomaticallyLabel: 'Update automatically',
+    updateInstructionsPlaceholder: 'Update instructions (if updated automatically)',
+    initialValuePlaceholder: 'Initial value',
+    npcsHeading: 'Non-player characters (NPCs)',
+    npcsHint: "Pre-written by you, encountered in play. Editing or deleting an NPC here doesn't affect saves already in progress (each keeps its own copy).",
+    addNpcBtn: '+ Add an NPC',
+    newNpcDefaultName: 'New NPC',
+    npcNamePlaceholder: 'Name',
+    npcRolePlaceholder: 'Role',
+    npcDetailPlaceholder: 'Full sheet (personality, motivations...)',
+    npcOneLinerPlaceholder: "Short reminder (used when this NPC hasn't appeared recently)",
+    npcAppearancePlaceholder: 'Physical appearance',
+    npcLocationPlaceholder: 'Usual location',
     victoryDefeatHeading: 'Ending the story',
     worldVictoryConditionLabel: 'Victory condition', worldConditionHint: '(empty = disabled)',
     worldVictoryTextLabel: 'Text shown on victory',
@@ -466,8 +520,7 @@ document.getElementById('createWorldBtn').onclick = async () => {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Erreur inconnue');
     document.getElementById('ideaInput').value = '';
-    populateWorldEditor(data.world, data.playableCharacters);
-    showView('worldEdit');
+    await openWorldEditor(data.world.id);
   } catch (e) {
     alert(t('cannotCreateWorld') + e.message);
   } finally {
@@ -478,9 +531,18 @@ document.getElementById('createWorldBtn').onclick = async () => {
 
 // ---------- World editor ----------
 
+let currentWorldTrackedItems = []; // full (unfiltered) list, needed for per-character starting-value inputs
+
 async function openWorldEditor(worldId) {
-  const data = await fetch(`${API}/worlds/${worldId}`).then(r => r.json());
+  const [data, trackedItems, npcs] = await Promise.all([
+    fetch(`${API}/worlds/${worldId}`).then(r => r.json()),
+    fetch(`${API}/worlds/${worldId}/tracked-items`).then(r => r.json()),
+    fetch(`${API}/worlds/${worldId}/npcs`).then(r => r.json())
+  ]);
+  currentWorldTrackedItems = trackedItems;
   populateWorldEditor(data.world, data.playableCharacters);
+  renderTrackedItemsEditor(trackedItems);
+  renderNpcEditor(npcs);
   showView('worldEdit');
 }
 
@@ -543,6 +605,9 @@ function populateWorldEditor(world, playableCharacters) {
   document.getElementById('worldFirstActionInput').value = world.firstAction || '';
   document.getElementById('worldMatureInput').checked = Boolean(world.mature);
   document.getElementById('worldContentWarningsInput').value = (world.contentWarnings || []).join(', ');
+  document.getElementById('worldCharacterSelectTextInput').value = world.characterSelectText || '';
+  document.getElementById('worldImageModelInput').value = world.imageModel || '';
+  document.getElementById('worldDesignNotesInput').value = world.designNotes || '';
   document.getElementById('worldSettingInput').value = world.setting || '';
   document.getElementById('worldToneInput').value = world.tone || '';
   document.getElementById('worldRulesInput').value = (world.rules || []).join('\n');
@@ -595,6 +660,9 @@ document.getElementById('saveWorldEditBtn').onclick = async () => {
     firstAction: document.getElementById('worldFirstActionInput').value || null,
     mature: document.getElementById('worldMatureInput').checked,
     contentWarnings: document.getElementById('worldContentWarningsInput').value.split(',').map(s => s.trim()).filter(Boolean),
+    characterSelectText: document.getElementById('worldCharacterSelectTextInput').value || null,
+    imageModel: document.getElementById('worldImageModelInput').value || null,
+    designNotes: document.getElementById('worldDesignNotesInput').value,
     setting: document.getElementById('worldSettingInput').value,
     tone: document.getElementById('worldToneInput').value,
     rules: document.getElementById('worldRulesInput').value.split('\n').map(s => s.trim()).filter(Boolean),
@@ -642,8 +710,7 @@ document.getElementById('worldAiEditBtn').onclick = async () => {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error);
-    const charData = await fetch(`${API}/worlds/${currentWorldId}`).then(r => r.json());
-    populateWorldEditor(data.world, charData.playableCharacters);
+    await openWorldEditor(currentWorldId);
     document.getElementById('worldAiEditStatus').textContent = t('worldRetouchedStatus');
     setTimeout(() => { document.getElementById('worldAiEditStatus').textContent = ''; }, 2500);
   } catch (e) {
@@ -689,6 +756,60 @@ function readSkillInputs(idPrefix) {
   return skills;
 }
 
+// One input per tracked item, prefilled with this character's override if it
+// has one — left blank (placeholder shows the item's normal default) means
+// "start like everyone else". Mirrors skillInputsHtml/readSkillInputs.
+function itemValueInputsHtml(character, idPrefix) {
+  if (!currentWorldTrackedItems.length) return '';
+  const overrides = character.initialTrackedItemValues || {};
+  return currentWorldTrackedItems.map(item => `
+    <label class="skill-input-label">${escapeHtml(item.name)}
+      <input type="text" id="${idPrefix}-item-${escapeHtml(item.name)}" value="${escapeHtml(overrides[item.name] !== undefined ? String(overrides[item.name]) : '')}" placeholder="${escapeHtml(String(item.initialValue))}">
+    </label>
+  `).join('');
+}
+
+function readItemValueInputs(idPrefix) {
+  const values = {};
+  currentWorldTrackedItems.forEach(item => {
+    const input = document.getElementById(`${idPrefix}-item-${item.name}`);
+    if (input && input.value.trim() !== '') {
+      values[item.name] = item.dataType === 'number' ? Number(input.value) : input.value;
+    }
+  });
+  return values;
+}
+
+function renderCharacterPortrait(card, character, worldId) {
+  const img = card.querySelector('.character-portrait-img');
+  if (character.portraitUrl) {
+    img.src = character.portraitUrl;
+    img.classList.remove('hidden');
+  } else {
+    img.classList.add('hidden');
+  }
+  const btn = card.querySelector('.regen-portrait-btn');
+  const status = card.querySelector('.portrait-status');
+  btn.onclick = async () => {
+    btn.disabled = true;
+    status.textContent = t('regeneratingCoverStatus');
+    try {
+      const res = await fetch(`${API}/worlds/${worldId}/characters/${character.id}/regenerate-portrait`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      character.portraitUrl = data.character.portraitUrl;
+      img.src = data.character.portraitUrl || '';
+      img.classList.toggle('hidden', !data.character.portraitUrl);
+      status.textContent = t('coverRegeneratedStatus');
+    } catch (e) {
+      status.textContent = t('errorPrefix') + e.message;
+    } finally {
+      btn.disabled = false;
+      setTimeout(() => { status.textContent = ''; }, 2500);
+    }
+  };
+}
+
 function renderCharacterEditList(characters) {
   const list = document.getElementById('editCharacterList');
   list.innerHTML = '';
@@ -697,19 +818,27 @@ function renderCharacterEditList(characters) {
     const card = document.createElement('div');
     card.className = 'character-edit-card';
     card.innerHTML = `
+      <div class="portrait-row">
+        <img class="character-portrait-img hidden" alt="">
+        <button type="button" class="text-btn regen-portrait-btn">${t('regeneratePortraitBtn')}</button>
+      </div>
+      <p class="hint portrait-status"></p>
       <input type="text" id="${idPrefix}-name" value="${escapeHtml(c.name)}">
       <textarea id="${idPrefix}-desc" rows="2">${escapeHtml(c.description || '')}</textarea>
       <div class="skill-inputs">${skillInputsHtml(c.skills, idPrefix)}</div>
+      ${currentWorldTrackedItems.length ? `<p class="hint-inline">${t('startingItemValuesHint')}</p><div class="skill-inputs">${itemValueInputsHtml(c, idPrefix)}</div>` : ''}
       <div class="character-edit-actions">
         <button class="text-btn char-save-btn">${t('saveBtn')}</button>
         <button class="text-btn danger-text char-delete-btn">${t('deleteCharacterBtn')}</button>
       </div>
     `;
+    renderCharacterPortrait(card, c, currentWorldId);
     card.querySelector('.char-save-btn').onclick = async () => {
       const body = {
         name: document.getElementById(`${idPrefix}-name`).value,
         description: document.getElementById(`${idPrefix}-desc`).value,
-        skills: readSkillInputs(idPrefix)
+        skills: readSkillInputs(idPrefix),
+        initialTrackedItemValues: readItemValueInputs(idPrefix)
       };
       const res = await fetch(`${API}/worlds/${currentWorldId}/characters/${c.id}`, {
         method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body)
@@ -726,6 +855,141 @@ function renderCharacterEditList(characters) {
     list.appendChild(card);
   });
 }
+
+// ---------- Tracked items editor (in the world editor) ----------
+
+function renderTrackedItemsEditor(items) {
+  const list = document.getElementById('trackedItemsEditList');
+  list.innerHTML = '';
+  items.forEach(item => {
+    const idPrefix = `ti-${item.id}`;
+    const card = document.createElement('div');
+    card.className = 'tracked-item-edit-card';
+    card.innerHTML = `
+      <input type="text" id="${idPrefix}-name" value="${escapeHtml(item.name)}" placeholder="${t('trackedItemNamePlaceholder')}">
+      <textarea id="${idPrefix}-desc" rows="2" placeholder="${t('trackedItemDescPlaceholder')}">${escapeHtml(item.description || '')}</textarea>
+      <div class="tracked-item-edit-row">
+        <select id="${idPrefix}-datatype">
+          <option value="text">${t('dataTypeText')}</option>
+          <option value="number">${t('dataTypeNumber')}</option>
+        </select>
+        <select id="${idPrefix}-visibility">
+          <option value="player_and_ai">${t('visibilityPlayerAndAi')}</option>
+          <option value="ai_only">${t('visibilityAiOnly')}</option>
+        </select>
+        <label class="toggle-inline"><input type="checkbox" id="${idPrefix}-auto"> ${t('updateAutomaticallyLabel')}</label>
+      </div>
+      <textarea id="${idPrefix}-update-instructions" rows="2" placeholder="${t('updateInstructionsPlaceholder')}">${escapeHtml(item.updateInstructions || '')}</textarea>
+      <input type="text" id="${idPrefix}-initial" value="${escapeHtml(String(item.initialValue ?? ''))}" placeholder="${t('initialValuePlaceholder')}">
+      <div class="character-edit-actions">
+        <button class="text-btn ti-save-btn">${t('saveBtn')}</button>
+        <button class="text-btn danger-text ti-delete-btn">${t('deleteCharacterBtn')}</button>
+      </div>
+    `;
+    card.querySelector(`#${idPrefix}-datatype`).value = item.dataType;
+    card.querySelector(`#${idPrefix}-visibility`).value = item.visibility;
+    card.querySelector(`#${idPrefix}-auto`).checked = Boolean(item.updateAutomatically);
+    card.querySelector('.ti-save-btn').onclick = async () => {
+      const dataType = document.getElementById(`${idPrefix}-datatype`).value;
+      const rawInitial = document.getElementById(`${idPrefix}-initial`).value;
+      const body = {
+        name: document.getElementById(`${idPrefix}-name`).value,
+        description: document.getElementById(`${idPrefix}-desc`).value,
+        dataType,
+        visibility: document.getElementById(`${idPrefix}-visibility`).value,
+        updateAutomatically: document.getElementById(`${idPrefix}-auto`).checked,
+        updateInstructions: document.getElementById(`${idPrefix}-update-instructions`).value,
+        initialValue: dataType === 'number' ? Number(rawInitial) || 0 : rawInitial
+      };
+      const res = await fetch(`${API}/worlds/${currentWorldId}/tracked-items/${item.id}`, {
+        method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body)
+      });
+      const data = await res.json();
+      if (res.ok) Object.assign(item, data.item);
+      const status = document.getElementById('characterEditStatus');
+      status.textContent = res.ok ? t('characterSavedStatus') : t('errorSavingCharacter');
+      setTimeout(() => { status.textContent = ''; }, 2000);
+    };
+    card.querySelector('.ti-delete-btn').onclick = async () => {
+      if (!confirm(t('deleteCharacterConfirm')(item.name))) return;
+      await fetch(`${API}/worlds/${currentWorldId}/tracked-items/${item.id}`, { method: 'DELETE' });
+      currentWorldTrackedItems = currentWorldTrackedItems.filter(i => i.id !== item.id);
+      card.remove();
+    };
+    list.appendChild(card);
+  });
+}
+
+document.getElementById('addTrackedItemBtn').onclick = async () => {
+  const res = await fetch(`${API}/worlds/${currentWorldId}/tracked-items`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name: t('newTrackedItemDefaultName'), dataType: 'text', visibility: 'player_and_ai', initialValue: '' })
+  });
+  const data = await res.json();
+  if (!res.ok) return alert(t('errorPrefix') + data.error);
+  const items = await fetch(`${API}/worlds/${currentWorldId}/tracked-items`).then(r => r.json());
+  currentWorldTrackedItems = items;
+  renderTrackedItemsEditor(items);
+};
+
+// ---------- NPC editor (in the world editor) ----------
+
+function renderNpcEditor(npcs) {
+  const list = document.getElementById('npcEditList');
+  list.innerHTML = '';
+  npcs.forEach(npc => {
+    const idPrefix = `npc-${npc.id}`;
+    const card = document.createElement('div');
+    card.className = 'npc-edit-card';
+    card.innerHTML = `
+      <input type="text" id="${idPrefix}-name" value="${escapeHtml(npc.name)}" placeholder="${t('npcNamePlaceholder')}">
+      <input type="text" id="${idPrefix}-role" value="${escapeHtml(npc.role || '')}" placeholder="${t('npcRolePlaceholder')}">
+      <textarea id="${idPrefix}-detail" rows="2" placeholder="${t('npcDetailPlaceholder')}">${escapeHtml(npc.detail || '')}</textarea>
+      <input type="text" id="${idPrefix}-oneliner" value="${escapeHtml(npc.oneLiner || '')}" placeholder="${t('npcOneLinerPlaceholder')}">
+      <input type="text" id="${idPrefix}-appearance" value="${escapeHtml(npc.appearance || '')}" placeholder="${t('npcAppearancePlaceholder')}">
+      <input type="text" id="${idPrefix}-location" value="${escapeHtml(npc.location || '')}" placeholder="${t('npcLocationPlaceholder')}">
+      <div class="character-edit-actions">
+        <button class="text-btn npc-save-btn">${t('saveBtn')}</button>
+        <button class="text-btn danger-text npc-delete-btn">${t('deleteCharacterBtn')}</button>
+      </div>
+    `;
+    card.querySelector('.npc-save-btn').onclick = async () => {
+      const body = {
+        name: document.getElementById(`${idPrefix}-name`).value,
+        role: document.getElementById(`${idPrefix}-role`).value,
+        detail: document.getElementById(`${idPrefix}-detail`).value,
+        oneLiner: document.getElementById(`${idPrefix}-oneliner`).value,
+        appearance: document.getElementById(`${idPrefix}-appearance`).value,
+        location: document.getElementById(`${idPrefix}-location`).value
+      };
+      const res = await fetch(`${API}/worlds/${currentWorldId}/npcs/${npc.id}`, {
+        method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body)
+      });
+      const status = document.getElementById('characterEditStatus');
+      status.textContent = res.ok ? t('characterSavedStatus') : t('errorSavingCharacter');
+      setTimeout(() => { status.textContent = ''; }, 2000);
+    };
+    card.querySelector('.npc-delete-btn').onclick = async () => {
+      if (!confirm(t('deleteCharacterConfirm')(npc.name))) return;
+      await fetch(`${API}/worlds/${currentWorldId}/npcs/${npc.id}`, { method: 'DELETE' });
+      card.remove();
+    };
+    list.appendChild(card);
+  });
+}
+
+document.getElementById('addNpcBtn').onclick = async () => {
+  const res = await fetch(`${API}/worlds/${currentWorldId}/npcs`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name: t('newNpcDefaultName') })
+  });
+  const data = await res.json();
+  if (!res.ok) return alert(t('errorPrefix') + data.error);
+  const npcs = await fetch(`${API}/worlds/${currentWorldId}/npcs`).then(r => r.json());
+  renderNpcEditor(npcs);
+};
 
 document.getElementById('addCharacterBtn').onclick = async () => {
   const res = await fetch(`${API}/worlds/${currentWorldId}/characters`, {
@@ -782,6 +1046,13 @@ function showCharacterSelect(world, playableCharacters, saveId) {
   currentWorldId = world.id;
   showView('characterSelect');
   document.getElementById('charSelectTitle').textContent = t('chooseCharacterTitle')(world.title);
+  const extraTextEl = document.getElementById('characterSelectText');
+  if (world.characterSelectText) {
+    extraTextEl.textContent = world.characterSelectText;
+    extraTextEl.classList.remove('hidden');
+  } else {
+    extraTextEl.classList.add('hidden');
+  }
   const warningEl = document.getElementById('matureWarning');
   if (world.mature) {
     const warnings = (world.contentWarnings || []).join(', ');
@@ -805,7 +1076,11 @@ function renderCharacterSelectCard(card, c, worldId, saveId) {
   const skillsHtml = Object.entries(c.skills || {})
     .map(([skill, value]) => `<li>${escapeHtml(skill)}: ${value} <span class="skill-label">(${t('skillLabels')[value] || t('skillNotRated')})</span></li>`)
     .join('');
+  const portraitHtml = c.portraitUrl
+    ? `<div class="portrait-row"><img class="character-portrait-img" src="${c.portraitUrl}" alt=""></div>`
+    : '';
   card.innerHTML = `
+    ${portraitHtml}
     <h3>${escapeHtml(c.name)}</h3>
     <p>${escapeHtml(c.description)}</p>
     <ul class="skill-list">${skillsHtml}</ul>

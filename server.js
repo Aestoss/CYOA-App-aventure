@@ -4,7 +4,9 @@ const path = require('path');
 const db = require('./lib/db');
 const {
   createWorld, getWorld, updateWorld, aiEditWorld, deleteWorld, regenerateWorldCover,
-  addCharacter, generateCharacterWithAI, updateCharacter, deleteCharacter,
+  addCharacter, generateCharacterWithAI, updateCharacter, deleteCharacter, regenerateCharacterPortrait,
+  addTrackedItem, updateTrackedItem, deleteTrackedItem,
+  addNpc, updateNpc, deleteNpc,
   createSave, getSave, selectCharacter, continueAfterVictory, deleteSave,
   playTurn, rewindToTurn, regenerateTurn, getSettings
 } = require('./lib/gameEngine');
@@ -31,6 +33,10 @@ function worldPlayableCharacters(worldId) {
 function worldPublicTrackedItemDefs(worldId) {
   // ai_only tracked items are deliberately withheld from the client — that's
   // the whole point of the visibility flag (hidden state, e.g. a secret plot flag).
+  // Used by any endpoint reachable from a player-facing flow (e.g. right
+  // before character selection) — the world editor's own tracked-items
+  // section fetches the unfiltered list separately (GET .../tracked-items),
+  // since an author obviously needs to see what they're marking hidden.
   return db.get('trackedItemDefs').filter({ worldId, visibility: 'player_and_ai' }).value();
 }
 
@@ -84,14 +90,16 @@ app.post('/api/worlds', async (req, res) => {
 app.patch('/api/worlds/:id', (req, res) => {
   try {
     const {
-      title, instructions, authorStyle, imageStyle, imageStylePrefix, imageStyleSuffix,
+      title, instructions, authorStyle, imageStyle, imageStylePrefix, imageStyleSuffix, imageModel,
       description, objective, background, firstAction, mature, contentWarnings,
-      setting, tone, rules, skills, victoryCondition, victoryText, defeatCondition, defeatText
+      setting, tone, rules, skills, victoryCondition, victoryText, defeatCondition, defeatText,
+      characterSelectText, designNotes
     } = req.body;
     const world = updateWorld(req.params.id, {
-      title, instructions, authorStyle, imageStyle, imageStylePrefix, imageStyleSuffix,
+      title, instructions, authorStyle, imageStyle, imageStylePrefix, imageStyleSuffix, imageModel,
       description, objective, background, firstAction, mature, contentWarnings,
-      setting, tone, rules, skills, victoryCondition, victoryText, defeatCondition, defeatText
+      setting, tone, rules, skills, victoryCondition, victoryText, defeatCondition, defeatText,
+      characterSelectText, designNotes
     });
     res.json({ ok: true, world });
   } catch (e) {
@@ -152,8 +160,8 @@ app.post('/api/worlds/:id/characters/generate', async (req, res) => {
 
 app.patch('/api/worlds/:worldId/characters/:characterId', (req, res) => {
   try {
-    const { name, description, skills } = req.body;
-    const character = updateCharacter(req.params.worldId, req.params.characterId, { name, description, skills });
+    const { name, description, skills, initialTrackedItemValues } = req.body;
+    const character = updateCharacter(req.params.worldId, req.params.characterId, { name, description, skills, initialTrackedItemValues });
     res.json({ ok: true, character });
   } catch (e) {
     res.status(400).json({ error: e.message });
@@ -163,6 +171,97 @@ app.patch('/api/worlds/:worldId/characters/:characterId', (req, res) => {
 app.delete('/api/worlds/:worldId/characters/:characterId', (req, res) => {
   try {
     deleteCharacter(req.params.worldId, req.params.characterId);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.post('/api/worlds/:worldId/characters/:characterId/regenerate-portrait', async (req, res) => {
+  try {
+    const character = await regenerateCharacterPortrait(req.params.worldId, req.params.characterId);
+    res.json({ ok: true, character });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// ---------- Tracked items (world templates) ----------
+// Unfiltered on purpose — this is the author-only editor list, distinct
+// from worldPublicTrackedItemDefs used in any player-facing response.
+
+app.get('/api/worlds/:id/tracked-items', (req, res) => {
+  try {
+    getWorld(req.params.id);
+    res.json(db.get('trackedItemDefs').filter({ worldId: req.params.id }).value());
+  } catch (e) {
+    res.status(404).json({ error: e.message });
+  }
+});
+
+app.post('/api/worlds/:id/tracked-items', (req, res) => {
+  try {
+    const { name, dataType, description, visibility, updateAutomatically, updateInstructions, initialValue } = req.body;
+    const item = addTrackedItem(req.params.id, { name, dataType, description, visibility, updateAutomatically, updateInstructions, initialValue });
+    res.json({ ok: true, item });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.patch('/api/worlds/:worldId/tracked-items/:itemId', (req, res) => {
+  try {
+    const { name, dataType, description, visibility, updateAutomatically, updateInstructions, initialValue } = req.body;
+    const item = updateTrackedItem(req.params.worldId, req.params.itemId, { name, dataType, description, visibility, updateAutomatically, updateInstructions, initialValue });
+    res.json({ ok: true, item });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.delete('/api/worlds/:worldId/tracked-items/:itemId', (req, res) => {
+  try {
+    deleteTrackedItem(req.params.worldId, req.params.itemId);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// ---------- NPCs (world templates) ----------
+
+app.get('/api/worlds/:id/npcs', (req, res) => {
+  try {
+    getWorld(req.params.id);
+    res.json(db.get('worldNpcs').filter({ worldId: req.params.id }).value());
+  } catch (e) {
+    res.status(404).json({ error: e.message });
+  }
+});
+
+app.post('/api/worlds/:id/npcs', (req, res) => {
+  try {
+    const { name, role, detail, oneLiner, appearance, location } = req.body;
+    const npc = addNpc(req.params.id, { name, role, detail, oneLiner, appearance, location });
+    res.json({ ok: true, npc });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.patch('/api/worlds/:worldId/npcs/:npcId', (req, res) => {
+  try {
+    const { name, role, detail, oneLiner, appearance, location } = req.body;
+    const npc = updateNpc(req.params.worldId, req.params.npcId, { name, role, detail, oneLiner, appearance, location });
+    res.json({ ok: true, npc });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.delete('/api/worlds/:worldId/npcs/:npcId', (req, res) => {
+  try {
+    deleteNpc(req.params.worldId, req.params.npcId);
     res.json({ ok: true });
   } catch (e) {
     res.status(400).json({ error: e.message });

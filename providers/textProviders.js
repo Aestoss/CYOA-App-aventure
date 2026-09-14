@@ -131,6 +131,7 @@ async function callMock({ system, user }) {
         title: 'The Glass Lighthouse',
         description: 'A shipwrecked stranger arrives at a lighthouse city built from sea-glass, where the fog hides more than weather.',
         objective: 'Find out what Keeper Oduya is hiding, and why the fog answers to her.',
+        character_select_text: 'Two strangers washed up on the same shore. Only one story gets told.',
         mature_content: false,
         content_warnings: [],
         setting: 'A lighthouse city built from sea-glass, perched above a fogbound coast.',
@@ -143,12 +144,14 @@ async function callMock({ system, user }) {
           {
             name: 'Wren Ashby',
             description: 'A shipwrecked cartographer with a sharp eye for detail and a fear of deep water.',
-            skills: { Intuition: 4, Nerve: 2, Charm: 3, Lore: 3 }
+            skills: { Intuition: 4, Nerve: 2, Charm: 3, Lore: 3 },
+            initial_tracked_item_values: {}
           },
           {
             name: 'Corvin Blackwell',
             description: 'A disgraced glass-smith who insists the fog once spoke to him.',
-            skills: { Intuition: 3, Nerve: 3, Charm: 2, Lore: 5 }
+            skills: { Intuition: 3, Nerve: 3, Charm: 2, Lore: 5 },
+            initial_tracked_item_values: { 'Keeper Trust': 7 }
           }
         ],
         starting_characters: [{
