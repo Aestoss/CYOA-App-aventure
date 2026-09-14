@@ -2,7 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const db = require('./lib/db');
-const { createWorld, playTurn, getSettings, selectCharacter } = require('./lib/gameEngine');
+const { createWorld, playTurn, getSettings, selectCharacter, continueAfterVictory } = require('./lib/gameEngine');
 
 const app = express();
 app.use(cors());
@@ -39,6 +39,15 @@ app.post('/api/worlds/:id/select-character', (req, res) => {
     if (!characterId) return res.status(400).json({ error: 'characterId is required' });
     const character = selectCharacter(req.params.id, characterId);
     res.json({ ok: true, character });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.post('/api/worlds/:id/continue', (req, res) => {
+  try {
+    const world = continueAfterVictory(req.params.id);
+    res.json({ ok: true, world });
   } catch (e) {
     res.status(400).json({ error: e.message });
   }

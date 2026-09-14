@@ -203,7 +203,7 @@ textarea:focus, input:focus, select:focus {
 }
 .game-over-banner.hidden { display: none; }
 .game-over-banner strong { font-family: var(--serif); font-size: 1.1rem; display: block; margin-bottom: 6px; }
-.game-over-banner p { margin: 0; color: var(--text-dim); line-height: 1.5; }
+.game-over-banner p { margin: 0 0 10px; color: var(--text-dim); line-height: 1.5; }
 .game-over-banner.game-over-victory { background: rgba(127, 201, 127, 0.12); border: 1px solid rgba(127, 201, 127, 0.4); }
 .game-over-banner.game-over-victory strong { color: #7fc97f; }
 .game-over-banner.game-over-defeat { background: rgba(217, 119, 111, 0.12); border: 1px solid rgba(217, 119, 111, 0.4); }

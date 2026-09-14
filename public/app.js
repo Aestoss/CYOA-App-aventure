@@ -135,10 +135,25 @@ function renderGameOver(gameOver) {
     return;
   }
   const label = gameOver.result === 'victory' ? 'Victoire' : 'Fin de l\'histoire';
+  const continueHtml = gameOver.result === 'victory'
+    ? '<button id="continuePlayingBtn" class="primary-btn">Continuer à jouer</button>'
+    : '';
   banner.className = `game-over-banner game-over-${gameOver.result}`;
-  banner.innerHTML = `<strong>${label}</strong><p>${escapeHtml(gameOver.text)}</p>`;
+  banner.innerHTML = `<strong>${label}</strong><p>${escapeHtml(gameOver.text)}</p>${continueHtml}`;
+  if (gameOver.result === 'victory') {
+    document.getElementById('continuePlayingBtn').onclick = continuePlaying;
+  }
   actions.innerHTML = '';
   form.classList.add('hidden');
+}
+
+async function continuePlaying() {
+  const res = await fetch(`${API}/worlds/${currentWorldId}/continue`, { method: 'POST' });
+  const data = await res.json();
+  if (!res.ok) return alert('Impossible de continuer : ' + data.error);
+  renderGameOver(null);
+  const worldData = await fetch(`${API}/worlds/${currentWorldId}`).then(r => r.json());
+  renderSuggestions(worldData.turns[worldData.turns.length - 1]?.suggestedActions || []);
 }
 
 function renderChapters(turns) {
