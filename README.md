@@ -4,7 +4,8 @@
 
 - Backend complet (Node.js) : création de monde, tours de jeu, mémoire structurée, réglages
 - Compétences de personnage (4-6 par monde) + choix d'un personnage jouable avant de commencer + résolution de réussite/échec par l'IA selon la compétence pertinente (voir `docs/INFINITE_WORLDS_REFERENCE.md`, Phase A)
-- Conditions de victoire/défaite générées avec chaque monde, évaluées par l'IA à chaque tour ; l'histoire se termine proprement (bannière + blocage des tours suivants) quand l'une d'elles est atteinte (Phase B)
+- Conditions de victoire/défaite générées avec chaque monde, évaluées par l'IA à chaque tour ; l'histoire se termine proprement (bannière + blocage des tours suivants) quand l'une d'elles est atteinte, avec possibilité de continuer à jouer après une victoire (Phase B)
+- Objets/état suivis (« tracked items ») typés par monde : inventaire, jauges de relation, etc., avec instructions de mise à jour dédiées et visibilité joueur/IA ou IA seule (état caché) (Phase C)
 - Frontend complet (une seule page web, installable sur téléphone)
 - Système de prompts en couches (Master Prompt / World Bible / Mémoire / Tours récents), comme détaillé dans le plan
 - Mémoire réelle : faits extraits stockés en base + résumé automatique tous les ~15-20 tours

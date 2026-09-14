@@ -122,6 +122,20 @@ async function openWorld(id) {
   }
   renderChapters(data.turns);
   renderGameOver(data.world.gameOver);
+  renderTrackedItems(data.trackedItems || []);
+}
+
+function renderTrackedItems(items) {
+  const panel = document.getElementById('trackedItemsPanel');
+  if (!items.length) {
+    panel.classList.add('hidden');
+    panel.innerHTML = '';
+    return;
+  }
+  panel.classList.remove('hidden');
+  panel.innerHTML = items
+    .map(i => `<div class="tracked-item"><span class="tracked-item-name">${escapeHtml(i.name)}</span><span class="tracked-item-value">${escapeHtml(String(i.value))}</span></div>`)
+    .join('');
 }
 
 function renderGameOver(gameOver) {
@@ -223,6 +237,7 @@ async function playAction(action) {
     const data = await fetch(`${API}/worlds/${currentWorldId}`).then(r => r.json());
     renderChapters(data.turns);
     renderGameOver(data.world.gameOver);
+    renderTrackedItems(data.trackedItems || []);
   } catch (e) {
     pending.textContent = 'Erreur : ' + e.message;
   }

@@ -19,7 +19,10 @@ app.get('/api/worlds/:id', (req, res) => {
   const turns = db.get('turns').filter({ worldId: world.id }).sortBy('turnNumber').value();
   const characters = db.get('characters').filter({ worldId: world.id }).value();
   const playableCharacters = db.get('playableCharacters').filter({ worldId: world.id }).value();
-  res.json({ world, turns, characters, playableCharacters });
+  // ai_only tracked items are deliberately withheld from the client — that's
+  // the whole point of the visibility flag (hidden state, e.g. a secret plot flag).
+  const trackedItems = db.get('trackedItems').filter({ worldId: world.id, visibility: 'player_and_ai' }).value();
+  res.json({ world, turns, characters, playableCharacters, trackedItems });
 });
 
 app.post('/api/worlds', async (req, res) => {

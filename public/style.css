@@ -139,6 +139,25 @@ textarea:focus, input:focus, select:focus {
 #storyTitle { font-family: var(--serif); font-weight: 600; margin: 0 0 14px; }
 .story-character { color: var(--text-dim); font-size: 0.85rem; margin: -10px 0 14px; }
 .story-character.hidden { display: none; }
+
+.tracked-items-panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.tracked-items-panel.hidden { display: none; }
+.tracked-item {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 6px 12px;
+  font-size: 0.82rem;
+  display: flex;
+  gap: 6px;
+}
+.tracked-item-name { color: var(--text-dim); }
+.tracked-item-value { color: var(--accent); font-weight: 600; }
 .outcome-badge { font-size: 0.8rem; }
 .outcome-badge.outcome-success { color: #7fc97f; }
 .outcome-badge.outcome-partial_success { color: var(--accent); }
