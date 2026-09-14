@@ -58,8 +58,11 @@ body {
 .view label { display: block; font-size: 0.88rem; color: var(--text-dim); margin: 14px 0 4px; }
 
 /* Home / world list */
-.world-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 32px; }
-.world-card {
+.section-heading { font-family: var(--serif); font-weight: 600; font-size: 1.1rem; margin: 0 0 4px; }
+.section-heading[hidden] { display: none; }
+.world-list, .save-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 24px; }
+.save-list:empty, .world-list:empty { margin-bottom: 0; }
+.world-card, .save-card {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -72,10 +75,9 @@ body {
   color: var(--text);
   font-family: var(--serif);
   font-size: 1.05rem;
-  cursor: pointer;
 }
 .world-card-cover { width: 52px; height: 52px; object-fit: cover; border-radius: 4px; flex-shrink: 0; }
-.world-card-body { display: flex; flex-direction: column; min-width: 0; }
+.world-card-body { display: flex; flex-direction: column; min-width: 0; flex: 1; cursor: pointer; }
 .world-card-title { font-family: var(--serif); }
 .world-card-desc {
   display: -webkit-box;
@@ -88,6 +90,27 @@ body {
   margin-top: 2px;
 }
 .world-card small { display: block; font-family: var(--sans); color: var(--text-dim); font-size: 0.8rem; margin-top: 4px; }
+.world-card-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.world-card-actions .icon-btn, .save-delete-btn { width: 36px; height: 36px; font-size: 0.95rem; flex-shrink: 0; }
+.danger-text { color: #d9776f !important; }
+.danger-text:hover { color: #e89890 !important; }
+
+.creation-progress { margin-top: 14px; }
+.progress-bar { height: 6px; border-radius: 4px; background: var(--bg-input); overflow: hidden; }
+.progress-bar-fill {
+  height: 100%;
+  width: 40%;
+  border-radius: 4px;
+  background: var(--accent);
+  animation: progress-slide 1.2s ease-in-out infinite;
+}
+@keyframes progress-slide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(250%); }
+}
+.creation-progress p { margin: 8px 0 0; text-align: center; }
+.creation-progress.hidden { display: none; }
+.big-btn { width: 100%; margin: 8px 0; }
 
 .create-panel h2 { font-family: var(--serif); font-weight: 600; margin-bottom: 4px; }
 .hint { color: var(--text-dim); font-size: 0.9rem; line-height: 1.4; }
@@ -151,6 +174,33 @@ textarea:focus, input:focus, select:focus {
 .character-card p { color: var(--text-dim); font-size: 0.92rem; line-height: 1.5; margin: 0 0 10px; }
 .skill-list { list-style: none; margin: 0 0 14px; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 0.85rem; }
 .skill-list .skill-label { color: var(--text-dim); }
+.character-card-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+/* Character editing (world editor + character-select inline edit) */
+.character-edit-list { display: flex; flex-direction: column; gap: 12px; margin-bottom: 12px; }
+.character-edit-card {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+}
+.character-edit-card input[type="text"], .character-edit-card textarea { margin: 0 0 8px; }
+.skill-inputs { display: flex; flex-wrap: wrap; gap: 10px 16px; margin-bottom: 10px; }
+.skill-input-label { display: flex; flex-direction: column; font-size: 0.78rem; color: var(--text-dim); margin: 0; width: auto; }
+.skill-input-label input[type="number"] {
+  width: 60px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 4px;
+  padding: 6px;
+  margin-top: 2px;
+  font-family: var(--sans);
+}
+.character-edit-actions { display: flex; gap: 16px; }
+.ai-character-gen { display: flex; gap: 8px; align-items: flex-start; margin-top: 8px; }
+.ai-character-gen input { margin: 0; flex: 1; }
+.ai-character-gen button { white-space: nowrap; }
 
 /* Story view */
 .story-header-row { display: flex; align-items: center; justify-content: space-between; }
@@ -287,3 +337,7 @@ select {
 .toggle-row input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--accent); }
 
 .loading { color: var(--text-dim); font-style: italic; font-family: var(--serif); }
+
+.cost-summary { display: flex; flex-direction: column; gap: 8px; }
+.cost-row { display: flex; justify-content: space-between; font-size: 0.92rem; }
+.cost-row strong { color: var(--accent); }

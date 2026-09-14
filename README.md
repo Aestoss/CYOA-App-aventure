@@ -12,6 +12,13 @@
 - Confort auteur : description + objectif affiché au joueur + image de couverture (générée si les images sont activées) + contenu mature/avertissements + numéro de version qui s'incrémente à chaque édition (Phase G)
 
 Toutes les phases de la feuille de route `docs/INFINITE_WORLDS_REFERENCE.md` (A à G) sont implémentées et testées de bout en bout avec le fournisseur mock.
+
+**Depuis, un second lot de fonctionnalités (voir `TODO.md`) :**
+- **Monde vs sauvegarde** : un monde est désormais un modèle réutilisable — chaque nouvelle aventure démarrée depuis un monde crée une sauvegarde indépendante (ses propres objets suivis, personnages rencontrés, état caché...), sans jamais toucher aux autres sauvegardes du même monde.
+- **Éditeur de monde complet**, ouvert automatiquement juste après la création : instructions, style, personnages jouables (ajout manuel, génération par IA, édition en ligne, suppression), et un bouton **« Retoucher avec l'IA »** pour des ajustements légers en langage naturel.
+- **Suppression** de mondes (en cascade sur leurs sauvegardes) et de sauvegardes individuelles, avec confirmation.
+- **Suivi des coûts** : jetons + estimation en $ par appel IA, visible dans Réglages.
+- Barre de progression pendant la génération d'un monde.
 - Frontend complet (une seule page web, installable sur téléphone)
 - Système de prompts en couches (Master Prompt / World Bible / Mémoire / Tours récents), comme détaillé dans le plan
 - Mémoire réelle : faits extraits stockés en base + résumé automatique tous les ~15-20 tours
@@ -22,8 +29,10 @@ Toutes les phases de la feuille de route `docs/INFINITE_WORLDS_REFERENCE.md` (A 
 ## État actuel — déjà en ligne
 
 L'app est déployée sur Railway et fonctionne : **https://fogbound-production.up.railway.app**
-(connectée au dépôt GitHub `Aestoss/CYOA-App-aventure`, redéploiement
-automatique à chaque push sur `main`).
+(connectée au dépôt GitHub `Aestoss/CYOA-App-aventure`). Le redéploiement
+automatique sur push GitHub s'est montré peu fiable en pratique — si le site
+ne reflète pas le dernier commit après un push, un redéploiement manuel
+depuis le dashboard Railway (ou en redemandant ici) est nécessaire.
 
 Il reste deux choses pour que ce soit vraiment "ton" app au quotidien :
 
@@ -69,11 +78,15 @@ vrai, va dans Réglages ⚙, choisis le fournisseur et colle ta clé API.
 ## Structure du projet
 
 ```
-server.js              → routes de l'API
-lib/db.js               → base de données (fichier JSON local)
+server.js               → routes de l'API
+lib/db.js               → base de données (fichier JSON local) — mondes, sauvegardes, personnages...
 lib/promptBuilder.js    → assemblage des prompts en couches
-lib/gameEngine.js       → logique de jeu : tours, mémoire, résumé
-providers/textProviders.js   → Anthropic / OpenAI / OpenRouter / démo
+lib/gameEngine.js       → logique de jeu : mondes (templates), sauvegardes (parties), tours, mémoire
+lib/pricing.js          → tarifs approximatifs $/1M tokens par fournisseur
+lib/costTracker.js      → enregistrement et agrégation des coûts d'appels IA
+providers/textProviders.js   → Anthropic / OpenAI / OpenRouter / Gemini / démo
 providers/imageProviders.js  → Stability / Replicate / démo
 public/                 → toute l'interface (HTML/CSS/JS), installable en PWA
+docs/INFINITE_WORLDS_REFERENCE.md → analyse de référence d'Infinite Worlds + feuille de route
+TODO.md                 → backlog de fonctionnalités demandées, à faire au fil de l'eau
 ```

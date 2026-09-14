@@ -19,14 +19,24 @@
 
 <main id="app">
 
-  <!-- World list / create -->
+  <!-- Home: saves to continue + worlds to start a new adventure from -->
   <section id="view-home" class="view">
+    <h2 class="section-heading" id="saveListHeading" hidden>Continuer une histoire</h2>
+    <div id="saveList" class="save-list"></div>
+
+    <h2 class="section-heading">Mes mondes</h2>
+    <p class="hint">Un monde propose toujours une nouvelle aventure depuis le début.</p>
     <div id="worldList" class="world-list"></div>
+
     <div class="create-panel">
-      <h2>Nouvelle histoire</h2>
+      <h2>Nouveau monde</h2>
       <p class="hint">Décris une idée en une phrase — lieu, ambiance, ou personnage.</p>
       <textarea id="ideaInput" rows="3" placeholder="Un détective steampunk dans une ville de brouillard..."></textarea>
-      <button id="createWorldBtn" class="primary-btn">Commencer</button>
+      <button id="createWorldBtn" class="primary-btn">Créer le monde</button>
+      <div id="creationProgress" class="creation-progress hidden">
+        <div class="progress-bar"><div class="progress-bar-fill"></div></div>
+        <p id="creationProgressText" class="hint"></p>
+      </div>
     </div>
   </section>
 
@@ -42,7 +52,7 @@
   <section id="view-story" class="view hidden">
     <div class="story-header-row">
       <button id="backBtn" class="text-btn">‹ Mes histoires</button>
-      <button id="editWorldBtn" class="icon-btn" aria-label="Modifier les instructions" title="Modifier les instructions">✏️</button>
+      <button id="editWorldBtn" class="icon-btn" aria-label="Modifier le monde" title="Modifier le monde">✏️</button>
     </div>
     <h2 id="storyTitle"></h2>
     <p id="storyCharacter" class="story-character hidden"></p>
@@ -58,38 +68,63 @@
     </form>
   </section>
 
-  <!-- World edit view -->
+  <!-- World editor: opens right after creating a world, and via ✏️ later -->
   <section id="view-world-edit" class="view hidden">
     <button id="closeWorldEditBtn" class="text-btn">‹ Retour</button>
-    <h2>Modifier les instructions</h2>
-    <p class="hint">Ces instructions guident l'IA narratrice à chaque tour. Générées automatiquement à la création du monde, tu peux les ajuster ici.</p>
-    <label>Description <span class="hint-inline">(affichée dans la liste des histoires, sans effet sur le jeu)</span>
-      <textarea id="worldDescriptionInput" rows="2"></textarea>
-    </label>
-    <label>Objectif <span class="hint-inline">(affiché au joueur dès le premier tour, optionnel)</span>
-      <input id="worldObjectiveInput" type="text">
-    </label>
-    <label class="toggle-row"><span>Contenu mature (R)</span><input id="worldMatureInput" type="checkbox"></label>
-    <label>Avertissements de contenu <span class="hint-inline">(séparés par des virgules)</span>
-      <input id="worldContentWarningsInput" type="text" placeholder="violence, horreur...">
-    </label>
-    <label>Instructions principales
-      <textarea id="worldInstructionsInput" rows="10"></textarea>
-    </label>
-    <label>Style d'auteur <span class="hint-inline">(ex : "Neil Gaiman", "un romancier de thriller")</span>
-      <input id="worldAuthorStyleInput" type="text">
-    </label>
-    <label>Style visuel <span class="hint-inline">(description générale, ex : "aquarelle sombre, palette froide")</span>
-      <input id="worldImageStyleInput" type="text">
-    </label>
-    <label>Préfixe d'image <span class="hint-inline">(ajouté avant chaque prompt d'image)</span>
-      <input id="worldImageStylePrefixInput" type="text">
-    </label>
-    <label>Suffixe d'image <span class="hint-inline">(ajouté après chaque prompt d'image)</span>
-      <input id="worldImageStyleSuffixInput" type="text">
-    </label>
-    <button id="saveWorldEditBtn" class="primary-btn">Enregistrer</button>
-    <p id="worldEditStatus" class="hint"></p>
+    <h2 id="worldEditTitle">Éditer le monde</h2>
+
+    <div class="settings-group">
+      <h3>Informations</h3>
+      <label>Description <span class="hint-inline">(affichée dans la liste des mondes, sans effet sur le jeu)</span>
+        <textarea id="worldDescriptionInput" rows="2"></textarea>
+      </label>
+      <label>Objectif <span class="hint-inline">(affiché au joueur dès le premier tour, optionnel)</span>
+        <input id="worldObjectiveInput" type="text">
+      </label>
+      <label class="toggle-row"><span>Contenu mature (R)</span><input id="worldMatureInput" type="checkbox"></label>
+      <label>Avertissements de contenu <span class="hint-inline">(séparés par des virgules)</span>
+        <input id="worldContentWarningsInput" type="text" placeholder="violence, horreur...">
+      </label>
+      <label>Instructions principales
+        <textarea id="worldInstructionsInput" rows="10"></textarea>
+      </label>
+      <label>Style d'auteur <span class="hint-inline">(ex : "Neil Gaiman", "un romancier de thriller")</span>
+        <input id="worldAuthorStyleInput" type="text">
+      </label>
+      <label>Style visuel <span class="hint-inline">(description générale, ex : "aquarelle sombre, palette froide")</span>
+        <input id="worldImageStyleInput" type="text">
+      </label>
+      <label>Préfixe d'image <span class="hint-inline">(ajouté avant chaque prompt d'image)</span>
+        <input id="worldImageStylePrefixInput" type="text">
+      </label>
+      <label>Suffixe d'image <span class="hint-inline">(ajouté après chaque prompt d'image)</span>
+        <input id="worldImageStyleSuffixInput" type="text">
+      </label>
+      <button id="saveWorldEditBtn" class="primary-btn">Enregistrer</button>
+      <p id="worldEditStatus" class="hint"></p>
+    </div>
+
+    <div class="settings-group">
+      <h3>Retouche IA</h3>
+      <p class="hint">Décris un changement en langage naturel — l'IA ajuste le monde en conséquence (léger, pas une régénération complète).</p>
+      <textarea id="worldAiEditInput" rows="2" placeholder="Rends le ton plus sombre, ajoute un rival..."></textarea>
+      <button id="worldAiEditBtn" class="primary-btn">✨ Retoucher avec l'IA</button>
+      <p id="worldAiEditStatus" class="hint"></p>
+    </div>
+
+    <div class="settings-group">
+      <h3>Personnages jouables</h3>
+      <div id="editCharacterList" class="character-edit-list"></div>
+      <button id="addCharacterBtn" class="text-btn">+ Ajouter un personnage</button>
+      <div class="ai-character-gen">
+        <input id="aiCharacterDescInput" type="text" placeholder="Décris le personnage à générer...">
+        <button id="generateCharacterBtn" class="primary-btn">✨ Générer avec l'IA</button>
+      </div>
+      <p id="characterEditStatus" class="hint"></p>
+    </div>
+
+    <button id="startAdventureBtn" class="primary-btn big-btn">▶ Commencer une aventure</button>
+    <button id="deleteWorldBtn" class="text-btn danger-text">🗑️ Supprimer ce monde</button>
   </section>
 
   <!-- Settings view -->
@@ -136,6 +171,12 @@
 
     <button id="saveSettingsBtn" class="primary-btn">Enregistrer</button>
     <p id="settingsStatus" class="hint"></p>
+
+    <div class="settings-group">
+      <h3>💰 Coûts</h3>
+      <p class="hint">Estimation approximative — les tarifs des fournisseurs changent, et OpenRouter n'a pas de tarif fixe (jetons seulement).</p>
+      <div id="costSummary" class="cost-summary"></div>
+    </div>
   </section>
 
 </main>

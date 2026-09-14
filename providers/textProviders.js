@@ -1,7 +1,9 @@
 const fetch = require('node-fetch');
 
-// Each provider function has the same signature: ({ system, user, apiKey, model }) -> Promise<string>
-// The returned string is expected to be raw JSON text (per the prompt's instructions).
+// Each provider function has the same signature: ({ system, user, apiKey, model })
+// -> Promise<{ text, usage: { inputTokens, outputTokens } }>. `text` is expected
+// to be raw JSON per the prompt's instructions. `usage` feeds the cost tracker
+// (lib/costTracker.js) — zero counts when a provider genuinely has none to report.
 
 async function callAnthropic({ system, user, apiKey, model }) {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -20,7 +22,10 @@ async function callAnthropic({ system, user, apiKey, model }) {
   });
   if (!res.ok) throw new Error(`Anthropic API error ${res.status}: ${await res.text()}`);
   const data = await res.json();
-  return data.content.map(b => b.text || '').join('');
+  return {
+    text: data.content.map(b => b.text || '').join(''),
+    usage: { inputTokens: data.usage?.input_tokens || 0, outputTokens: data.usage?.output_tokens || 0 }
+  };
 }
 
 async function callOpenAI({ system, user, apiKey, model }) {
@@ -37,7 +42,10 @@ async function callOpenAI({ system, user, apiKey, model }) {
   });
   if (!res.ok) throw new Error(`OpenAI API error ${res.status}: ${await res.text()}`);
   const data = await res.json();
-  return data.choices[0].message.content;
+  return {
+    text: data.choices[0].message.content,
+    usage: { inputTokens: data.usage?.prompt_tokens || 0, outputTokens: data.usage?.completion_tokens || 0 }
+  };
 }
 
 async function callOpenRouter({ system, user, apiKey, model }) {
@@ -54,7 +62,10 @@ async function callOpenRouter({ system, user, apiKey, model }) {
   });
   if (!res.ok) throw new Error(`OpenRouter API error ${res.status}: ${await res.text()}`);
   const data = await res.json();
-  return data.choices[0].message.content;
+  return {
+    text: data.choices[0].message.content,
+    usage: { inputTokens: data.usage?.prompt_tokens || 0, outputTokens: data.usage?.completion_tokens || 0 }
+  };
 }
 
 async function callGemini({ system, user, apiKey, model }) {
@@ -72,77 +83,101 @@ async function callGemini({ system, user, apiKey, model }) {
   );
   if (!res.ok) throw new Error(`Gemini API error ${res.status}: ${await res.text()}`);
   const data = await res.json();
-  return (data.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('');
+  return {
+    text: (data.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join(''),
+    usage: { inputTokens: data.usageMetadata?.promptTokenCount || 0, outputTokens: data.usageMetadata?.candidatesTokenCount || 0 }
+  };
 }
 
 // Deterministic fake provider — no network, no key required. Used for local
 // testing and as a safe default so the app never fails with "no key set".
 async function callMock({ system, user }) {
+  const noUsage = { inputTokens: 0, outputTokens: 0 };
   const isSummary = /Summarize the following story turns/.test(system || '');
   if (isSummary) {
-    return 'The traveler arrived at the lighthouse and began exploring its fog-wrapped steps, with the Keeper watching cautiously from the doorway.';
+    return { text: 'The traveler arrived at the lighthouse and began exploring its fog-wrapped steps, with the Keeper watching cautiously from the doorway.', usage: noUsage };
+  }
+  const isCharacterGen = /Generate a single playable character/.test(system || '');
+  if (isCharacterGen) {
+    return {
+      text: JSON.stringify({
+        name: 'Mira Fenwick',
+        description: 'A quietly stubborn ex-sailor who talks to gulls more than people.',
+        skills: { Intuition: 3, Nerve: 4, Charm: 2, Lore: 3 }
+      }),
+      usage: noUsage
+    };
+  }
+  const isWorldAiEdit = /Apply the requested change to this world/.test(system || '');
+  if (isWorldAiEdit) {
+    const currentMatch = user.match(/CURRENT WORLD\n([\s\S]*?)\n\nREQUESTED CHANGE/);
+    const current = currentMatch ? JSON.parse(currentMatch[1]) : {};
+    return { text: JSON.stringify({ ...current, tone: `${current.tone || ''} (retouché)`.trim() }), usage: noUsage };
   }
   const isWorldCreation = /Player's idea:/.test(user);
   if (isWorldCreation) {
-    return JSON.stringify({
-      title: 'The Glass Lighthouse',
-      description: 'A shipwrecked stranger arrives at a lighthouse city built from sea-glass, where the fog hides more than weather.',
-      objective: 'Find out what Keeper Oduya is hiding, and why the fog answers to her.',
-      mature_content: false,
-      content_warnings: [],
-      setting: 'A lighthouse city built from sea-glass, perched above a fogbound coast.',
-      tone: 'quiet mystery',
-      rules: ['The fog hides more than weather', 'Glass remembers what it reflects'],
-      instructions: 'This story takes place in a lighthouse city built from sea-glass. I have just arrived, unannounced but expected by the reclusive Keeper Oduya. The fog surrounding the city is not ordinary weather — things glimpsed in it are sometimes true and sometimes not, and the city\'s glass architecture seems to remember what has happened near it. Pace the story slowly at first, letting me explore the lighthouse and earn or lose the Keeper\'s trust before revealing what the fog actually is.',
-      author_style: 'a literary novelist writing quiet, atmospheric mystery — spare prose, precise sensory detail, understatement over spectacle',
-      skills: ['Intuition', 'Nerve', 'Charm', 'Lore'],
-      playable_characters: [
-        {
-          name: 'Wren Ashby',
-          description: 'A shipwrecked cartographer with a sharp eye for detail and a fear of deep water.',
-          skills: { Intuition: 4, Nerve: 2, Charm: 3, Lore: 3 }
-        },
-        {
-          name: 'Corvin Blackwell',
-          description: 'A disgraced glass-smith who insists the fog once spoke to him.',
-          skills: { Intuition: 3, Nerve: 3, Charm: 2, Lore: 5 }
-        }
-      ],
-      starting_characters: [{
-        name: 'Keeper Oduya',
-        role: 'lighthouse keeper',
-        detail: 'Guarded, watchful, knows more than she says. Has tended the lighthouse for eleven years and has never once let the lens go dark.',
-        one_liner: 'The wary keeper of the lighthouse, who knows more about the fog than she lets on.',
-        appearance: 'Tall, weathered, silver-streaked hair kept in a tight braid, a long oilskin coat.',
-        location: 'The lighthouse doorway, most evenings'
-      }],
-      starting_scene: 'You arrive at the lighthouse steps as the evening fog rolls in.',
-      opening_chapter: 'The fog reaches the steps before you do, curling around your ankles like something curious. Keeper Oduya watches from the doorway, lantern unlit. "You\'re early," she says, though you were told nothing about a schedule.',
-      victory_condition: 'The player character has found the source of the fog and chosen what to do with it.',
-      victory_text: 'You understand the fog now — and it understands you. Whatever you choose next, the lighthouse will remember.',
-      defeat_condition: 'The player character is lost in the fog with no way back to the lighthouse.',
-      defeat_text: 'The fog closes in, and this time it does not let go. Your story ends here, somewhere in the grey.',
-      image_style: 'Moody painterly illustration, desaturated blues and greys, soft directional lighting.',
-      image_style_prefix: 'atmospheric painterly illustration,',
-      image_style_suffix: ', desaturated cold palette, soft lighting, fog, highly detailed',
-      tracked_items: [
-        {
-          name: 'Inventory', data_type: 'text', visibility: 'player_and_ai', update_automatically: true,
-          description: 'Items currently carried.', update_instructions: 'Add any item gained; remove items lost or used.',
-          initial_value: '(empty-handed)'
-        },
-        {
-          name: 'Keeper Trust', data_type: 'number', visibility: 'player_and_ai', update_automatically: true,
-          description: "How much Keeper Oduya trusts the player, 0-10.", update_instructions: 'Increase for honest, helpful actions; decrease for deception or threats.',
-          initial_value: 5
-        },
-        {
-          name: "Keeper's Secret", data_type: 'text', visibility: 'ai_only', update_automatically: false,
-          description: 'What the Keeper is actually hiding — for narrator reference only, never revealed directly.',
-          update_instructions: '', initial_value: 'She lit the lantern to warn smugglers, not travelers.'
-        }
-      ]
-    });
+    return {
+      usage: noUsage,
+      text: JSON.stringify({
+        title: 'The Glass Lighthouse',
+        description: 'A shipwrecked stranger arrives at a lighthouse city built from sea-glass, where the fog hides more than weather.',
+        objective: 'Find out what Keeper Oduya is hiding, and why the fog answers to her.',
+        mature_content: false,
+        content_warnings: [],
+        setting: 'A lighthouse city built from sea-glass, perched above a fogbound coast.',
+        tone: 'quiet mystery',
+        rules: ['The fog hides more than weather', 'Glass remembers what it reflects'],
+        instructions: 'This story takes place in a lighthouse city built from sea-glass. I have just arrived, unannounced but expected by the reclusive Keeper Oduya. The fog surrounding the city is not ordinary weather — things glimpsed in it are sometimes true and sometimes not, and the city\'s glass architecture seems to remember what has happened near it. Pace the story slowly at first, letting me explore the lighthouse and earn or lose the Keeper\'s trust before revealing what the fog actually is.',
+        author_style: 'a literary novelist writing quiet, atmospheric mystery — spare prose, precise sensory detail, understatement over spectacle',
+        skills: ['Intuition', 'Nerve', 'Charm', 'Lore'],
+        playable_characters: [
+          {
+            name: 'Wren Ashby',
+            description: 'A shipwrecked cartographer with a sharp eye for detail and a fear of deep water.',
+            skills: { Intuition: 4, Nerve: 2, Charm: 3, Lore: 3 }
+          },
+          {
+            name: 'Corvin Blackwell',
+            description: 'A disgraced glass-smith who insists the fog once spoke to him.',
+            skills: { Intuition: 3, Nerve: 3, Charm: 2, Lore: 5 }
+          }
+        ],
+        starting_characters: [{
+          name: 'Keeper Oduya',
+          role: 'lighthouse keeper',
+          detail: 'Guarded, watchful, knows more than she says. Has tended the lighthouse for eleven years and has never once let the lens go dark.',
+          one_liner: 'The wary keeper of the lighthouse, who knows more about the fog than she lets on.',
+          appearance: 'Tall, weathered, silver-streaked hair kept in a tight braid, a long oilskin coat.',
+          location: 'The lighthouse doorway, most evenings'
+        }],
+        starting_scene: 'You arrive at the lighthouse steps as the evening fog rolls in.',
+        opening_chapter: 'The fog reaches the steps before you do, curling around your ankles like something curious. Keeper Oduya watches from the doorway, lantern unlit. "You\'re early," she says, though you were told nothing about a schedule.',
+        victory_condition: 'The player character has found the source of the fog and chosen what to do with it.',
+        victory_text: 'You understand the fog now — and it understands you. Whatever you choose next, the lighthouse will remember.',
+        defeat_condition: 'The player character is lost in the fog with no way back to the lighthouse.',
+        defeat_text: 'The fog closes in, and this time it does not let go. Your story ends here, somewhere in the grey.',
+        image_style: 'Moody painterly illustration, desaturated blues and greys, soft directional lighting.',
+        image_style_prefix: 'atmospheric painterly illustration,',
+        image_style_suffix: ', desaturated cold palette, soft lighting, fog, highly detailed',
+        tracked_items: [
+          {
+            name: 'Inventory', data_type: 'text', visibility: 'player_and_ai', update_automatically: true,
+            description: 'Items currently carried.', update_instructions: 'Add any item gained; remove items lost or used.',
+            initial_value: '(empty-handed)'
+          },
+          {
+            name: 'Keeper Trust', data_type: 'number', visibility: 'player_and_ai', update_automatically: true,
+            description: "How much Keeper Oduya trusts the player, 0-10.", update_instructions: 'Increase for honest, helpful actions; decrease for deception or threats.',
+            initial_value: 5
+          },
+          {
+            name: "Keeper's Secret", data_type: 'text', visibility: 'ai_only', update_automatically: false,
+            description: 'What the Keeper is actually hiding — for narrator reference only, never revealed directly.',
+            update_instructions: '', initial_value: 'She lit the lantern to warn smugglers, not travelers.'
+          }
+        ]
+      })
+    };
   }
 
   // Test hooks so the win/loss wiring can be exercised end-to-end without a
@@ -151,64 +186,75 @@ async function callMock({ system, user }) {
   const actionMatch = user.match(/PLAYER ACTION THIS TURN: (.*)/);
   const action = (actionMatch && actionMatch[1]) || '';
   if (/\bwin\b/i.test(action)) {
-    return JSON.stringify({
-      chapter_text: 'The fog parts at last, and you see clearly what it was hiding — and what to do about it.',
-      outcome: 'success',
-      skill_used: null,
-      game_over: { result: 'victory', text: null },
-      tracked_item_updates: [],
-      secret_info: '',
-      state_updates: { location: null, new_facts: [], characters_changed: [], inventory_changed: [] },
-      image_prompt: null,
-      suggested_actions: []
-    });
+    return {
+      usage: noUsage,
+      text: JSON.stringify({
+        chapter_text: 'The fog parts at last, and you see clearly what it was hiding — and what to do about it.',
+        outcome: 'success',
+        skill_used: null,
+        game_over: { result: 'victory', text: null },
+        tracked_item_updates: [],
+        secret_info: '',
+        state_updates: { location: null, new_facts: [], characters_changed: [], inventory_changed: [] },
+        image_prompt: null,
+        suggested_actions: []
+      })
+    };
   }
   if (/\blose\b/i.test(action)) {
-    return JSON.stringify({
-      chapter_text: 'The fog thickens until you can no longer tell which way leads back to the light.',
-      outcome: 'failure',
-      skill_used: null,
-      game_over: { result: 'defeat', text: null },
-      tracked_item_updates: [],
-      secret_info: '',
-      state_updates: { location: null, new_facts: [], characters_changed: [], inventory_changed: [] },
-      image_prompt: null,
-      suggested_actions: []
-    });
+    return {
+      usage: noUsage,
+      text: JSON.stringify({
+        chapter_text: 'The fog thickens until you can no longer tell which way leads back to the light.',
+        outcome: 'failure',
+        skill_used: null,
+        game_over: { result: 'defeat', text: null },
+        tracked_item_updates: [],
+        secret_info: '',
+        state_updates: { location: null, new_facts: [], characters_changed: [], inventory_changed: [] },
+        image_prompt: null,
+        suggested_actions: []
+      })
+    };
   }
   if (/\btake the lantern\b/i.test(action)) {
-    return JSON.stringify({
-      chapter_text: 'You lift the lantern from its hook. Keeper Oduya says nothing, but her eyes follow it.',
-      outcome: 'success',
-      skill_used: null,
-      game_over: null,
-      tracked_item_updates: [{ name: 'Inventory', new_value: 'a small brass lantern' }, { name: 'Keeper Trust', new_value: 4 }],
-      secret_info: 'Keeper Oduya left the lantern out on purpose, to see who would take it.',
-      state_updates: { location: null, new_facts: [], characters_changed: [], inventory_changed: ['+ brass lantern'] },
-      image_prompt: null,
-      suggested_actions: ['Ask why she\'s watching you', 'Light the lantern', 'Put it back']
-    });
+    return {
+      usage: noUsage,
+      text: JSON.stringify({
+        chapter_text: 'You lift the lantern from its hook. Keeper Oduya says nothing, but her eyes follow it.',
+        outcome: 'success',
+        skill_used: null,
+        game_over: null,
+        tracked_item_updates: [{ name: 'Inventory', new_value: 'a small brass lantern' }, { name: 'Keeper Trust', new_value: 4 }],
+        secret_info: 'Keeper Oduya left the lantern out on purpose, to see who would take it.',
+        state_updates: { location: null, new_facts: [], characters_changed: [], inventory_changed: ['+ brass lantern'] },
+        image_prompt: null,
+        suggested_actions: ['Ask why she\'s watching you', 'Light the lantern', 'Put it back']
+      })
+    };
   }
 
-  return JSON.stringify({
-    chapter_text: 'You step forward, and the fog seems to lean in around you, as if listening. Somewhere above, the lighthouse lens turns without a keeper\'s hand.',
-    outcome: 'n/a',
-    skill_used: null,
-    game_over: null,
-    tracked_item_updates: [],
-    secret_info: '',
-    state_updates: { location: 'Lighthouse steps', new_facts: [], characters_changed: [], inventory_changed: [] },
-    image_prompt: 'A foggy lighthouse at dusk, glass architecture, a lone figure on stone steps',
-    suggested_actions: ['Call out to the Keeper', 'Climb the steps', 'Look for another way in']
-  });
+  return {
+    usage: noUsage,
+    text: JSON.stringify({
+      chapter_text: 'You step forward, and the fog seems to lean in around you, as if listening. Somewhere above, the lighthouse lens turns without a keeper\'s hand.',
+      outcome: 'n/a',
+      skill_used: null,
+      game_over: null,
+      tracked_item_updates: [],
+      secret_info: '',
+      state_updates: { location: 'Lighthouse steps', new_facts: [], characters_changed: [], inventory_changed: [] },
+      image_prompt: 'A foggy lighthouse at dusk, glass architecture, a lone figure on stone steps',
+      suggested_actions: ['Call out to the Keeper', 'Climb the steps', 'Look for another way in']
+    })
+  };
 }
 
 const providers = { anthropic: callAnthropic, openai: callOpenAI, openrouter: callOpenRouter, gemini: callGemini, mock: callMock };
 
 async function generateText({ provider, system, user, apiKey, model }) {
   const fn = providers[provider] || providers.mock;
-  const raw = await fn({ system, user, apiKey, model });
-  return raw;
+  return fn({ system, user, apiKey, model });
 }
 
 module.exports = { generateText };
