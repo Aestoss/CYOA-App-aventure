@@ -38,17 +38,46 @@ async function callReplicate({ prompt, apiKey, model }) {
   return prediction.output ? prediction.output[0] : null;
 }
 
+// Targets AUTOMATIC1111's Stable Diffusion WebUI (the standard local image
+// tool, chosen over ComfyUI for the same reason Ollama was chosen for local
+// text: a single synchronous JSON endpoint, no websocket/queue/node-graph to
+// drive). Requires the user to have started it with --api (off by default).
+// Reaches it through the same authenticated Caddy+tunnel bridge as Ollama —
+// see scripts/windows/setup-ollama-bridge.ps1 — since it's the same PC/GPU.
+//
+// NOTE: written from AUTOMATIC1111's documented /sdapi/v1/txt2img shape
+// (stable for years) but not exercised against a live instance in this
+// session — no such environment available here. Report back anything that
+// doesn't match and it'll get fixed.
+async function callLocalSD({ prompt, apiKey, baseUrl }) {
+  const url = `${(baseUrl || 'http://localhost:7860').replace(/\/$/, '')}/sdapi/v1/txt2img`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}) },
+    body: JSON.stringify({
+      prompt,
+      steps: 20,
+      width: 512,
+      height: 512
+    })
+  });
+  if (!res.ok) throw new Error(`Local Stable Diffusion API error ${res.status}: ${await res.text()}`);
+  const data = await res.json();
+  const image = data.images && data.images[0];
+  return image ? `data:image/png;base64,${image}` : null;
+}
+
 async function callMock({ prompt }) {
   // No network call — returns a placeholder so the UI has something to render during testing.
   return null;
 }
 
-const providers = { stability: callStability, replicate: callReplicate, mock: callMock, none: callMock };
+const providers = { stability: callStability, replicate: callReplicate, localsd: callLocalSD, mock: callMock, none: callMock };
 
-async function generateImage({ provider, prompt, apiKey, model }) {
+async function generateImage({ provider, prompt, apiKey, model, baseUrl }) {
   if (!prompt) return null;
   const fn = providers[provider] || providers.mock;
-  return fn({ prompt, apiKey, model });
+  return fn({ prompt, apiKey, model, baseUrl });
 }
 
 module.exports = { generateImage };

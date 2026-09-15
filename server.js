@@ -487,7 +487,7 @@ app.post('/api/settings', (req, res) => {
   const current = db.get('settings').value();
   const {
     textProvider, textModel, ollamaBaseUrl, fallbackProvider, fallbackModel,
-    language, chapterLength, imageProvider, imagesEnabled, apiKeys
+    language, chapterLength, imageProvider, imagesEnabled, localImageBaseUrl, apiKeys
   } = req.body;
   const next = {
     textProvider: textProvider ?? current.textProvider,
@@ -499,6 +499,7 @@ app.post('/api/settings', (req, res) => {
     chapterLength: chapterLength ?? current.chapterLength,
     imageProvider: imageProvider ?? current.imageProvider,
     imagesEnabled: typeof imagesEnabled === 'boolean' ? imagesEnabled : current.imagesEnabled,
+    localImageBaseUrl: localImageBaseUrl ?? current.localImageBaseUrl,
     apiKeys: { ...current.apiKeys, ...(apiKeys || {}) }
   };
   db.set('settings', next).write();

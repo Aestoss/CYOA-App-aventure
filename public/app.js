@@ -182,6 +182,9 @@ const UI = {
     fallbackConfirmWaitBtn: 'Essayer quand même avec Ollama',
     settingsImagesHeading: 'Images', imagesEnabledLabel: "Génération d'images",
     keyStabilityLabel: 'Clé API Stability', keyReplicateLabel: 'Clé API Replicate',
+    providerLocalSd: 'IA locale (Stable Diffusion)',
+    localImageBaseUrlLabel: 'Adresse du serveur Stable Diffusion', localImageBaseUrlHint: '(AUTOMATIC1111 lancé avec --api ; même principe que pour Ollama — voir plus haut)',
+    keyLocalSdLabel: 'Clé API IA locale (images)', keyLocalSdHint: '(généralement inutile en local)',
     keyAlreadySaved: '•••••••• (déjà enregistrée)',
     costsHeading: '💰 Coûts',
     costsHint: "Estimation approximative — les tarifs des fournisseurs changent, et OpenRouter n'a pas de tarif fixe (jetons seulement).",
@@ -356,6 +359,9 @@ const UI = {
     fallbackConfirmWaitBtn: 'Try with Ollama anyway',
     settingsImagesHeading: 'Images', imagesEnabledLabel: 'Image generation',
     keyStabilityLabel: 'Stability API key', keyReplicateLabel: 'Replicate API key',
+    providerLocalSd: 'Local AI (Stable Diffusion)',
+    localImageBaseUrlLabel: 'Stable Diffusion server address', localImageBaseUrlHint: '(AUTOMATIC1111 run with --api; same idea as Ollama above)',
+    keyLocalSdLabel: 'Local AI (images) API key', keyLocalSdHint: '(usually unnecessary locally)',
     keyAlreadySaved: '•••••••• (already saved)',
     costsHeading: '💰 Costs',
     costsHint: "Rough estimate — provider pricing changes, and OpenRouter has no fixed rate (tokens only).",
@@ -1834,7 +1840,8 @@ async function loadSettings() {
   updateChapterLengthLabel();
   document.getElementById('imageProvider').value = s.imageProvider;
   document.getElementById('imagesEnabled').checked = s.imagesEnabled;
-  ['anthropic', 'openai', 'openrouter', 'gemini', 'ollama', 'stability', 'replicate'].forEach(p => {
+  document.getElementById('localImageBaseUrl').value = s.localImageBaseUrl || '';
+  ['anthropic', 'openai', 'openrouter', 'gemini', 'ollama', 'stability', 'replicate', 'localsd'].forEach(p => {
     const field = document.getElementById(`key-${p}`);
     field.placeholder = s.apiKeys[p] ? t('keyAlreadySaved') : field.placeholder;
   });
@@ -1842,7 +1849,7 @@ async function loadSettings() {
 
 document.getElementById('saveSettingsBtn').onclick = async () => {
   const apiKeys = {};
-  ['anthropic', 'openai', 'openrouter', 'gemini', 'ollama', 'stability', 'replicate'].forEach(p => {
+  ['anthropic', 'openai', 'openrouter', 'gemini', 'ollama', 'stability', 'replicate', 'localsd'].forEach(p => {
     const val = document.getElementById(`key-${p}`).value.trim();
     if (val) apiKeys[p] = val; // only overwrite if the user typed something new
   });
@@ -1856,6 +1863,7 @@ document.getElementById('saveSettingsBtn').onclick = async () => {
     chapterLength: CHAPTER_LENGTH_VALUES[Number(document.getElementById('chapterLengthSlider').value)] || 'medium',
     imageProvider: document.getElementById('imageProvider').value,
     imagesEnabled: document.getElementById('imagesEnabled').checked,
+    localImageBaseUrl: document.getElementById('localImageBaseUrl').value.trim(),
     apiKeys
   };
   await fetch(`${API}/settings`, {
@@ -1871,7 +1879,7 @@ document.getElementById('saveSettingsBtn').onclick = async () => {
   updateChapterLengthLabel();
   await loadCostSummary();
   document.getElementById('settingsStatus').textContent = t('savedStatus');
-  ['anthropic', 'openai', 'openrouter', 'gemini', 'ollama', 'stability', 'replicate'].forEach(p => {
+  ['anthropic', 'openai', 'openrouter', 'gemini', 'ollama', 'stability', 'replicate', 'localsd'].forEach(p => {
     document.getElementById(`key-${p}`).value = '';
   });
   await loadSettings();

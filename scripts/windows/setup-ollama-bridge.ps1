@@ -24,21 +24,25 @@
        folder (no winget PATH guesswork -- see notes below).
     3. Generates (once) or reuses a secret bearer token, writes a Caddyfile
        that only forwards requests carrying that token, and starts Caddy.
+       Three routes share the one token: Ollama itself, the GPU watcher's
+       /bridge/status, and /sdapi/* for a local Stable Diffusion instance
+       (AUTOMATIC1111, run separately with --api -- NOT installed by this
+       script, see .NOTES) if you're using one for local image generation.
     4. Starts ollama-watcher.ps1 (a separate script next to this one), which
        polls nvidia-smi and shows a tray icon (green/orange) so you can see
-       locally when the GPU is busy enough that a game might stutter. Caddy
-       routes /bridge/status to it, alongside the route to Ollama itself.
+       locally when the GPU is busy enough that a game might stutter.
     5. Starts a Cloudflare "quick tunnel" pointing at Caddy and extracts the
        public https://xxxx.trycloudflare.com URL it gets assigned.
     6. Validates the FULL path from the public internet: confirms a request
        without the token is rejected (401) and a request with it reaches
        Ollama and gets a real completion back.
     7. Pushes the new tunnel URL + secret to Fogbound's own Settings via its
-       API (POST /api/settings), then reads them back to confirm. Fogbound
-       polls /bridge/status through the same tunnel to show its own
-       hors ligne/indisponible/disponible indicator and to decide, instantly
-       and without any extra round trip, whether to offer your configured
-       fallback provider for a given turn.
+       API (POST /api/settings) for BOTH Ollama and local image generation
+       (same URL, same token -- Caddy tells the two apart by path), then
+       reads them back to confirm. Fogbound polls /bridge/status through the
+       same tunnel to show its own hors ligne/indisponible/disponible
+       indicator and to decide, instantly and without any extra round trip,
+       whether to offer your configured fallback provider for a given turn.
     8. Keeps running in the foreground (Caddy + the tunnel must stay alive
        for this to keep working) until you press Ctrl+C, then cleans up.
 
@@ -59,6 +63,15 @@
       powershell -ExecutionPolicy Bypass -File .\setup-ollama-bridge.ps1
   - If the Ollama install step fails, re-run this script from an
     Administrator PowerShell window and try again.
+  - Local image generation (AUTOMATIC1111 / Stable Diffusion WebUI) is NOT
+    installed by this script -- unlike Ollama, it's a much heavier,
+    less standardized install (Python environment, multi-GB model
+    checkpoints to download yourself). If you want it, install it
+    separately and start it with the --api flag (off by default), e.g.:
+      webui-user.bat --api
+    This script only adds the authenticated proxy route for it -- if it
+    isn't running, that route just fails until you start it; everything
+    else (Ollama, text generation) works regardless.
   - This script has not been run on a real Windows machine by the assistant
     that wrote it (no such access exists in that environment) -- it was
     built from verified package IDs and documented behavior, but please
@@ -71,6 +84,11 @@
   Ollama model to ensure is pulled and to use for the validation test.
   Defaults to qwen3:14b (the recommended sweet-spot model for a 16GB-VRAM
   card like the RTX 5080 -- see TODO.md/CHANGELOG.md for the reasoning).
+
+.PARAMETER SdPort
+  Local port your Stable Diffusion WebUI (AUTOMATIC1111) API listens on, if
+  you use one. Defaults to 7860 (AUTOMATIC1111's own default). The proxy
+  route is added either way; harmless and unused if you don't run one.
 
 .PARAMETER SkipFogboundUpdate
   If set, does everything except push settings to Fogbound automatically --
@@ -87,6 +105,7 @@
 param(
   [string]$FogboundUrl = "https://fogbound-production.up.railway.app",
   [string]$Model = "qwen3:14b",
+  [int]$SdPort = 7860,
   [switch]$SkipFogboundUpdate,
   [switch]$NoWatcher
 )
@@ -303,12 +322,18 @@ $caddyfileContent = @"
 		header Authorization "Bearer $Secret"
 		path /bridge/status*
 	}
+	@authorizedSd {
+		header Authorization "Bearer $Secret"
+		path /sdapi/*
+	}
 	@authorizedOllama {
 		header Authorization "Bearer $Secret"
 		not path /bridge/status*
+		not path /sdapi/*
 	}
 
 	reverse_proxy @authorizedStatus 127.0.0.1:$WatcherPort
+	reverse_proxy @authorizedSd 127.0.0.1:$SdPort
 	reverse_proxy @authorizedOllama 127.0.0.1:$OllamaPort
 
 	respond "Unauthorized" 401
@@ -373,6 +398,24 @@ if ($statusNoAuth -eq 401) {
   Write-Fail "Sans jeton, le proxy a repondu $statusNoAuth au lieu de 401 -- verifiez le Caddyfile."
   Stop-Bridge
   exit 1
+}
+
+Write-Step "Verification de la route image locale (/sdapi -- optionnelle)"
+
+$sdStatusNoAuth = Get-HttpStatus "http://127.0.0.1:$ProxyPort/sdapi/v1/txt2img" @{}
+if ($sdStatusNoAuth -eq 401) {
+  Write-Ok "Route /sdapi correctement protegee (401 sans jeton)."
+} else {
+  Write-Fail "Route /sdapi : reponse $sdStatusNoAuth au lieu de 401 -- verifiez le Caddyfile."
+}
+$sdDetected = $false
+try {
+  Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$SdPort/" -TimeoutSec 3 | Out-Null
+  $sdDetected = $true
+  Write-Ok "Un serveur repond sur le port $SdPort (probablement AUTOMATIC1111)."
+} catch {
+  Write-Host "    Rien ne repond sur le port $SdPort pour l'instant -- normal si vous n'utilisez pas encore la generation d'image locale."
+  Write-Host "    Pour l'activer : lancez AUTOMATIC1111 avec le flag --api, puis relancez ce script."
 }
 
 # ---------------------------------------------------------------------------
@@ -472,27 +515,32 @@ if (-not $NoWatcher) {
 if (-not $SkipFogboundUpdate) {
   Write-Step "Mise a jour automatique des reglages Fogbound ($FogboundUrl)"
   try {
+    # Same tunnel URL and secret for both -- Caddy tells Ollama and the
+    # /sdapi image route apart by path, so there's only one address to push.
+    # textProvider/imageProvider themselves are left untouched: you opt in
+    # from Settings when ready, same reasoning as not auto-switching before.
     $settingsBody = @{
       ollamaBaseUrl = $TunnelUrl
-      apiKeys = @{ ollama = $Secret }
+      localImageBaseUrl = $TunnelUrl
+      apiKeys = @{ ollama = $Secret; localsd = $Secret }
     } | ConvertTo-Json -Depth 5
 
     Invoke-RestMethod -Method Post -Uri "$FogboundUrl/api/settings" `
       -ContentType "application/json" -Body $settingsBody -TimeoutSec 20 | Out-Null
 
     $confirm = Invoke-RestMethod -Method Get -Uri "$FogboundUrl/api/settings" -TimeoutSec 20
-    if ($confirm.ollamaBaseUrl -eq $TunnelUrl) {
-      Write-Ok "Fogbound confirme la nouvelle adresse Ollama."
+    if ($confirm.ollamaBaseUrl -eq $TunnelUrl -and $confirm.localImageBaseUrl -eq $TunnelUrl) {
+      Write-Ok "Fogbound confirme la nouvelle adresse (texte ET image locale)."
     } else {
-      Write-Fail "Fogbound n'a pas confirme la mise a jour (valeur lue : $($confirm.ollamaBaseUrl)). Verifiez manuellement dans Reglages."
+      Write-Fail "Fogbound n'a pas confirme la mise a jour (ollamaBaseUrl : $($confirm.ollamaBaseUrl), localImageBaseUrl : $($confirm.localImageBaseUrl)). Verifiez manuellement dans Reglages."
     }
   } catch {
     Write-Fail "Impossible de contacter Fogbound pour mettre a jour les reglages -- $($_.Exception.Message). Vous pouvez le faire manuellement dans Reglages."
   }
 } else {
   Write-Step "Mise a jour Fogbound ignoree (-SkipFogboundUpdate)"
-  Write-Host "    Adresse a coller dans Reglages -> Adresse du serveur Ollama : $TunnelUrl"
-  Write-Host "    Cle a coller dans Reglages -> Cle API Ollama : $Secret"
+  Write-Host "    Adresse a coller dans Reglages -> Adresse du serveur Ollama ET Adresse du serveur Stable Diffusion : $TunnelUrl"
+  Write-Host "    Cle a coller dans Reglages -> Cle API Ollama ET Cle API IA locale (images) : $Secret"
 }
 
 # ---------------------------------------------------------------------------
@@ -508,9 +556,11 @@ Write-Host " Modele utilise  : $Model"
 Write-Host " Fogbound        : $FogboundUrl"
 Write-Host ""
 Write-Host " Surveillant GPU  : $(if ($NoWatcher) { 'desactive (-NoWatcher)' } else { 'actif (icone dans la barre des taches)' })"
+Write-Host " Image locale (/sdapi) : route $(if ($sdStatusNoAuth -eq 401) { 'prete' } else { 'a verifier' }) sur le port $SdPort -- $(if ($sdDetected) { 'un serveur y repond' } else { 'rien detecte, lancez AUTOMATIC1111 --api si besoin' })"
 Write-Host ""
 Write-Host " Dernière étape (manuelle) : ouvrez Fogbound -> Reglages, mettez"
-Write-Host " Fournisseur = 'Ollama (local)' et Modele = '$Model', puis Enregistrer."
+Write-Host " Fournisseur = 'Ollama (local)' et Modele = '$Model' pour le texte ;"
+Write-Host " Fournisseur = 'IA locale (Stable Diffusion)' pour les images si vous en utilisez une ; puis Enregistrer."
 Write-Host ""
 Write-Host " Journal complet de cette execution : $TranscriptPath"
 Write-Host " Laissez cette fenetre ouverte tant que vous jouez avec Ollama."

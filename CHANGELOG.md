@@ -5,6 +5,39 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-15 — Génération d'image locale (Stable Diffusion)
+
+Prépare l'utilisation d'un modèle d'image local sur le PC pendant que
+l'utilisateur teste le pont Ollama de son côté — même logique que le texte
+local, appliquée aux images.
+
+- **Nouveau fournisseur d'image `localsd`** (`providers/imageProviders.js`) :
+  cible l'API REST d'AUTOMATIC1111 (Stable Diffusion WebUI), choisi plutôt
+  que ComfyUI pour la même raison qu'Ollama a été choisi côté texte — un
+  seul endpoint synchrone (`/sdapi/v1/txt2img`), pas de graphe de nœuds ni
+  de websocket à piloter.
+- **Nouveaux réglages** : adresse du serveur (`localImageBaseUrl`, défaut
+  `http://localhost:7860`) et clé optionnelle (`apiKeys.localsd`), même
+  principe que pour Ollama — sélectionnable dans Réglages → Images sous
+  "IA locale (Stable Diffusion)".
+- **Pont PC étendu** (`scripts/windows/setup-ollama-bridge.ps1`) plutôt que
+  dupliqué : une troisième route authentifiée (`/sdapi/*`) s'ajoute au même
+  Caddyfile, protégée par le même jeton, exposée par le même tunnel — une
+  seule adresse à coller dans Fogbound pour le texte ET l'image. AUTOMATIC1111
+  lui-même n'est **pas** installé automatiquement par le script (contrairement
+  à Ollama) : c'est une installation nettement plus lourde (environnement
+  Python, plusieurs Go de modèles à télécharger soi-même) — le script ajoute
+  seulement la route et détecte, sans bloquer, si un serveur répond déjà sur
+  le port attendu (7860 par défaut, `-SdPort` pour changer).
+
+Vérifié : `callLocalSD` testé contre un faux serveur imitant l'API
+AUTOMATIC1111 (requête/réponse/format data URL corrects) ; bout en bout via
+`generateTurnImage` dans `lib/gameEngine.js` (image bien attachée au tour
+persisté) ; réglages Images (fournisseur, adresse, clé) sauvegardés et
+relus correctement en navigateur réel (Playwright). Le script PowerShell
+n'a pas pu être testé sur une vraie installation AUTOMATIC1111 (aucun accès
+à un tel environnement ici) — à valider par l'utilisateur.
+
 ## 2026-09-15 — Correctifs streaming (plantage META tronqué, pagination, régénération)
 
 Retours utilisateur après un vrai test en conditions réelles (clé Anthropic,
