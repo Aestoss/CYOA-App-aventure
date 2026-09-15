@@ -5,6 +5,31 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-15 — La pre-installation de CLIP echouait en silence
+
+Confirme par un nouveau run reel identique au tout premier (meme erreur
+"Couldn't install clip" / `pkg_resources`) malgre le correctif
+setuptools==69.5.1 + `--no-build-isolation` livre juste avant. Element
+determinant du diagnostic : le journal montre un chemin
+`AppData\Local\Temp\pip-build-env-XXXXX\overlay\...`, un environnement de
+build ISOLE -- or l'installation faite par ce script utilise justement
+`--no-build-isolation`, qui empeche la creation d'un tel dossier. Donc
+cette erreur precise venait forcement de la propre tentative
+d'AUTOMATIC1111 (`launch_utils.py`, qui n'utilise jamais
+`--no-build-isolation`), pas de la pre-installation de ce script.
+Verifie dans le code source d'AUTOMATIC1111 (a l'exact commit utilise) :
+il saute bien sa propre installation si `is_installed("clip")` est vrai
+-- donc la pre-installation de ce script avait echoue silencieusement,
+sans laisser de trace exploitable pour savoir pourquoi.
+
+Corrige : les deux installations pip de cette etape (setuptools, puis
+CLIP) capturent maintenant leur sortie complete (au lieu de la jeter avec
+`2>$null`) et l'ecrivent dans un nouveau `clip-preinstall.log`, affichee
+directement en cas d'echec au lieu d'un message vague. Ajout aussi d'une
+re-verification apres un `pip install` qui rapporte un succes (`import
+clip` a nouveau) au cas ou l'installation "reussirait" sans que le module
+soit reellement importable.
+
 ## 2026-09-15 — Audit systematique : plus de correctif au coup par coup
 
 Suite a une remarque justifiee (assez de corriger reactivement une erreur

@@ -471,13 +471,32 @@ if (-not (Test-Path $VenvPython)) {
   if ($PythonLauncher -eq "py -3.10") { & py -3.10 -m venv $VenvDir } else { & python -m venv $VenvDir }
 }
 
+# Capturing full output (merged via 2>&1, not discarded via 2>$null) so a
+# failure here shows the REAL pip error immediately instead of a black box
+# that only says "failed, hoping the webui's own attempt does better" --
+# confirmed necessary for real: an earlier version of this step silently
+# swallowed a failure here, giving no way to tell why without a separate
+# round-trip. Also written to its own log file for the same reason
+# automatic1111.log/.err.log exist -- something to paste back if this ever
+# needs diagnosing again.
+$ClipInstallLogPath = Join-Path $WorkDir "clip-preinstall.log"
+function Write-ClipInstallLog($lines) {
+  $lines | ForEach-Object { "$_" } | Set-Content -Path $ClipInstallLogPath -Encoding UTF8
+}
+
 if (Test-Path $VenvPython) {
   Invoke-NativeQuiet { & $VenvPython -c "import clip" 2>$null }
   if ($LASTEXITCODE -eq 0) {
     Write-Ok "CLIP est deja installe dans le venv."
   } else {
     Write-Info "Fixation de setuptools a une version compatible (69.5.1) dans le venv..."
-    Invoke-NativeQuiet { & $VenvPython -m pip install "setuptools==69.5.1" --quiet 2>$null }
+    $setuptoolsOutput = Invoke-NativeQuiet { & $VenvPython -m pip install "setuptools==69.5.1" 2>&1 }
+    if ($LASTEXITCODE -ne 0) {
+      Write-Fail "Impossible de fixer setuptools==69.5.1 -- la suite de cette etape va probablement aussi echouer. Detail :"
+      Write-ClipInstallLog $setuptoolsOutput
+      $setuptoolsOutput | Select-Object -Last 15 | ForEach-Object { Write-Host "    $_" }
+      Write-Info "Journal complet : $ClipInstallLogPath"
+    }
 
     # Read the exact URL AUTOMATIC1111 itself would install, straight from
     # its own launch_utils.py, so this keeps working if that pinned commit
@@ -493,11 +512,23 @@ if (Test-Path $VenvPython) {
     }
 
     Write-Info "Installation de CLIP avec --no-build-isolation..."
-    Invoke-NativeQuiet { & $VenvPython -m pip install $ClipPackageUrl --no-build-isolation --prefer-binary --quiet 2>$null }
+    $clipOutput = Invoke-NativeQuiet { & $VenvPython -m pip install $ClipPackageUrl --no-build-isolation --prefer-binary 2>&1 }
+    Write-ClipInstallLog $clipOutput
     if ($LASTEXITCODE -eq 0) {
-      Write-Ok "CLIP installe avec succes."
+      # pip succeeding doesn't guarantee the module is actually importable
+      # (a stale build, a partial install) -- confirmed worth checking for
+      # real: this is exactly what happened once already, silently, with no
+      # way to tell without this recheck.
+      Invoke-NativeQuiet { & $VenvPython -c "import clip" 2>$null }
+      if ($LASTEXITCODE -eq 0) {
+        Write-Ok "CLIP installe avec succes."
+      } else {
+        Write-Fail "pip a rapporte un succes mais 'import clip' echoue toujours -- inattendu. Journal : $ClipInstallLogPath"
+      }
     } else {
-      Write-Info "Echec de la pre-installation de CLIP -- le lancement plus bas tentera quand meme (et affichera l'erreur reelle dans le journal si ca echoue encore)."
+      Write-Fail "Echec de la pre-installation de CLIP -- le lancement plus bas tentera quand meme (et echouera probablement pareil). Dernieres lignes :"
+      $clipOutput | Select-Object -Last 15 | ForEach-Object { Write-Host "    $_" }
+      Write-Info "Journal complet : $ClipInstallLogPath"
     }
   }
 } else {
