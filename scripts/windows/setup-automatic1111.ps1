@@ -431,6 +431,27 @@ if ($SkipLaunch) {
 }
 
 # ---------------------------------------------------------------------------
+# 5b. Pin setuptools below 82 for pip's build step, via the PIP_CONSTRAINT
+#     env var (inherited by the child process below). setuptools 82.0
+#     (Feb 2026) deleted pkg_resources entirely, and OpenAI's CLIP package
+#     -- an unpinned git-based dependency this webui installs every fresh
+#     venv -- still imports it in its legacy setup.py, so pip's isolated
+#     build environment (which always grabs the newest setuptools
+#     regardless of what's already installed) fails with
+#     "ModuleNotFoundError: No module named 'pkg_resources'" on any fresh
+#     install done today, independent of GPU. Confirmed against a real
+#     failure log, not assumed. PIP_CONSTRAINT is pip's own documented
+#     mechanism for constraining a package version even inside build
+#     isolation, so this doesn't require --no-build-isolation or patching
+#     AUTOMATIC1111's own launch.py (which a future git pull would just
+#     overwrite anyway).
+# ---------------------------------------------------------------------------
+
+$PipConstraintPath = Join-Path $WorkDir "pip-constraints.txt"
+Set-Content -Path $PipConstraintPath -Value "setuptools<81" -Encoding ASCII
+$env:PIP_CONSTRAINT = $PipConstraintPath
+
+# ---------------------------------------------------------------------------
 # 6. Launch and wait for the API to actually answer -- the first run
 #    installs several GB of dependencies, so this is patient on purpose.
 # ---------------------------------------------------------------------------
@@ -444,9 +465,21 @@ if (Test-Path $WebUiErrLogPath) { Remove-Item $WebUiErrLogPath -Force }
 # refuses -RedirectStandardOutput and -RedirectStandardError pointing at the
 # same file (hit and fixed for cloudflared in setup-ollama-bridge.ps1 --
 # applied here from the start instead of re-discovering it the hard way).
+#
+# -RedirectStandardInput "NUL" matters just as much: webui-user.bat's own
+# wrapper calls `pause` when a step fails, to keep a normal double-clicked
+# window open so a person can read the error before it closes. Launched
+# hidden with no redirected stdin, that pause instead waits forever for a
+# keypress on a console window nobody can see or reach -- confirmed for
+# real: a run that hit the pkg_resources failure above sat "still running"
+# for 15+ minutes with no further progress, not because anything was slow,
+# but because it was silently stuck at that prompt the whole time. Redirecting
+# stdin from NUL (an immediate EOF) makes `pause` return instantly instead,
+# so a real failure surfaces (and this loop below detects the exited
+# process) within moments instead of hanging indefinitely.
 $webuiProcess = Start-Process -FilePath $WebUiUserBat -WorkingDirectory $ResolvedWebUiDir `
   -WindowStyle Hidden -PassThru `
-  -RedirectStandardOutput $WebUiLogPath -RedirectStandardError $WebUiErrLogPath
+  -RedirectStandardOutput $WebUiLogPath -RedirectStandardError $WebUiErrLogPath -RedirectStandardInput "NUL"
 
 Write-Info "Processus demarre (PID $($webuiProcess.Id)). Journal : $WebUiLogPath"
 Write-Info "Cela peut prendre 10 a 15 minutes la toute premiere fois (telechargement de PyTorch et des dependances)."

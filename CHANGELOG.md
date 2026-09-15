@@ -5,6 +5,38 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-15 — Correctifs reels (pas devines) sur un vrai run bloque
+
+Diagnostic a partir des journaux reels envoyes par l'utilisateur (le
+premier run de `setup-automatic1111.ps1` restait "en cours" 15 minutes
+sans jamais repondre) plutot que d'ajuster au hasard :
+
+- **Cause racine trouvee dans `automatic1111.err.log`** : `setuptools`
+  82.0 (sorti en fevrier 2026) a completement supprime `pkg_resources` ;
+  le paquet CLIP d'OpenAI (dependance non figee installee a chaque venv
+  neuf par ce webui) importe encore `pkg_resources` dans son `setup.py`
+  a l'ancienne, et pip installe toujours la derniere version de
+  `setuptools` dans son environnement de build isole, quelle que soit la
+  version deja presente ailleurs. Resultat : `RuntimeError: Couldn't
+  install clip` / `ModuleNotFoundError: No module named 'pkg_resources'`
+  sur toute installation neuve faite aujourd'hui, independamment du GPU.
+  Corrige en fixant `setuptools<81` via la variable d'environnement
+  `PIP_CONSTRAINT` (mecanisme documente de pip qui s'applique meme a
+  l'interieur du build isole) avant le lancement — sans modifier
+  `launch.py` d'AUTOMATIC1111, qu'un futur `git pull` ecraserait de toute
+  facon.
+- **Bug structurel trouve en creusant "pourquoi ca ne plante pas mais ne
+  repond pas non plus"** : `webui-user.bat` appelle `pause` quand une
+  etape d'installation echoue (pour garder une fenetre normale ouverte le
+  temps de lire l'erreur). Lance en `-WindowStyle Hidden` sans stdin
+  redirige, ce `pause` attendait une touche sur une fenetre invisible et
+  inatteignable — le run bloque 15 minutes n'etait donc pas lent, il etait
+  silencieusement coince sur ce prompt depuis le debut. Corrige en ajoutant
+  `-RedirectStandardInput "NUL"` a l'appel `Start-Process` : `pause` recoit
+  une fin de fichier immediate et rend la main tout de suite, donc une
+  vraie erreur remonte maintenant en quelques secondes au lieu de rester
+  bloquee indefiniment.
+
 ## 2026-09-15 — TODO : progression reelle a la creation + slider continu
 
 Deux items du backlog (`TODO.md`), hors ceux notes pour la sortie v1.0 :
