@@ -98,6 +98,38 @@ app.post('/api/worlds', async (req, res) => {
   }
 });
 
+// Streaming counterpart of the route above, same newline-delimited JSON
+// event protocol as POST /api/saves/:id/turn/stream: {"type":"progress",
+// "chars":N} while the model is still writing the world's JSON (raw deltas
+// aren't shown to the player -- only their running length, to drive a real
+// progress bar instead of the old fixed-duration cosmetic animation), then
+// {"type":"done","world":...,"playableCharacters":...} or
+// {"type":"error","message":...}.
+app.post('/api/worlds/stream', async (req, res) => {
+  const { idea, language } = req.body;
+  if (!idea || !idea.trim()) return res.status(400).json({ error: 'idea is required' });
+
+  res.writeHead(200, {
+    'content-type': 'application/x-ndjson; charset=utf-8',
+    'cache-control': 'no-cache',
+    'x-accel-buffering': 'no'
+  });
+  const send = (event) => res.write(JSON.stringify(event) + '\n');
+
+  let chars = 0;
+  try {
+    const result = await createWorld(idea.trim(), language, {
+      onChunk: (text) => { chars += text.length; send({ type: 'progress', chars }); }
+    });
+    send({ type: 'done', ...result });
+  } catch (e) {
+    console.error(e);
+    send({ type: 'error', message: e.message });
+  } finally {
+    res.end();
+  }
+});
+
 app.patch('/api/worlds/:id', (req, res) => {
   try {
     const {
@@ -501,7 +533,12 @@ app.post('/api/settings', (req, res) => {
     fallbackProvider: fallbackProvider ?? current.fallbackProvider,
     fallbackModel: fallbackModel ?? current.fallbackModel,
     language: language ?? current.language,
-    chapterLength: chapterLength ?? current.chapterLength,
+    // Snapped to the nearest 100 within [100, 1000] -- matches the settings
+    // slider's step, and keeps a malformed/out-of-range value from a raw API
+    // call reaching the prompt builder.
+    chapterLength: Number.isFinite(Number(chapterLength))
+      ? Math.min(1000, Math.max(100, Math.round(Number(chapterLength) / 100) * 100))
+      : current.chapterLength,
     imageProvider: imageProvider ?? current.imageProvider,
     imagesEnabled: typeof imagesEnabled === 'boolean' ? imagesEnabled : current.imagesEnabled,
     localImageBaseUrl: localImageBaseUrl ?? current.localImageBaseUrl,

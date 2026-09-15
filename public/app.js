@@ -83,10 +83,7 @@ const UI = {
     gameOverVictorySub: '🏆 Terminé (victoire)', gameOverDefeatSub: '💀 Terminé (défaite)',
     deleteSaveConfirm: title => `Supprimer cette sauvegarde de "${title}" ? Cette action est irréversible.`,
     deleteWorldConfirm: title => `Supprimer le monde "${title}" et toutes ses sauvegardes ? Cette action est irréversible.`,
-    creationSteps: [
-      'Écriture du monde...', 'Création des personnages...', 'Réglage des compétences...',
-      'Mise en place des objets suivis...', 'Dernières touches...'
-    ],
+    creationInProgress: 'Génération du monde en cours...',
     worldEditInfoHeading: 'Informations',
     worldLanguageInfo: name => `Langue de ce monde : ${name} (fixée à la création)`,
     worldVersionInfo: v => `Version : ${v}`,
@@ -169,7 +166,7 @@ const UI = {
     settingsTextHeading: 'Texte',
     responseLanguageLabel: 'Langue des réponses',
     chapterLengthLabelText: 'Longueur des chapitres',
-    chapterLengthOptions: { short: 'Court (~200 mots)', medium: 'Moyen (~400 mots)', long: 'Long (~800 mots)' },
+    chapterLengthWords: n => `~${n} mots`,
     providerLabel: 'Fournisseur',
     providerMock: 'Démo locale (sans clé)',
     providerOpenrouter: 'OpenRouter (plusieurs modèles)',
@@ -269,10 +266,7 @@ const UI = {
     gameOverVictorySub: '🏆 Finished (victory)', gameOverDefeatSub: '💀 Finished (defeat)',
     deleteSaveConfirm: title => `Delete this save of "${title}"? This cannot be undone.`,
     deleteWorldConfirm: title => `Delete the world "${title}" and all its saves? This cannot be undone.`,
-    creationSteps: [
-      'Writing the world...', 'Creating characters...', 'Tuning skills...',
-      'Setting up tracked items...', 'Final touches...'
-    ],
+    creationInProgress: 'Generating the world...',
     worldEditInfoHeading: 'Information',
     worldLanguageInfo: name => `This world's language: ${name} (fixed at creation)`,
     worldVersionInfo: v => `Version: ${v}`,
@@ -355,7 +349,7 @@ const UI = {
     settingsTextHeading: 'Text',
     responseLanguageLabel: 'Response language',
     chapterLengthLabelText: 'Chapter length',
-    chapterLengthOptions: { short: 'Short (~200 words)', medium: 'Medium (~400 words)', long: 'Long (~800 words)' },
+    chapterLengthWords: n => `~${n} words`,
     providerLabel: 'Provider',
     providerMock: 'Local demo (no key)',
     providerOpenrouter: 'OpenRouter (multiple models)',
@@ -409,8 +403,6 @@ function applyUiLanguage() {
     el.setAttribute('aria-label', val);
   });
 }
-
-const CHAPTER_LENGTH_VALUES = ['short', 'medium', 'long'];
 
 let currentSaveId = null;   // active save while in the story / character-select views
 let currentWorldId = null;  // active world while in the world-editor view
@@ -559,24 +551,33 @@ function renderWorldList(worlds) {
 
 // ---------- Create world ----------
 
-let creationInterval = null;
+// A world's JSON (title, description, rules, skills, playable characters,
+// tracked items, NPCs...) runs a fairly stable size across ideas/providers —
+// this is a rough approximation used only to turn "chars received so far"
+// into a percentage, capped below 100% (see updateCreationProgress) so a
+// more verbose-than-usual response never looks stuck or overshoots.
+const ESTIMATED_WORLD_JSON_CHARS = 6000;
 
 function startCreationProgress() {
-  const wrap = document.getElementById('creationProgress');
-  const text = document.getElementById('creationProgressText');
-  const steps = t('creationSteps');
-  wrap.classList.remove('hidden');
-  let step = 0;
-  text.textContent = steps[0];
-  creationInterval = setInterval(() => {
-    step = (step + 1) % steps.length;
-    text.textContent = steps[step];
-  }, 1400);
+  document.getElementById('creationProgress').classList.remove('hidden');
+  updateCreationProgress(0);
+}
+
+function updateCreationProgress(chars) {
+  const fill = document.querySelector('#creationProgress .progress-bar-fill');
+  const percent = Math.min(95, Math.round((chars / ESTIMATED_WORLD_JSON_CHARS) * 100));
+  fill.style.width = `${percent}%`;
+  document.getElementById('creationProgressText').textContent = `${t('creationInProgress')} ${percent}%`;
+}
+
+function finishCreationProgress() {
+  document.querySelector('#creationProgress .progress-bar-fill').style.width = '100%';
+  document.getElementById('creationProgressText').textContent = `${t('creationInProgress')} 100%`;
 }
 
 function stopCreationProgress() {
-  clearInterval(creationInterval);
   document.getElementById('creationProgress').classList.add('hidden');
+  document.querySelector('#creationProgress .progress-bar-fill').style.width = '0%';
 }
 
 document.getElementById('worldLanguageSelect').onchange = (e) => {
@@ -591,15 +592,49 @@ document.getElementById('createWorldBtn').onclick = async () => {
   btn.disabled = true;
   startCreationProgress();
   try {
-    const res = await fetch(`${API}/worlds`, {
+    // Streamed (see POST /api/worlds/stream and createWorld's onChunk) so
+    // this progress bar reflects real generation progress -- chars actually
+    // received from the model -- instead of a fixed-duration animation with
+    // no relationship to what the server is actually doing.
+    const res = await fetch(`${API}/worlds/stream`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ idea, language })
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Erreur inconnue');
+    if (!res.ok || !res.body) throw new Error(t('illegibleResponse')(res.status));
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let doneEvent = null;
+    let errorMessage = null;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let newlineIndex;
+      while ((newlineIndex = buffer.indexOf('\n')) !== -1) {
+        const line = buffer.slice(0, newlineIndex).trim();
+        buffer = buffer.slice(newlineIndex + 1);
+        if (!line) continue;
+        let event;
+        try { event = JSON.parse(line); } catch (e) { continue; }
+        if (event.type === 'progress') {
+          updateCreationProgress(event.chars);
+        } else if (event.type === 'done') {
+          doneEvent = event;
+        } else if (event.type === 'error') {
+          errorMessage = event.message;
+        }
+      }
+    }
+
+    if (errorMessage) throw new Error(errorMessage);
+    if (!doneEvent) throw new Error(t('illegibleResponse')(res.status));
+    finishCreationProgress();
     document.getElementById('ideaInput').value = '';
-    await openWorldEditor(data.world.id);
+    await openWorldEditor(doneEvent.world.id);
   } catch (e) {
     alert(t('cannotCreateWorld') + e.message);
   } finally {
@@ -1815,8 +1850,8 @@ async function loadCostSummary() {
 }
 
 function updateChapterLengthLabel() {
-  const idx = Number(document.getElementById('chapterLengthSlider').value);
-  document.getElementById('chapterLengthLabel').textContent = t('chapterLengthOptions')[CHAPTER_LENGTH_VALUES[idx]] || '';
+  const words = Number(document.getElementById('chapterLengthSlider').value);
+  document.getElementById('chapterLengthLabel').textContent = t('chapterLengthWords')(words);
 }
 document.getElementById('chapterLengthSlider').oninput = updateChapterLengthLabel;
 
@@ -1974,8 +2009,7 @@ async function loadSettings() {
   document.getElementById('fallbackModel').value = s.fallbackModel || '';
   refreshOllamaModels();
   document.getElementById('responseLanguage').value = s.language || 'fr';
-  const lengthIdx = CHAPTER_LENGTH_VALUES.indexOf(s.chapterLength);
-  document.getElementById('chapterLengthSlider').value = lengthIdx >= 0 ? lengthIdx : 1;
+  document.getElementById('chapterLengthSlider').value = Number(s.chapterLength) || 400;
   updateChapterLengthLabel();
   document.getElementById('imageProvider').value = s.imageProvider;
   document.getElementById('imagesEnabled').checked = s.imagesEnabled;
@@ -1999,7 +2033,7 @@ document.getElementById('saveSettingsBtn').onclick = async () => {
     fallbackProvider: document.getElementById('fallbackProvider').value,
     fallbackModel: document.getElementById('fallbackModel').value.trim(),
     language: document.getElementById('responseLanguage').value,
-    chapterLength: CHAPTER_LENGTH_VALUES[Number(document.getElementById('chapterLengthSlider').value)] || 'medium',
+    chapterLength: Number(document.getElementById('chapterLengthSlider').value),
     imageProvider: document.getElementById('imageProvider').value,
     imagesEnabled: document.getElementById('imagesEnabled').checked,
     localImageBaseUrl: document.getElementById('localImageBaseUrl').value.trim(),

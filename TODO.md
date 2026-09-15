@@ -143,57 +143,37 @@ un monde "ancien" sans `background` repatché manuellement en base confirme
 qu'il garde l'ancien chemin gratuit (aucune popup, aucun appel IA
 supplémentaire).
 
-## Pas encore fait
+## Fait (15/09, troisième lot — progression réelle, slider continu)
 
-- [ ] **Pourquoi Infinite Worlds pagine par tour** — question de recherche
+- [x] **Pourquoi Infinite Worlds pagine par tour** — question de recherche
       devenue sans objet : on a implémenté la pagination directement sur
       demande, plutôt que d'étudier le rationnel avant. Retiré de la liste.
-- [ ] **Barre de progression : la rendre réelle, pas juste cosmétique.**
-      Actuellement (`startCreationProgress` dans `public/app.js`) c'est une
-      barre en CSS qui glisse en boucle indéfiniment (`progress-slide`,
-      1.2s) pendant que le texte défile sur 5 étapes fixes toutes les
-      1.4s — aucun des deux n'est corrélé à ce qui se passe réellement côté
-      serveur. Piste de correctif :
-      - La génération d'un monde est aujourd'hui **un seul appel IA non
-        streamé** (`callText` → attend la réponse JSON complète). Sans
-        streaming, il n'existe strictement aucun signal de progression
-        réel à afficher — n'importe quelle barre "réelle" basée sur ça
-        serait en fait fausse elle aussi.
-      - Pour une vraie progression, il faudrait faire streamer la
-        génération (API Anthropic/OpenAI/Gemini le permettent toutes en
-        SSE) et remonter les jetons reçus au fur et à mesure au client
-        (SSE ou WebSocket depuis `server.js`), pour que la barre avance
-        selon les jetons reçus / une estimation du total attendu (assez
-        prévisible ici : le schéma JSON du monde a une taille à peu près
-        stable). Ça permettrait aussi d'afficher un aperçu du texte qui
-        s'écrit en direct plutôt qu'une barre abstraite — sans doute plus
-        honnête et plus satisfaisant qu'un pourcentage approximatif.
-      - Implique : streaming dans `providers/textProviders.js` (au moins
-        pour le fournisseur utilisé à la création), une route ou un canal
-        dédié pour pousser les deltas au client, et un calcul de
-        progression approximatif côté client (jetons reçus vs. estimation).
-        Changement non trivial ; à cadrer avant de s'y lancer (quel(s)
-        fournisseur(s) prioriser, SSE vs WebSocket, que faire pour le
-        fournisseur mock qui ne "streame" rien).
+- [x] **Barre de progression : la rendre réelle, pas juste cosmétique.**
+      La génération d'un monde passe maintenant par un appel IA **streamé**
+      (`streamTextTracked` dans `lib/gameEngine.js`, réutilisant l'infra de
+      `providers/textProviders.js` déjà en place pour le streaming des
+      tours) plutôt que par un seul `callText` bloquant. Nouvelle route
+      `POST /api/worlds/stream` (même protocole NDJSON que
+      `POST /api/saves/:id/turn/stream` : `{"type":"progress","chars":N}`
+      pendant la génération, puis `{"type":"done",...}`). Côté client, la
+      barre suit désormais le nombre de caractères réellement reçus par
+      rapport à une estimation de la taille du JSON complet
+      (`ESTIMATED_WORLD_JSON_CHARS`, plafonnée à 95% avant la fin pour ne
+      jamais paraître bloquée ou dépasser 100%), avec un pourcentage affiché
+      en direct — au lieu des 5 étapes de texte qui défilaient en boucle
+      sans rapport avec ce qui se passait réellement côté serveur.
 - [x] **Streamer le texte des chapitres au fur et à mesure, comme Infinite
-      Worlds.** Fait le 15/09 — voir CHANGELOG.md. La barre de progression
-      de création de monde (ci-dessus) pourrait réutiliser le même
-      streaming maintenant que l'infrastructure existe côté
-      `providers/textProviders.js`, mais ça reste à faire spécifiquement
-      pour la route de création.
-- [ ] **Slider de longueur des chapitres : granularité 100 → 1000 mots,
-      par pas de 100.** Remplacer les 3 paliers actuels (court/moyen/long
-      ≈ 200/400/800 mots, `CHAPTER_LENGTH_VALUES` dans `public/app.js`,
-      `CHAPTER_LENGTHS` dans `lib/promptBuilder.js`) par un curseur
-      continu de 100 à 1000 mots, un cran tous les 100 mots (10 positions).
-      Implique de changer `chapterLength` de `'short'|'medium'|'long'`
-      (enum) en nombre entier (mots cibles) partout où c'est utilisé :
-      schéma par défaut (`lib/db.js`), validation dans `POST /api/settings`
-      (`server.js`), et `buildMasterPrompt` (`lib/promptBuilder.js`) — qui
-      demanderait alors une fourchette resserrée autour de N (ex. N-50 à
-      N+50) au lieu d'une des 3 chaînes fixes actuelles. Côté UI : `<input
-      type="range" min="100" max="1000" step="100">` avec le libellé
-      affichant directement le nombre choisi.
+      Worlds.** Fait le 15/09 — voir CHANGELOG.md.
+- [x] **Slider de longueur des chapitres : granularité 100 → 1000 mots,
+      par pas de 100.** `chapterLength` est passé de l'enum
+      `'short'|'medium'|'long'` à un nombre entier (mots cibles), avec
+      migration automatique au démarrage pour un `db.json` existant
+      (`lib/db.js`). `lib/promptBuilder.js` calcule maintenant une
+      fourchette resserrée autour de la cible (`chapterLengthRange`, N-50 à
+      N+50) au lieu de 3 chaînes fixes. `POST /api/settings` (`server.js`)
+      arrondit/borne la valeur reçue au pas de 100 le plus proche dans
+      [100, 1000]. Côté UI, le curseur va directement de 100 à 1000 par pas
+      de 100, avec le nombre de mots affiché en direct.
 
 ---
 

@@ -5,6 +5,34 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-15 — TODO : progression reelle a la creation + slider continu
+
+Deux items du backlog (`TODO.md`), hors ceux notes pour la sortie v1.0 :
+
+- **Barre de progression de creation de monde, rendue reelle.** Ce n'etait
+  qu'une animation CSS en boucle (`progress-slide`) synchronisee avec rien
+  cote serveur. La creation d'un monde utilise maintenant un appel IA
+  streame (`streamTextTracked` dans `lib/gameEngine.js`, meme
+  infrastructure que le streaming des tours) ; nouvelle route
+  `POST /api/worlds/stream` (protocole NDJSON identique a
+  `POST /api/saves/:id/turn/stream`) qui pousse `{"type":"progress",
+  "chars":N}` a chaque fragment recu. Le client calcule un pourcentage
+  reel a partir des caracteres effectivement recus (plafonne a 95% avant
+  la fin, pour ne jamais sembler bloque ou depasser 100% sur une reponse
+  plus longue que l'estimation). L'ancienne route `POST /api/worlds` (non
+  streamee) reste en place, inchangee.
+- **Slider de longueur des chapitres, granularite continue.** Remplace les
+  3 paliers fixes (court/moyen/long ~200/400/800 mots) par un curseur 100
+  a 1000 mots par pas de 100 (10 positions), le nombre de mots affiche
+  directement. `chapterLength` passe d'un enum string a un nombre entier
+  partout (`lib/db.js`, `server.js`, `lib/promptBuilder.js`,
+  `public/app.js`) — `lib/promptBuilder.js` calcule desormais une
+  fourchette resserree (N-50 a N+50 mots) au lieu d'une chaine fixe.
+  Migration automatique au demarrage pour les `db.json` existants encore
+  sur l'ancien enum (`short`/`medium`/`long` → 200/400/800), et validation
+  cote serveur qui arrondit/borne toute valeur recue au pas de 100 le plus
+  proche dans [100, 1000].
+
 ## 2026-09-15 — Detection automatique des modeles IA locale (menu deroulant)
 
 Ajout d'un menu deroulant qui detecte les checkpoints deja presents sur le
