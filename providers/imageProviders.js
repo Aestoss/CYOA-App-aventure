@@ -49,7 +49,7 @@ async function callReplicate({ prompt, apiKey, model }) {
 // (stable for years) but not exercised against a live instance in this
 // session — no such environment available here. Report back anything that
 // doesn't match and it'll get fixed.
-async function callLocalSD({ prompt, apiKey, baseUrl }) {
+async function callLocalSD({ prompt, apiKey, baseUrl, model }) {
   const url = `${(baseUrl || 'http://localhost:7860').replace(/\/$/, '')}/sdapi/v1/txt2img`;
   const res = await fetch(url, {
     method: 'POST',
@@ -58,7 +58,14 @@ async function callLocalSD({ prompt, apiKey, baseUrl }) {
       prompt,
       steps: 20,
       width: 512,
-      height: 512
+      height: 512,
+      // Per-request checkpoint override (AUTOMATIC1111's documented
+      // override_settings shape) -- lets Fogbound's "Image model" field
+      // pick between checkpoints (e.g. illustration vs. photorealistic)
+      // without changing the WebUI's persisted default. Swapping
+      // checkpoints costs real time/VRAM on AUTOMATIC1111's side, same as
+      // switching it by hand in the UI.
+      ...(model ? { override_settings: { sd_model_checkpoint: model }, override_settings_restore_afterwards: false } : {})
     })
   });
   if (!res.ok) throw new Error(`Local Stable Diffusion API error ${res.status}: ${await res.text()}`);

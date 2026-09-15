@@ -5,6 +5,36 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-15 — Deux profils de modele local (illustration + photorealiste)
+
+Suite a la question "NoobAI-XL fait-il aussi du photorealiste ?" — reponse
+non, c'est un modele exclusivement anime/illustration (entraine sur des
+donnees Danbooru/e621), incapable de produire un rendu photo credible quel
+que soit le prompt. Ajout d'un second profil et branchement reel du choix
+cote backend :
+
+- `setup-automatic1111.ps1` telecharge maintenant **deux** modeles par
+  defaut au lieu d'un si les deux manquent : NoobAI-XL v1.1 (illustration,
+  inchange) et **RealVisXL V5.0** (SG161222, SDXL photorealiste, non
+  censure — verifie capable de rendu NSFW en local avant de le retenir).
+  La detection est maintenant faite modele par modele (et non plus "un
+  modele suffit, on s'arrete la") : si l'un des deux manque, il est
+  telecharge, meme si l'autre ou un modele personnalise est deja present.
+  `-ModelUrl` s'ajoute desormais aux deux profils par defaut au lieu de les
+  remplacer ; `-NoAutoModel` desactive le telechargement automatique des
+  deux (~14 Go ensemble).
+- **Le choix n'etait pas branche cote backend** : `providers/imageProviders.js`
+  ignorait completement le parametre `model` pour le fournisseur `localsd`
+  — il generait toujours avec le modele actuellement charge dans
+  AUTOMATIC1111, quoi qu'on mette dans le champ "Modele d'image" d'un
+  monde. Corrige en passant `override_settings.sd_model_checkpoint` (le
+  mecanisme documente d'AUTOMATIC1111 pour choisir un checkpoint par
+  requete) quand un modele est precise — ce champ, deja un texte libre
+  utilise pour Replicate, accepte maintenant aussi le nom exact d'un
+  fichier checkpoint local (ex. `NoobAI-XL-v1.1.safetensors` ou
+  `RealVisXL_V5.0_fp16.safetensors`), avec l'indication mise a jour dans
+  les deux langues.
+
 ## 2026-09-15 — Script de nettoyage des telechargements IA image inutilises
 
 Nouveau `scripts/windows/cleanup-unused-image-tools.ps1`, suite a une

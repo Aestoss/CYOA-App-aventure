@@ -20,15 +20,15 @@
        folders deep, and remembers what it finds (or where it cloned a fresh
        copy) in a small config file next to setup-ollama-bridge.ps1's own, so
        later runs don't need to search again.
-    3. Looks for a Stable Diffusion checkpoint (.safetensors/.ckpt) already
-       sitting in Downloads or Desktop -- if your install has none yet and
-       one turns up there, moves it into the install's models folder instead
-       of asking you to place it by hand. If none exist anywhere and no
-       -ModelUrl was given, downloads a default checkpoint automatically
-       (NoobAI-XL v1.1, SDXL/anime/illustration, uncensored, ~7.1 GB) so the
-       install finishes without you doing anything by hand -- use -ModelUrl
-       to fetch a different model instead, or -NoAutoModel to stop and pick
-       one yourself.
+    3. Looks for Stable Diffusion checkpoints (.safetensors/.ckpt) already
+       sitting in Downloads or Desktop and moves any found into the
+       install's models folder. Then, unless -NoAutoModel is set, downloads
+       whichever of two default checkpoints is still missing so both an
+       illustration and a photorealistic option are available side by side
+       (Fogbound's "Image model" field switches between them per world) --
+       NoobAI-XL v1.1 (SDXL/anime/illustration, uncensored, ~7.1 GB) and
+       RealVisXL V5.0 (photorealistic, uncensored, ~6.9 GB). -ModelUrl adds
+       one further custom model on top of those two.
     4. Detects an RTX 50xx (Blackwell) GPU and, if found, overrides this
        webui's default (outdated) PyTorch install command so it actually
        runs on that hardware instead of crashing on the first generation --
@@ -59,9 +59,9 @@
   auto-detection picked the wrong one of several installs.
 
 .PARAMETER ModelUrl
-  Optional direct download URL for a Stable Diffusion checkpoint
-  (.safetensors). If given and no checkpoint is found anywhere, downloads
-  this URL into the models folder instead of the built-in default.
+  Optional direct download URL for an additional Stable Diffusion checkpoint
+  (.safetensors) to fetch on top of the two default profiles (illustration
+  + photorealistic), e.g. a specific style you want alongside them.
 
 .PARAMETER SdPort
   Port the WebUI's API should listen on. Defaults to 7860 (AUTOMATIC1111's
@@ -69,10 +69,11 @@
   them in sync if you change one.
 
 .PARAMETER NoAutoModel
-  If no checkpoint is found anywhere and this is set, stop and print manual
-  download instructions instead of automatically fetching the default
-  Stable Diffusion 1.5 checkpoint. Use this if you'd rather pick your own
-  model without an unplanned ~2 GB download.
+  Skip downloading the two default checkpoints (illustration + photo-
+  realistic, ~14 GB together) -- only moves in whatever's already sitting
+  in Downloads/Desktop, and stops with manual instructions if that leaves
+  the models folder empty. Use this if you'd rather pick your own model(s)
+  without that download.
 
 .PARAMETER SkipLaunch
   Set everything up (install, detect, place model, add --api) but don't
@@ -87,15 +88,6 @@ param(
   [switch]$NoAutoModel,
   [switch]$SkipLaunch
 )
-
-# Default checkpoint used when nothing else is found and -ModelUrl isn't
-# given -- NoobAI-XL v1.1 (Laxhar Lab), an SDXL/Illustrious-based anime and
-# illustration checkpoint, epsilon-prediction (works with plain samplers,
-# unlike the separate v-pred release which needs extra WebUI settings),
-# uncensored, ~7.1 GB. Picked as the closest realistic match to the kind of
-# AI-illustration look apps like Infinite Worlds use -- Infinite Worlds
-# itself is closed-source and doesn't publish an exact checkpoint to match.
-$DefaultModelUrl = "https://huggingface.co/Laxhar/noobai-XL-1.1/resolve/main/NoobAI-XL-v1.1.safetensors"
 
 $ErrorActionPreference = "Stop"
 
@@ -260,36 +252,58 @@ $ModelsDir = Join-Path $ResolvedWebUiDir "models\Stable-diffusion"
 New-Item -ItemType Directory -Force -Path $ModelsDir | Out-Null
 
 # ---------------------------------------------------------------------------
-# 3. Find (or fetch) a checkpoint -- same auto-detection spirit: only ask you
-#    to do something by hand if you explicitly opted out with -NoAutoModel.
+# 3. Find (or fetch) checkpoints -- two default profiles are kept side by
+#    side on purpose (illustration and photorealistic use different base
+#    models; no single checkpoint does both well), same auto-detection
+#    spirit: only ask you to do something by hand if you explicitly opted
+#    out with -NoAutoModel.
 # ---------------------------------------------------------------------------
 
-Write-Step "Verification d'un modele Stable Diffusion"
+Write-Step "Verification des modeles Stable Diffusion (illustration + photorealiste)"
 
-# -Include only takes effect with -Recurse, or with a trailing wildcard on
-# -Path like this -- without either, PowerShell silently ignores -Include
-# and returns every file in the folder, not just checkpoints.
-$existingCheckpoints = Get-ChildItem -Path (Join-Path $ModelsDir "*") -Include "*.safetensors","*.ckpt" -File -ErrorAction SilentlyContinue
-if ($existingCheckpoints -and $existingCheckpoints.Count -gt 0) {
-  Write-Ok "Modele(s) deja en place : $($existingCheckpoints.Name -join ', ')"
-} else {
-  Write-Info "Aucun modele dans $ModelsDir -- recherche dans Telechargements et Bureau..."
-  $candidateRoots = @(
-    (Join-Path $env:USERPROFILE "Downloads"),
-    (Join-Path $env:USERPROFILE "Desktop")
-  ) | Where-Object { Test-Path $_ }
-  $candidates = @()
-  foreach ($root in $candidateRoots) {
-    $candidates += Get-ChildItem -Path $root -Include "*.safetensors","*.ckpt" -File -Recurse -Depth 1 -ErrorAction SilentlyContinue
+function Get-ExistingCheckpointNames($dir) {
+  # -Include only takes effect with -Recurse, or with a trailing wildcard on
+  # -Path like this -- without either, PowerShell silently ignores -Include
+  # and returns every file in the folder, not just checkpoints.
+  return Get-ChildItem -Path (Join-Path $dir "*") -Include "*.safetensors","*.ckpt" -File -ErrorAction SilentlyContinue |
+    Select-Object -ExpandProperty Name
+}
+
+$existingNames = Get-ExistingCheckpointNames $ModelsDir
+if ($existingNames.Count -gt 0) {
+  Write-Ok "Modele(s) deja en place : $($existingNames -join ', ')"
+}
+
+Write-Info "Recherche de modeles supplementaires dans Telechargements et Bureau..."
+$candidateRoots = @(
+  (Join-Path $env:USERPROFILE "Downloads"),
+  (Join-Path $env:USERPROFILE "Desktop")
+) | Where-Object { Test-Path $_ }
+$candidates = @()
+foreach ($root in $candidateRoots) {
+  $candidates += Get-ChildItem -Path $root -Include "*.safetensors","*.ckpt" -File -Recurse -Depth 1 -ErrorAction SilentlyContinue
+}
+foreach ($file in $candidates) {
+  $dest = Join-Path $ModelsDir $file.Name
+  if (-not (Test-Path $dest)) {
+    Move-Item -Path $file.FullName -Destination $dest -Force
+    Write-Ok "Deplace vers le dossier des modeles : $($file.Name)"
   }
+}
 
-  if ($candidates.Count -gt 0) {
-    foreach ($file in $candidates) {
-      $dest = Join-Path $ModelsDir $file.Name
-      Move-Item -Path $file.FullName -Destination $dest -Force
-      Write-Ok "Deplace vers le dossier des modeles : $($file.Name)"
-    }
-  } elseif ($NoAutoModel) {
+$existingNames = Get-ExistingCheckpointNames $ModelsDir
+
+# The two default profiles Fogbound expects to be able to switch between
+# per world (see providers/imageProviders.js's sd_model_checkpoint override
+# and public/app.js's "Image model" field) -- their exact filenames matter,
+# since that's what gets typed into that field.
+$DefaultModels = @(
+  @{ Label = "illustration (NoobAI-XL v1.1, anime/illustration, non censure, ~7.1 Go)"; File = "NoobAI-XL-v1.1.safetensors"; Url = "https://huggingface.co/Laxhar/noobai-XL-1.1/resolve/main/NoobAI-XL-v1.1.safetensors" },
+  @{ Label = "photorealiste (RealVisXL V5.0, non censure, ~6.9 Go)"; File = "RealVisXL_V5.0_fp16.safetensors"; Url = "https://huggingface.co/SG161222/RealVisXL_V5.0/resolve/main/RealVisXL_V5.0_fp16.safetensors" }
+)
+
+if ($NoAutoModel) {
+  if ($existingNames.Count -eq 0) {
     Write-Fail "Aucun modele trouve, et -NoAutoModel est actif."
     Write-Host "    Telechargez un modele Stable Diffusion (fichier .safetensors, plusieurs Go)"
     Write-Host "    depuis Civitai (https://civitai.com) ou Hugging Face (https://huggingface.co),"
@@ -297,35 +311,49 @@ if ($existingCheckpoints -and $existingCheckpoints.Count -gt 0) {
     Write-Host "      $ModelsDir"
     Write-Host "    puis relancez ce script -- il le detectera automatiquement."
     exit 1
-  } else {
-    $downloadUrl = if ($ModelUrl) { $ModelUrl } else { $DefaultModelUrl }
-    $label = if ($ModelUrl) { "l'URL fournie" } else { "le modele par defaut (NoobAI-XL v1.1, SDXL/anime/illustration, non censure, ~7.1 Go)" }
-    Write-Info "Aucun modele trouve -- telechargement de $label..."
-    Write-Info "Cela peut prendre plusieurs minutes selon votre connexion. Utilisez -ModelUrl pour un autre modele, ou -NoAutoModel pour choisir vous-meme."
-    $destName = Split-Path -Leaf ([Uri]$downloadUrl).LocalPath
-    if (-not $destName) { $destName = "model.safetensors" }
-    $dest = Join-Path $ModelsDir $destName
+  }
+} else {
+  $modelsToFetch = @($DefaultModels | Where-Object { $existingNames -notcontains $_.File })
+  if ($ModelUrl) {
+    $customName = Split-Path -Leaf ([Uri]$ModelUrl).LocalPath
+    if (-not $customName) { $customName = "model.safetensors" }
+    if ($existingNames -notcontains $customName) {
+      $modelsToFetch = @($modelsToFetch) + @(@{ Label = "modele personnalise (-ModelUrl)"; File = $customName; Url = $ModelUrl })
+    }
+  }
+
+  if ($modelsToFetch.Count -eq 0) {
+    Write-Ok "Les deux profils par defaut (illustration + photorealiste) sont deja presents."
+  }
+
+  foreach ($m in $modelsToFetch) {
+    Write-Info "Telechargement de $($m.Label)..."
+    Write-Info "Cela peut prendre plusieurs minutes selon votre connexion."
+    $dest = Join-Path $ModelsDir $m.File
     # Invoke-WebRequest's default progress-bar rendering makes large
     # downloads dramatically slower in Windows PowerShell 5.1 -- disabled
     # only for the duration of this call, restored right after.
     $prevProgressPreference = $ProgressPreference
     $ProgressPreference = "SilentlyContinue"
     try {
-      Invoke-WebRequest -Uri $downloadUrl -OutFile $dest -UseBasicParsing
-      Write-Ok "Modele telecharge : $destName"
+      Invoke-WebRequest -Uri $m.Url -OutFile $dest -UseBasicParsing
+      Write-Ok "Modele telecharge : $($m.File)"
     } catch {
-      Write-Fail "Le telechargement a echoue -- $($_.Exception.Message)."
-      if (-not $ModelUrl) {
-        Write-Host "    Si Hugging Face demande une connexion (modele marque 'contenu mature'),"
-        Write-Host "    telechargez-le a la main depuis un navigateur ou vous etes connecte :"
-        Write-Host "      $downloadUrl"
-      }
-      Write-Host "    Placez le fichier dans $ModelsDir puis relancez ce script -- il le detectera."
-      exit 1
+      Write-Fail "Le telechargement de $($m.File) a echoue -- $($_.Exception.Message)."
+      Write-Host "    Si Hugging Face demande une connexion (modele marque 'contenu mature'),"
+      Write-Host "    telechargez-le a la main depuis un navigateur ou vous etes connecte :"
+      Write-Host "      $($m.Url)"
+      Write-Host "    Placez le fichier dans $ModelsDir (sous le nom $($m.File)) puis relancez ce script."
     } finally {
       $ProgressPreference = $prevProgressPreference
     }
   }
+}
+
+$existingNames = Get-ExistingCheckpointNames $ModelsDir
+if ($existingNames.Count -eq 0) {
+  Write-Fail "Aucun modele n'est present dans $ModelsDir (recherche/telechargement infructueux ci-dessus) -- AUTOMATIC1111 ne pourra rien generer sans au moins un checkpoint. Corrigez le probleme ci-dessus puis relancez ce script."
+  exit 1
 }
 
 # ---------------------------------------------------------------------------
