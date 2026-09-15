@@ -103,6 +103,7 @@ $ConfigPath    = Join-Path $WorkDir "automatic1111-config.json"
 $DefaultCloneParent = $env:USERPROFILE
 $WebUiLogPath  = Join-Path $WorkDir "automatic1111.log"
 $WebUiErrLogPath = Join-Path $WorkDir "automatic1111.err.log"
+$WebUiStdinPath = Join-Path $WorkDir "automatic1111-stdin.empty"
 
 New-Item -ItemType Directory -Force -Path $WorkDir | Out-Null
 
@@ -124,7 +125,7 @@ function Get-A1111Config {
   if (Test-Path $ConfigPath) {
     try { return Get-Content $ConfigPath -Raw | ConvertFrom-Json } catch {}
   }
-  return [pscustomobject]@{ webuiDir = $null; webuiPid = $null }
+  return [pscustomobject]@{ webuiDir = $null }
 }
 function Save-A1111Config($cfg) {
   $cfg | ConvertTo-Json | Set-Content -Path $ConfigPath -Encoding UTF8
@@ -462,28 +463,26 @@ Write-Step "Lancement d'AUTOMATIC1111 (premier lancement = installation des depe
 # from before this script redirected stdin) leaves its process alive on a
 # re-run, still holding the log files open -- Remove-Item below would then
 # fail with "used by another process" and abort the whole script, exactly
-# as happened for real. The PID saved from that previous launch (if any) is
-# stopped first so this run starts clean.
-if ($cfg.webuiPid) {
-  $leftoverProcess = Get-Process -Id $cfg.webuiPid -ErrorAction SilentlyContinue
-  if ($leftoverProcess) {
-    # PIDs get reused by Windows over time -- before killing anything, make
-    # a best-effort check that this is actually still our own webui process
-    # (its executable path under this install) rather than trusting a
-    # possibly-stale PID blindly. If the path can't be read (e.g. a
-    # permissions quirk), fall back to trusting it: it's our own script's
-    # own child from a normal, non-elevated session.
-    $isOurs = $true
-    try {
-      $exePath = $leftoverProcess.MainModule.FileName
-      if ($exePath -and ($exePath -notlike "$ResolvedWebUiDir*")) { $isOurs = $false }
-    } catch {}
-    if ($isOurs) {
-      Write-Info "Un processus d'une execution precedente tourne encore (PID $($cfg.webuiPid)) -- arret avant de relancer."
-      Stop-Process -Id $cfg.webuiPid -Force -ErrorAction SilentlyContinue
-      Start-Sleep -Seconds 2
-    }
+# as happened for real.
+#
+# Tracking a single PID (an earlier version of this fix) isn't enough:
+# Start-Process -FilePath <webui-user.bat> returns cmd.exe's own PID, but
+# cmd.exe runs python.exe as a child, and Stop-Process on a parent does NOT
+# terminate its children on Windows -- the actual log-file handle is held
+# by that orphaned python.exe, which would survive untouched. So instead of
+# trusting one stored PID, this matches on command line (Win32_Process, not
+# Get-Process, since only WMI/CIM exposes CommandLine) against this
+# install's own path -- catching cmd.exe (whose command line is the .bat's
+# path) and python.exe (whose command line is launch.py under this same
+# folder) together, parent-child relationship or not.
+$leftoverProcesses = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+  Where-Object { $_.CommandLine -and ($_.CommandLine -like "*$ResolvedWebUiDir*") }
+if ($leftoverProcesses) {
+  foreach ($p in $leftoverProcesses) {
+    Write-Info "Processus d'une execution precedente encore actif (PID $($p.ProcessId)) -- arret avant de relancer."
+    Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
   }
+  Start-Sleep -Seconds 2
 }
 
 try {
@@ -499,23 +498,25 @@ try {
 # same file (hit and fixed for cloudflared in setup-ollama-bridge.ps1 --
 # applied here from the start instead of re-discovering it the hard way).
 #
-# -RedirectStandardInput "NUL" matters just as much: webui-user.bat's own
-# wrapper calls `pause` when a step fails, to keep a normal double-clicked
+# Redirecting stdin from an empty file matters just as much: webui-user.bat's
+# own wrapper calls `pause` when a step fails, to keep a normal double-clicked
 # window open so a person can read the error before it closes. Launched
 # hidden with no redirected stdin, that pause instead waits forever for a
 # keypress on a console window nobody can see or reach -- confirmed for
 # real: a run that hit the pkg_resources failure above sat "still running"
 # for 15+ minutes with no further progress, not because anything was slow,
-# but because it was silently stuck at that prompt the whole time. Redirecting
-# stdin from NUL (an immediate EOF) makes `pause` return instantly instead,
-# so a real failure surfaces (and this loop below detects the exited
-# process) within moments instead of hanging indefinitely.
+# but because it was silently stuck at that prompt the whole time.
+#
+# -RedirectStandardInput "NUL" (the usual cmd.exe trick for this) does NOT
+# work here -- also confirmed for real: PowerShell's Start-Process resolves
+# "NUL" as a literal relative filename ("<workdir>\NUL") instead of the
+# special device, and fails outright ("FileNotFoundException"). An actual
+# empty file gives the same immediate-EOF result pause needs, without
+# depending on that device-name resolution quirk.
+if (-not (Test-Path $WebUiStdinPath)) { New-Item -ItemType File -Path $WebUiStdinPath -Force | Out-Null }
 $webuiProcess = Start-Process -FilePath $WebUiUserBat -WorkingDirectory $ResolvedWebUiDir `
   -WindowStyle Hidden -PassThru `
-  -RedirectStandardOutput $WebUiLogPath -RedirectStandardError $WebUiErrLogPath -RedirectStandardInput "NUL"
-
-$cfg.webuiPid = $webuiProcess.Id
-Save-A1111Config $cfg
+  -RedirectStandardOutput $WebUiLogPath -RedirectStandardError $WebUiErrLogPath -RedirectStandardInput $WebUiStdinPath
 
 Write-Info "Processus demarre (PID $($webuiProcess.Id)). Journal : $WebUiLogPath"
 Write-Info "Cela peut prendre 10 a 15 minutes la toute premiere fois (telechargement de PyTorch et des dependances)."

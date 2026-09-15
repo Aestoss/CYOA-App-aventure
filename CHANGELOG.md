@@ -5,6 +5,38 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-15 — Correctif : "NUL" comme -RedirectStandardInput echouait
+
+Confirme par un run reel juste apres le correctif precedent : la ligne
+`-RedirectStandardInput "NUL"` (cense donner une fin de fichier immediate
+a `pause`) faisait planter `Start-Process` avec une
+`FileNotFoundException` -- PowerShell resout `"NUL"` comme un nom de
+fichier relatif au dossier courant (`<dossier>\NUL`) plutot que comme le
+peripherique special de Windows, contrairement au comportement de cmd.exe
+avec `< NUL`. Remplace par un vrai fichier vide
+(`automatic1111-stdin.empty` dans le dossier de travail, cree s'il
+n'existe pas) qui donne exactement le meme resultat (fin de fichier
+immediate) sans dependre de cette resolution de nom special.
+
+## 2026-09-15 — Correctif : le nettoyage par PID unique ne suffisait pas
+
+Confirme par un run reel : le correctif precedent (suivre le PID lance
+dans la config, le tuer au run suivant) n'a pas suffi -- le processus
+verrouillant toujours `automatic1111.log`. Cause : `Start-Process
+-FilePath <webui-user.bat>` renvoie le PID de `cmd.exe`, qui lance ensuite
+`python.exe` en processus enfant -- or `Stop-Process` sur un parent ne
+tue pas ses enfants sous Windows. Le vrai detenteur du fichier de log
+(`python.exe`) survivait donc intact meme apres avoir "arrete" le
+processus suivi.
+
+Remplace par une detection basee sur la ligne de commande
+(`Get-CimInstance Win32_Process`, seule API qui expose `CommandLine` --
+contrairement a `Get-Process`) : cherche tout processus dont la ligne de
+commande contient le chemin de cette installation, ce qui attrape aussi
+bien `cmd.exe` (ligne de commande = chemin du .bat) que `python.exe`
+(ligne de commande = chemin de `launch.py`), sans dependre d'une relation
+parent/enfant ni d'un PID enregistre au prealable.
+
 ## 2026-09-15 — Correctif : relancer apres un run bloque plantait sur les logs
 
 Confirme par un run reel : le run precedent, bloque sur le `pause` corrige
