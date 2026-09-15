@@ -124,7 +124,7 @@ function Get-A1111Config {
   if (Test-Path $ConfigPath) {
     try { return Get-Content $ConfigPath -Raw | ConvertFrom-Json } catch {}
   }
-  return [pscustomobject]@{ webuiDir = $null }
+  return [pscustomobject]@{ webuiDir = $null; webuiPid = $null }
 }
 function Save-A1111Config($cfg) {
   $cfg | ConvertTo-Json | Set-Content -Path $ConfigPath -Encoding UTF8
@@ -458,8 +458,41 @@ $env:PIP_CONSTRAINT = $PipConstraintPath
 
 Write-Step "Lancement d'AUTOMATIC1111 (premier lancement = installation des dependances, soyez patient)"
 
-if (Test-Path $WebUiLogPath) { Remove-Item $WebUiLogPath -Force }
-if (Test-Path $WebUiErrLogPath) { Remove-Item $WebUiErrLogPath -Force }
+# A previous run that hung (e.g. stuck on the "pause" prompt fixed above,
+# from before this script redirected stdin) leaves its process alive on a
+# re-run, still holding the log files open -- Remove-Item below would then
+# fail with "used by another process" and abort the whole script, exactly
+# as happened for real. The PID saved from that previous launch (if any) is
+# stopped first so this run starts clean.
+if ($cfg.webuiPid) {
+  $leftoverProcess = Get-Process -Id $cfg.webuiPid -ErrorAction SilentlyContinue
+  if ($leftoverProcess) {
+    # PIDs get reused by Windows over time -- before killing anything, make
+    # a best-effort check that this is actually still our own webui process
+    # (its executable path under this install) rather than trusting a
+    # possibly-stale PID blindly. If the path can't be read (e.g. a
+    # permissions quirk), fall back to trusting it: it's our own script's
+    # own child from a normal, non-elevated session.
+    $isOurs = $true
+    try {
+      $exePath = $leftoverProcess.MainModule.FileName
+      if ($exePath -and ($exePath -notlike "$ResolvedWebUiDir*")) { $isOurs = $false }
+    } catch {}
+    if ($isOurs) {
+      Write-Info "Un processus d'une execution precedente tourne encore (PID $($cfg.webuiPid)) -- arret avant de relancer."
+      Stop-Process -Id $cfg.webuiPid -Force -ErrorAction SilentlyContinue
+      Start-Sleep -Seconds 2
+    }
+  }
+}
+
+try {
+  if (Test-Path $WebUiLogPath) { Remove-Item $WebUiLogPath -Force -ErrorAction Stop }
+  if (Test-Path $WebUiErrLogPath) { Remove-Item $WebUiErrLogPath -Force -ErrorAction Stop }
+} catch {
+  Write-Fail "Impossible de supprimer les anciens journaux ($($_.Exception.Message)) -- un processus les a probablement encore ouverts. Fermez-le (verifiez le Gestionnaire des taches pour un python.exe ou cmd.exe lance depuis $ResolvedWebUiDir) puis relancez ce script."
+  exit 1
+}
 
 # Two separate log files, not one shared by both streams: Start-Process
 # refuses -RedirectStandardOutput and -RedirectStandardError pointing at the
@@ -480,6 +513,9 @@ if (Test-Path $WebUiErrLogPath) { Remove-Item $WebUiErrLogPath -Force }
 $webuiProcess = Start-Process -FilePath $WebUiUserBat -WorkingDirectory $ResolvedWebUiDir `
   -WindowStyle Hidden -PassThru `
   -RedirectStandardOutput $WebUiLogPath -RedirectStandardError $WebUiErrLogPath -RedirectStandardInput "NUL"
+
+$cfg.webuiPid = $webuiProcess.Id
+Save-A1111Config $cfg
 
 Write-Info "Processus demarre (PID $($webuiProcess.Id)). Journal : $WebUiLogPath"
 Write-Info "Cela peut prendre 10 a 15 minutes la toute premiere fois (telechargement de PyTorch et des dependances)."

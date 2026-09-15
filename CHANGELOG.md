@@ -5,6 +5,31 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-15 — Correctif : relancer apres un run bloque plantait sur les logs
+
+Confirme par un run reel : le run precedent, bloque sur le `pause` corrige
+plus haut (avant ce correctif, lance sans redirection de stdin), etait
+toujours vivant au relancement du script et tenait encore
+`automatic1111.log` ouvert -- `Remove-Item` plantait alors avec "utilise
+par un autre processus" et arretait tout le script (`$ErrorActionPreference
+= "Stop"` transforme cette erreur normalement non bloquante en erreur
+bloquante).
+
+Le script enregistre desormais le PID du processus lance dans son fichier
+de config (`automatic1111-config.json`), et au demarrage de l'etape de
+lancement, verifie s'il tourne encore (avec une verification que son
+executable est bien sous le dossier de cette installation avant de le
+tuer, au cas ou Windows aurait recycle ce PID pour autre chose depuis) --
+si oui, il est arrete proprement avant de continuer, au lieu de faire
+planter le script sur des journaux verrouilles. La suppression des
+journaux est aussi maintenant dans un `try/catch` avec un message clair
+si elle echoue quand meme (autre cause).
+
+Note pour l'utilisateur concerne : le run bloque qui a declenche ce
+correctif date d'avant qu'il n'enregistre son PID (fonctionnalite absente
+a l'epoque) -- un `Stop-Process` manuel one-shot reste necessaire pour
+celui-la specifiquement ; tous les runs suivants se nettoieront seuls.
+
 ## 2026-09-15 — Correctifs reels (pas devines) sur un vrai run bloque
 
 Diagnostic a partir des journaux reels envoyes par l'utilisateur (le
