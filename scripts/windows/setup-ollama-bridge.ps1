@@ -491,8 +491,36 @@ if ($publicStatusNoAuth -eq 401) {
 } else {
   $detail = if ($script:LastHttpError) { " Detail : $($script:LastHttpError)" } else { "" }
   Write-Fail "Sans jeton via le tunnel public : reponse $publicStatusNoAuth (attendu 401) apres $($maxTries * 3)s d'attente.$detail"
-  Write-Host "    Le tunnel Cloudflare lui-meme s'est bien ouvert (URL : $TunnelUrl) -- ce n'est donc pas un probleme de Caddy/Ollama,"
-  Write-Host "    plutot une propagation lente ou bloquee du reseau Cloudflare. Verifiez votre pare-feu/antivirus et reessayez ce script."
+  Write-Host "    Le tunnel Cloudflare lui-meme s'est bien ouvert (URL : $TunnelUrl) -- ce n'est donc pas un probleme de Caddy/Ollama."
+
+  if ($script:LastHttpError -match "résol|resolved|resolve") {
+    $tunnelHost = ([Uri]$TunnelUrl).Host
+    Write-Host ""
+    Write-Host "    Ceci ressemble a un blocage DNS local plutot qu'a un vrai probleme de propagation :"
+    Write-Host "    la resolution du nom '$tunnelHost' echoue completement sur cette machine."
+    Write-Host "    Diagnostic automatique (DNS systeme actuel vs DNS public Cloudflare) :"
+    $viaSystem = $null
+    $viaPublic = $null
+    try { $viaSystem = Resolve-DnsName -Name $tunnelHost -ErrorAction Stop | Select-Object -First 1 } catch {}
+    try { $viaPublic = Resolve-DnsName -Name $tunnelHost -Server 1.1.1.1 -ErrorAction Stop | Select-Object -First 1 } catch {}
+    if (-not $viaSystem -and $viaPublic) {
+      Write-Host "    -> Le DNS systeme ECHOUE mais le DNS public 1.1.1.1 REUSSIT."
+      Write-Host "       Tres probablement votre antivirus, pare-feu ou le DNS de votre routeur bloque"
+      Write-Host "       specifiquement *.trycloudflare.com (certains produits le font car ce service"
+      Write-Host "       gratuit est parfois utilise a des fins malveillantes)."
+      Write-Host "       Solutions : changez temporairement le DNS de votre carte reseau pour 1.1.1.1 ou"
+      Write-Host "       8.8.8.8, ou desactivez la protection DNS/web de votre antivirus pour tester."
+    } elseif (-not $viaSystem -and -not $viaPublic) {
+      Write-Host "    -> Meme le DNS public 1.1.1.1 echoue : le blocage n'est pas au niveau DNS de Windows"
+      Write-Host "       mais plus bas (pare-feu, proxy d'entreprise, ou coupure reseau vers Cloudflare)."
+    } else {
+      Write-Host "    -> Les deux resolutions ont reussi cette fois -- reessayez le script, c'etait"
+      Write-Host "       peut-etre une propagation lente ponctuelle."
+    }
+    Write-Host ""
+  } else {
+    Write-Host "    Verifiez votre pare-feu/antivirus et reessayez ce script."
+  }
   Stop-Bridge
   exit 1
 }

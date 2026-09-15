@@ -19,6 +19,14 @@ machine Windows (jamais exécutable dans ce bac à sable) :
   ensuite une adresse qui n'était jamais reliée au proxy local, d'où le
   405. Corrigé en exigeant au moins un tiret dans le sous-domaine et en
   prenant la dernière correspondance trouvée.
+- **Diagnostic DNS automatique** : une fois l'URL correctement capturée,
+  un nouveau cas est apparu en test réel -- « le nom distant n'a pas pu
+  être résolu » -- typique d'un antivirus/pare-feu/DNS de routeur qui
+  bloque spécifiquement `*.trycloudflare.com` (service parfois utilisé à
+  des fins malveillantes, donc ciblé par certaines listes de blocage). Le
+  script compare maintenant automatiquement la résolution DNS système à
+  celle du DNS public 1.1.1.1 et indique directement si le blocage vient
+  de l'antivirus/DNS local plutôt que de renvoyer un message générique.
 
 - **Plantage à l'ouverture du tunnel** : `Start-Process` refuse que
   `-RedirectStandardOutput` et `-RedirectStandardError` pointent vers le
