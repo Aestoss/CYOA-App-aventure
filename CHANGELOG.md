@@ -5,6 +5,42 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-15 — Script d'installation automatique d'AUTOMATIC1111
+
+Nouveau `scripts/windows/setup-automatic1111.ps1`, la pièce manquante pour
+la génération d'image locale : `setup-ollama-bridge.ps1` prépare déjà la
+route proxy authentifiée (`/sdapi/*`) et détecte si quelque chose répond
+sur le port 7860, mais n'installait pas AUTOMATIC1111 lui-même.
+
+- **Détection automatique des dossiers** (le point demandé) : cherche une
+  installation existante (fichier `webui-user.bat`) dans le profil
+  utilisateur, Bureau, Téléchargements et Documents avant de proposer un
+  clonage — mémorise ensuite l'emplacement trouvé (ou cloné) dans un petit
+  fichier de config à côté de celui de `setup-ollama-bridge.ps1`, pour ne
+  plus jamais avoir à rechercher aux lancements suivants.
+- Même logique pour un **modèle Stable Diffusion** déjà téléchargé : si le
+  dossier `models\Stable-diffusion` est vide, cherche un `.safetensors`/
+  `.ckpt` dans Téléchargements/Bureau et le déplace automatiquement au bon
+  endroit. Aucun téléchargement automatique par défaut si rien n'est
+  trouvé (le choix du modèle — style, licence, plusieurs Go — reste à
+  l'utilisateur) ; un paramètre `-ModelUrl` optionnel permet de fournir un
+  lien direct si souhaité.
+- Installe Python 3.10 et Git via winget si absents (même approche que
+  l'installation d'Ollama dans le script existant).
+- Active `--api` dans `webui-user.bat` de façon idempotente (jamais ajouté
+  deux fois), lance le serveur, et attend patiemment que l'API réponde
+  (jusqu'à 15 minutes — le tout premier lancement télécharge plusieurs Go
+  de dépendances PyTorch).
+- Deux bugs corrigés avant de livrer, trouvés en relisant le script à tête
+  reposée plutôt qu'en le testant sur une vraie machine (toujours
+  impossible dans ce bac à sable) : `-Include` sans `-Recurse` ni
+  caractère générique final sur `-Path` est silencieusement ignoré par
+  PowerShell (aurait renvoyé tous les fichiers du dossier, pas seulement
+  les modèles) ; et un caractère accentué isolé dans un message d'erreur,
+  contraire à la convention ASCII-only déjà établie pour ces scripts
+  (PowerShell 5.1 lit un `.ps1` sans BOM avec le codepage ANSI du système,
+  ce qui corromprait ce caractère au chargement).
+
 ## 2026-09-15 — Réorganisation complète de la page de tour (inspirée d'Infinite Worlds)
 
 Suite à l'analyse d'une vraie capture d'écran d'Infinite Worlds (confirmée

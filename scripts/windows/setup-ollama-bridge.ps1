@@ -66,9 +66,11 @@
   - Local image generation (AUTOMATIC1111 / Stable Diffusion WebUI) is NOT
     installed by this script -- unlike Ollama, it's a much heavier,
     less standardized install (Python environment, multi-GB model
-    checkpoints to download yourself). If you want it, install it
-    separately and start it with the --api flag (off by default), e.g.:
-      webui-user.bat --api
+    checkpoints to download yourself). See setup-automatic1111.ps1 next to
+    this script for an automated install (detects an existing copy or
+    clones one, finds or fetches a checkpoint, enables --api, launches it
+    and waits for it to be ready) -- or install it by hand and start it
+    with the --api flag (off by default), e.g.: webui-user.bat --api
     This script only adds the authenticated proxy route for it -- if it
     isn't running, that route just fails until you start it; everything
     else (Ollama, text generation) works regardless.
