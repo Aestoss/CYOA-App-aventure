@@ -5,6 +5,40 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-15 — Audit systematique : plus de correctif au coup par coup
+
+Suite a une remarque justifiee (assez de corriger reactivement une erreur
+a la fois) : au lieu d'attendre le prochain plantage pour trouver le
+prochain endroit touche par le meme bug, audit complet du script pour
+cette classe de bug precise, en une seule fois.
+
+**Le vrai probleme, explique clairement** : sous Windows PowerShell 5.1,
+des qu'une commande externe (py, pip, python...) voit sa sortie d'erreur
+(stderr) capturee d'une facon ou d'une autre (`2>&1`, `2>$null`, vers un
+fichier), PowerShell transforme cette sortie en `ErrorRecord`. Sans
+redirection de stderr, ce probleme n'existe pas du tout, quelle que soit
+la valeur de `$ErrorActionPreference` — c'est precisement le fait de
+capturer stderr qui declenche le comportement. Ce script fixe
+`$ErrorActionPreference = "Stop"` en haut du fichier (deliberement, pour
+que les echecs de cmdlets PowerShell — ecriture de fichier, creation de
+dossier — arretent le script au lieu de continuer silencieusement dans un
+etat casse) ; combine au premier point, ca transforme n'importe quelle
+sortie stderr anodine d'une commande native capturee (un avertissement
+pip, une note de deprecation — pas forcement un vrai echec) en plantage
+complet du script.
+
+**Correctif systematique** : une fonction reutilisable `Invoke-NativeQuiet`
+abaisse temporairement `$ErrorActionPreference` a `"Continue"` autour d'un
+bloc de code (`$LASTEXITCODE` reste verifie normalement pour detecter un
+vrai echec), et TOUS les appels a une commande externe qui capturent
+stderr dans ce script (trouves en cherchant chaque `2>` du fichier, pas
+en devinant) l'utilisent desormais : les deux verifications de version de
+Python dans `Test-Python310` (un risque latent qui n'avait jamais encore
+declenche pour cet utilisateur, mais qui aurait fini par le faire) et les
+trois appels pip/python du correctif CLIP. `$ErrorActionPreference =
+"Stop"` reste actif partout ailleurs, la ou il protege reellement contre
+des echecs silencieux de cmdlets PowerShell.
+
 ## 2026-09-15 — Correctif : le simple fait d'ecrire sur stderr plantait tout
 
 Confirme par un run reel : la toute premiere commande du correctif CLIP

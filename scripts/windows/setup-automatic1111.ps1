@@ -126,6 +126,27 @@ function Write-Info($msg) {
   Write-Host "    $msg"
 }
 
+# Runs $ScriptBlock with $ErrorActionPreference temporarily relaxed to
+# "Continue", then restores it. Required for ANY native command whose
+# stderr is captured in some way (2>&1, 2>$null, 2>somefile) -- confirmed
+# for real, not assumed: Windows PowerShell 5.1 wraps captured stderr into
+# an ErrorRecord the instant it's captured, even when redirected to $null,
+# and this script's global $ErrorActionPreference = "Stop" then promotes
+# that into a terminating error -- crashing the whole script even when the
+# command actually succeeded and the stderr text was routine chatter (a
+# pip notice, a deprecation warning...), not a real failure. A native
+# command whose stderr is left unredirected is NOT at risk (PowerShell
+# only wraps it once something captures it), so this only needs to wrap
+# calls that redirect stderr -- every one of those in this script, found
+# by grepping for "2>", uses this helper. $LASTEXITCODE still reflects the
+# command's real exit code and should be checked by the caller as usual.
+function Invoke-NativeQuiet {
+  param([Parameter(Mandatory)][scriptblock]$ScriptBlock)
+  $prevErrorActionPreference = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  try { & $ScriptBlock } finally { $ErrorActionPreference = $prevErrorActionPreference }
+}
+
 function Get-A1111Config {
   if (Test-Path $ConfigPath) {
     try { return Get-Content $ConfigPath -Raw | ConvertFrom-Json } catch {}
@@ -144,11 +165,11 @@ Write-Step "Verification de Python 3.10"
 
 function Test-Python310 {
   try {
-    $v = & py -3.10 --version 2>&1
+    $v = Invoke-NativeQuiet { & py -3.10 --version 2>&1 }
     if ($LASTEXITCODE -eq 0 -and $v -match "3\.10") { return "py -3.10" }
   } catch {}
   try {
-    $v = & python --version 2>&1
+    $v = Invoke-NativeQuiet { & python --version 2>&1 }
     if ($v -match "3\.10") { return "python" }
   } catch {}
   return $null
@@ -443,57 +464,44 @@ Write-Step "Pre-installation de CLIP (contourne un bug reel de compatibilite set
 $VenvDir = Join-Path $ResolvedWebUiDir "venv"
 $VenvPython = Join-Path $VenvDir "Scripts\python.exe"
 
-# Windows PowerShell 5.1 wraps ANY stderr output from a native command into
-# an ErrorRecord the moment it's captured -- confirmed for real: even with
-# 2>$null, py/pip/python writing anything at all to stderr (warnings,
-# deprecation notices, pip's own progress chatter -- not necessarily a real
-# failure) crashed this whole script, because $ErrorActionPreference =
-# "Stop" (set at the top of this script) promotes that ErrorRecord to a
-# terminating error regardless of the redirect target. Relaxed to
-# "Continue" for just this block of native calls, restored right after --
-# $LASTEXITCODE is still checked normally to detect real failures.
-$prevErrorActionPreference = $ErrorActionPreference
-$ErrorActionPreference = "Continue"
-try {
-  if (-not (Test-Path $VenvPython)) {
-    Write-Info "Pas encore de venv -- creation..."
-    if ($PythonLauncher -eq "py -3.10") { & py -3.10 -m venv $VenvDir } else { & python -m venv $VenvDir }
-  }
+if (-not (Test-Path $VenvPython)) {
+  Write-Info "Pas encore de venv -- creation..."
+  # No stderr redirection here, so no Invoke-NativeQuiet needed -- see that
+  # helper's own comment for why only redirected stderr is at risk.
+  if ($PythonLauncher -eq "py -3.10") { & py -3.10 -m venv $VenvDir } else { & python -m venv $VenvDir }
+}
 
-  if (Test-Path $VenvPython) {
-    & $VenvPython -c "import clip" 2>$null
-    if ($LASTEXITCODE -eq 0) {
-      Write-Ok "CLIP est deja installe dans le venv."
-    } else {
-      Write-Info "Fixation de setuptools a une version compatible (69.5.1) dans le venv..."
-      & $VenvPython -m pip install "setuptools==69.5.1" --quiet 2>$null
-
-      # Read the exact URL AUTOMATIC1111 itself would install, straight from
-      # its own launch_utils.py, so this keeps working if that pinned commit
-      # ever changes -- falls back to the last-known-good URL (the one seen
-      # failing in a real log) only if that file's shape changed too much to
-      # find it automatically.
-      $ClipPackageUrl = "https://github.com/openai/CLIP/archive/d50d76daa670286dd6cacf3bcd80b5e4823fc8e1.zip"
-      $LaunchUtilsPath = Join-Path $ResolvedWebUiDir "modules\launch_utils.py"
-      if (Test-Path $LaunchUtilsPath) {
-        $launchUtilsContent = Get-Content $LaunchUtilsPath -Raw
-        $urlMatch = [regex]::Match($launchUtilsContent, "https://github\.com/openai/CLIP/archive/[a-f0-9]+\.zip")
-        if ($urlMatch.Success) { $ClipPackageUrl = $urlMatch.Value }
-      }
-
-      Write-Info "Installation de CLIP avec --no-build-isolation..."
-      & $VenvPython -m pip install $ClipPackageUrl --no-build-isolation --prefer-binary --quiet 2>$null
-      if ($LASTEXITCODE -eq 0) {
-        Write-Ok "CLIP installe avec succes."
-      } else {
-        Write-Info "Echec de la pre-installation de CLIP -- le lancement plus bas tentera quand meme (et affichera l'erreur reelle dans le journal si ca echoue encore)."
-      }
-    }
+if (Test-Path $VenvPython) {
+  Invoke-NativeQuiet { & $VenvPython -c "import clip" 2>$null }
+  if ($LASTEXITCODE -eq 0) {
+    Write-Ok "CLIP est deja installe dans le venv."
   } else {
-    Write-Info "Venv introuvable meme apres tentative de creation -- ce correctif sera tente par le webui lui-meme au lancement."
+    Write-Info "Fixation de setuptools a une version compatible (69.5.1) dans le venv..."
+    Invoke-NativeQuiet { & $VenvPython -m pip install "setuptools==69.5.1" --quiet 2>$null }
+
+    # Read the exact URL AUTOMATIC1111 itself would install, straight from
+    # its own launch_utils.py, so this keeps working if that pinned commit
+    # ever changes -- falls back to the last-known-good URL (the one seen
+    # failing in a real log) only if that file's shape changed too much to
+    # find it automatically.
+    $ClipPackageUrl = "https://github.com/openai/CLIP/archive/d50d76daa670286dd6cacf3bcd80b5e4823fc8e1.zip"
+    $LaunchUtilsPath = Join-Path $ResolvedWebUiDir "modules\launch_utils.py"
+    if (Test-Path $LaunchUtilsPath) {
+      $launchUtilsContent = Get-Content $LaunchUtilsPath -Raw
+      $urlMatch = [regex]::Match($launchUtilsContent, "https://github\.com/openai/CLIP/archive/[a-f0-9]+\.zip")
+      if ($urlMatch.Success) { $ClipPackageUrl = $urlMatch.Value }
+    }
+
+    Write-Info "Installation de CLIP avec --no-build-isolation..."
+    Invoke-NativeQuiet { & $VenvPython -m pip install $ClipPackageUrl --no-build-isolation --prefer-binary --quiet 2>$null }
+    if ($LASTEXITCODE -eq 0) {
+      Write-Ok "CLIP installe avec succes."
+    } else {
+      Write-Info "Echec de la pre-installation de CLIP -- le lancement plus bas tentera quand meme (et affichera l'erreur reelle dans le journal si ca echoue encore)."
+    }
   }
-} finally {
-  $ErrorActionPreference = $prevErrorActionPreference
+} else {
+  Write-Info "Venv introuvable meme apres tentative de creation -- ce correctif sera tente par le webui lui-meme au lancement."
 }
 
 # ---------------------------------------------------------------------------
