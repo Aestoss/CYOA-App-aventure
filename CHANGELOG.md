@@ -5,6 +5,64 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-15 — Revue independante : 6 bugs reels corriges, 1 fausse alerte
+
+Suite a la demande de faire relire le script par une instance Claude
+independante (sans connaitre cette conversation), pour sortir du cycle
+correctif-au-coup-par-coup. Chaque point signale a ete verifie avant
+correction, pas applique tel quel :
+
+- **Fausse alerte ecartee** : le rapport affirmait que `Start-Process`
+  plante sur un fichier `.bat` des qu'on redirige les flux (limitation
+  connue de l'API Win32 `CreateProcess` brute). Verifie contre les vrais
+  journaux de cette session : le script a deja lance `webui-user.bat` avec
+  les trois redirections (sortie, erreur, entree) et produit sa vraie
+  sortie a plusieurs reprises sur la machine reelle de l'utilisateur --
+  contradiction directe avec l'affirmation. Confirme aussi par la
+  documentation Microsoft : `Start-Process -RedirectStandardOutput` sur un
+  `.bat` est un usage documente qui fonctionne. Rien change ici.
+- **`-SdPort` n'etait jamais applique** (confirme par grep) : documente et
+  utilise pour l'interrogation de l'API, mais jamais ecrit dans
+  `COMMANDLINE_ARGS` -- une valeur non standard donnait un faux "timeout
+  15 minutes" garanti alors qu'AUTOMATIC1111 tournait bien sur son port
+  reel par defaut. Ajout d'un bloc `--port` symetrique a celui de `--api`.
+- **Detection `--api` par sous-chaine non delimitee** (confirme en lisant
+  la regex) : `--api-log` ou `--api-auth` (vrais flags AUTOMATIC1111)
+  auraient ete pris a tort pour `--api` deja actif. Corrige avec
+  `(?!\S)` pour exiger une fin de mot.
+- **Telechargements partiels/corrompus jamais detectes** : une coupure
+  reseau en cours de telechargement (plausible sur des fichiers de
+  plusieurs Go) laissait un fichier tronque au nom final, que la
+  verification de presence (nom seul, pas taille) prenait pour un modele
+  complet, sans jamais retenter -- l'echec ne serait apparu que bien plus
+  tard, comme un "checkpoint corrompu" cote AUTOMATIC1111. Corrige :
+  telechargement vers un nom temporaire, verification de taille minimale
+  (100 Mo) avant de le promouvoir au nom final, nettoyage du fichier
+  partiel en cas d'echec.
+- **Nom de fichier casse pour un `-ModelUrl` sans extension** (le cas
+  Civitai, dont les liens `/api/download/models/<id>` n'ont pas de nom de
+  fichier dans l'URL elle-meme) : le nom recupere aurait ete un identifiant
+  numerique sans extension, invisible pour AUTOMATIC1111, tout en etant
+  rapporte comme un succes. Corrige : lecture du vrai nom depuis l'en-tete
+  `Content-Disposition` de la reponse, repli sur `.safetensors` en dernier
+  recours plutot que de laisser un nom sans extension.
+- **`VENV_DIR` personnalise ignore** : ce script supposait toujours le
+  sous-dossier `venv` par defaut, alors qu'une installation existante
+  (exactement le cas que ce script est cense auto-detecter) peut pointer
+  ailleurs via `VENV_DIR` dans `webui-user.bat`. Corrige : lu et utilise
+  s'il est present. Limitation documentee (pas corrigee, portee trop large
+  pour le gain) : un `--ckpt-dir` personnalise pour les modeles n'est
+  toujours pas detecte.
+- **Trappe PowerShell 7.3+ non couverte** : `$PSNativeCommandUseErrorActionPreference`
+  (actif par defaut depuis PS 7.3) transforme un code de sortie non-nul
+  d'une commande native en erreur bloquante, independamment de toute
+  capture de stderr -- un mecanisme different de celui deja corrige
+  precedemment, touchant deux appels non proteges (`git clone`, creation
+  du venv). `Invoke-NativeQuiet` protege aussi contre celui-ci (son
+  abaissement de `$ErrorActionPreference` couvre les deux cas), etendu a
+  ces deux appels ; ajout au passage d'une verification `$LASTEXITCODE`
+  manquante sur la creation du venv.
+
 ## 2026-09-15 — La pre-installation de CLIP echouait en silence
 
 Confirme par un nouveau run reel identique au tout premier (meme erreur

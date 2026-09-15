@@ -57,6 +57,12 @@
   - Leaves the WebUI running in this console window (Ctrl+C stops it, same
     as running webui-user.bat directly) -- it's a separate long-running
     process from the Ollama bridge, not something this script backgrounds.
+  - Known limitation: an existing install with a custom checkpoints folder
+    (a --ckpt-dir argument in COMMANDLINE_ARGS, or a setting in config.json)
+    isn't auto-detected -- models are always downloaded/placed under this
+    install's own models\Stable-diffusion. VENV_DIR (a more common
+    customization) IS auto-detected. If you use a custom --ckpt-dir, either
+    remove it or move the downloaded checkpoints there by hand.
 
 .PARAMETER WebUiDir
   Skip auto-detection and use this exact AUTOMATIC1111 folder (must contain
@@ -127,19 +133,30 @@ function Write-Info($msg) {
 }
 
 # Runs $ScriptBlock with $ErrorActionPreference temporarily relaxed to
-# "Continue", then restores it. Required for ANY native command whose
-# stderr is captured in some way (2>&1, 2>$null, 2>somefile) -- confirmed
-# for real, not assumed: Windows PowerShell 5.1 wraps captured stderr into
-# an ErrorRecord the instant it's captured, even when redirected to $null,
-# and this script's global $ErrorActionPreference = "Stop" then promotes
-# that into a terminating error -- crashing the whole script even when the
-# command actually succeeded and the stderr text was routine chatter (a
-# pip notice, a deprecation warning...), not a real failure. A native
-# command whose stderr is left unredirected is NOT at risk (PowerShell
-# only wraps it once something captures it), so this only needs to wrap
-# calls that redirect stderr -- every one of those in this script, found
-# by grepping for "2>", uses this helper. $LASTEXITCODE still reflects the
-# command's real exit code and should be checked by the caller as usual.
+# "Continue", then restores it. Guards against two separate PowerShell
+# version-specific traps that both turn a harmless or already-handled
+# native-command outcome into an uncaught crash of the whole script,
+# because this script's global $ErrorActionPreference = "Stop" (set for
+# real cmdlet failures elsewhere -- see that line's own comment) also
+# reaches native commands in ways that don't behave like a normal cmdlet:
+#   1. Windows PowerShell 5.1 wraps ANY captured stderr (2>&1, 2>$null,
+#      2>somefile) into an ErrorRecord the instant it's captured -- even
+#      when the command succeeded and the stderr text was routine chatter
+#      (a pip notice, a deprecation warning), not a real failure. A native
+#      command whose stderr is left unredirected is NOT at risk here
+#      (PowerShell only wraps it once something captures it).
+#   2. PowerShell 7.3+'s $PSNativeCommandUseErrorActionPreference (on by
+#      default) promotes a non-zero exit code from ANY native command --
+#      regardless of stderr -- into the same kind of terminating error,
+#      pre-empting a caller's own "if ($LASTEXITCODE -ne 0)" handling
+#      before it can even run.
+# Used at every native-command call site in this script that either
+# redirects stderr (found by grepping for "2>") or is a real, plausible
+# failure point with its own $LASTEXITCODE check meant to handle that
+# failure gracefully (git clone, venv creation) -- not needed for calls
+# with no meaningful failure mode to protect (e.g. `py -3.10 --version`
+# succeeding is the whole point of calling it). $LASTEXITCODE still
+# reflects the command's real exit code and should be checked as usual.
 function Invoke-NativeQuiet {
   param([Parameter(Mandatory)][scriptblock]$ScriptBlock)
   $prevErrorActionPreference = $ErrorActionPreference
@@ -262,7 +279,7 @@ if ($WebUiDir) {
       Write-Fail "$cloneTarget existe deja mais ne contient pas de webui-user.bat valide -- renommez ou supprimez ce dossier, puis relancez ce script."
       exit 1
     }
-    & git clone --depth 1 https://github.com/AUTOMATIC1111/stable-diffusion-webui.git $cloneTarget
+    Invoke-NativeQuiet { & git clone --depth 1 https://github.com/AUTOMATIC1111/stable-diffusion-webui.git $cloneTarget }
     if ($LASTEXITCODE -ne 0) {
       Write-Fail "Le clonage a echoue (voir le detail ci-dessus). Verifiez votre connexion internet et relancez ce script."
       exit 1
@@ -356,16 +373,44 @@ if ($NoAutoModel) {
   foreach ($m in $modelsToFetch) {
     Write-Info "Telechargement de $($m.Label)..."
     Write-Info "Cela peut prendre plusieurs minutes selon votre connexion."
-    $dest = Join-Path $ModelsDir $m.File
-    # Invoke-WebRequest's default progress-bar rendering makes large
-    # downloads dramatically slower in Windows PowerShell 5.1 -- disabled
-    # only for the duration of this call, restored right after.
+    # Downloaded to a temporary name, promoted to the real one only after a
+    # sanity check -- confirmed as a real gap by an independent review: a
+    # connection drop mid-download (very plausible for a multi-GB file)
+    # left a truncated file at the real name, and every later run's
+    # presence check (filename only, not size) mistook that for a complete
+    # model and never retried -- surfacing only much later as an
+    # unexplained "corrupt checkpoint" failure inside AUTOMATIC1111 itself.
+    $finalDest = Join-Path $ModelsDir $m.File
+    $tempDest = "$finalDest.part"
+    if (Test-Path $tempDest) { Remove-Item $tempDest -Force -ErrorAction SilentlyContinue }
     $prevProgressPreference = $ProgressPreference
     $ProgressPreference = "SilentlyContinue"
     try {
-      Invoke-WebRequest -Uri $m.Url -OutFile $dest -UseBasicParsing
+      $response = Invoke-WebRequest -Uri $m.Url -OutFile $tempDest -UseBasicParsing -PassThru
+
+      # A URL with no .safetensors/.ckpt extension (Civitai's generic
+      # /api/download/models/<id> links look like this -- the real
+      # filename only appears in the response's Content-Disposition
+      # header) would otherwise get saved under a name AUTOMATIC1111
+      # can't recognize as a checkpoint at all, while this script still
+      # reports the download as a success -- also confirmed as a real gap
+      # by the same review, not assumed.
+      if ($m.File -notmatch "\.(safetensors|ckpt)$") {
+        $contentDisposition = $response.Headers["Content-Disposition"]
+        $nameMatch = if ($contentDisposition) { [regex]::Match($contentDisposition, 'filename\*?=(?:UTF-8[^A-Za-z0-9]*)?"?([^";]+)"?') } else { $null }
+        $m.File = if ($nameMatch -and $nameMatch.Success) { [System.Uri]::UnescapeDataString($nameMatch.Groups[1].Value) } else { "$($m.File).safetensors" }
+        $finalDest = Join-Path $ModelsDir $m.File
+      }
+
+      $downloadedSizeMB = [math]::Round((Get-Item $tempDest).Length / 1MB, 1)
+      if ($downloadedSizeMB -lt 100) {
+        throw "fichier telecharge anormalement petit ($downloadedSizeMB Mo) -- telechargement probablement interrompu ou incomplet."
+      }
+
+      Move-Item -Path $tempDest -Destination $finalDest -Force
       Write-Ok "Modele telecharge : $($m.File)"
     } catch {
+      if (Test-Path $tempDest) { Remove-Item $tempDest -Force -ErrorAction SilentlyContinue }
       Write-Fail "Le telechargement de $($m.File) a echoue -- $($_.Exception.Message)."
       Write-Host "    Si Hugging Face demande une connexion (modele marque 'contenu mature'),"
       Write-Host "    telechargez-le a la main depuis un navigateur ou vous etes connecte :"
@@ -461,14 +506,34 @@ if (Test-BlackwellGpu) {
 
 Write-Step "Pre-installation de CLIP (contourne un bug reel de compatibilite setuptools)"
 
+# AUTOMATIC1111 supports pointing its venv elsewhere via a VENV_DIR line in
+# webui-user.bat (a real, plausible setting on exactly the kind of
+# already-existing, already-customized install this script is built to
+# auto-detect) -- confirmed as a real gap by an independent review:
+# assuming the default "venv" subfolder unconditionally would create and
+# patch a second, unused venv while the install's real one keeps failing.
 $VenvDir = Join-Path $ResolvedWebUiDir "venv"
+$venvDirMatch = [regex]::Match($batContent, '(?m)^set VENV_DIR=([^\r\n]+)')
+if ($venvDirMatch.Success -and $venvDirMatch.Groups[1].Value.Trim() -and $venvDirMatch.Groups[1].Value.Trim() -ne "-") {
+  # AUTOMATIC1111 resolves a relative VENV_DIR against webui-user.bat's own
+  # folder, not against wherever this script happens to be running from.
+  $customVenvDir = $venvDirMatch.Groups[1].Value.Trim()
+  $VenvDir = if ([System.IO.Path]::IsPathRooted($customVenvDir)) { $customVenvDir } else { Join-Path $ResolvedWebUiDir $customVenvDir }
+  Write-Info "VENV_DIR personnalise detecte dans webui-user.bat : $VenvDir"
+}
 $VenvPython = Join-Path $VenvDir "Scripts\python.exe"
 
 if (-not (Test-Path $VenvPython)) {
   Write-Info "Pas encore de venv -- creation..."
-  # No stderr redirection here, so no Invoke-NativeQuiet needed -- see that
-  # helper's own comment for why only redirected stderr is at risk.
-  if ($PythonLauncher -eq "py -3.10") { & py -3.10 -m venv $VenvDir } else { & python -m venv $VenvDir }
+  # Wrapped in Invoke-NativeQuiet not for stderr (none redirected here) but
+  # for the PowerShell 7.3+ exit-code-promotion trap that helper's own
+  # comment describes -- and $LASTEXITCODE is now actually checked here
+  # too, instead of only relying on the Test-Path fallback message below to
+  # notice indirectly.
+  Invoke-NativeQuiet { if ($PythonLauncher -eq "py -3.10") { & py -3.10 -m venv $VenvDir } else { & python -m venv $VenvDir } }
+  if ($LASTEXITCODE -ne 0) {
+    Write-Info "La creation du venv a echoue (code $LASTEXITCODE) -- ce correctif sera tente par le webui lui-meme au lancement."
+  }
 }
 
 # Capturing full output (merged via 2>&1, not discarded via 2>$null) so a
@@ -541,7 +606,13 @@ if (Test-Path $VenvPython) {
 
 Write-Step "Activation du flag --api"
 
-if ($batContent -match "(?m)^set COMMANDLINE_ARGS=[^\r\n]*--api") {
+# (?!\S) after --api, not a bare substring match: without it, an existing
+# "--api-log" or "--api-auth" (both real AUTOMATIC1111 flags) would match
+# "--api" as a substring and be mistaken for the flag already being active
+# -- confirmed as a real gap by an independent review of this script, not
+# assumed. (?!\S) requires --api to be followed by whitespace or end of
+# line, not immediately by another non-space character.
+if ($batContent -match "(?m)^set COMMANDLINE_ARGS=[^\r\n]*--api(?!\S)") {
   Write-Ok "--api est deja active dans webui-user.bat."
 } elseif ($batContent -match "(?m)^set COMMANDLINE_ARGS=([^\r\n]*)") {
   # [^\r\n]* instead of .* -- avoids swallowing the line's trailing \r into
@@ -549,12 +620,37 @@ if ($batContent -match "(?m)^set COMMANDLINE_ARGS=[^\r\n]*--api") {
   # leave this one line LF-only in an otherwise CRLF batch file.
   $existingArgs = $Matches[1].Trim()
   $newArgs = if ($existingArgs) { "$existingArgs --api" } else { "--api" }
-  $newContent = $batContent -replace "(?m)^set COMMANDLINE_ARGS=[^\r\n]*", "set COMMANDLINE_ARGS=$newArgs"
-  Set-Content -Path $WebUiUserBat -Value $newContent -Encoding ASCII
+  $batContent = $batContent -replace "(?m)^set COMMANDLINE_ARGS=[^\r\n]*", "set COMMANDLINE_ARGS=$newArgs"
+  Set-Content -Path $WebUiUserBat -Value $batContent -Encoding ASCII
   Write-Ok "--api ajoute a la ligne COMMANDLINE_ARGS existante."
 } else {
   Add-Content -Path $WebUiUserBat -Value "`r`nset COMMANDLINE_ARGS=--api" -Encoding ASCII
+  $batContent = Get-Content $WebUiUserBat -Raw
   Write-Ok "Ligne COMMANDLINE_ARGS=--api ajoutee (absente du fichier d'origine)."
+}
+
+# Keeps AUTOMATIC1111's actual listening port in sync with -SdPort, which
+# this script polls below (and which setup-ollama-bridge.ps1 is told to
+# match) -- confirmed missing entirely by an independent review: -SdPort
+# was documented and polled but never actually written into
+# COMMANDLINE_ARGS, so passing a non-default -SdPort silently produced a
+# guaranteed 15-minute false "not responding" timeout while AUTOMATIC1111
+# kept listening on its own real default (7860) the whole time. Always
+# ensured (even at the default 7860) rather than only when non-default, so
+# there's exactly one code path instead of two.
+$portMatch = [regex]::Match($batContent, "(?m)^set COMMANDLINE_ARGS=[^\r\n]*--port\s+(\d+)")
+if ($portMatch.Success -and $portMatch.Groups[1].Value -eq "$SdPort") {
+  Write-Ok "--port $SdPort deja configure dans webui-user.bat."
+} elseif ($portMatch.Success) {
+  $batContent = $batContent -replace "--port\s+\d+", "--port $SdPort"
+  Set-Content -Path $WebUiUserBat -Value $batContent -Encoding ASCII
+  Write-Ok "--port mis a jour a $SdPort dans webui-user.bat."
+} elseif ($batContent -match "(?m)^set COMMANDLINE_ARGS=([^\r\n]*)") {
+  $existingArgs = $Matches[1].TrimEnd()
+  $newArgs = "$existingArgs --port $SdPort"
+  $batContent = $batContent -replace "(?m)^set COMMANDLINE_ARGS=[^\r\n]*", "set COMMANDLINE_ARGS=$newArgs"
+  Set-Content -Path $WebUiUserBat -Value $batContent -Encoding ASCII
+  Write-Ok "--port $SdPort ajoute a webui-user.bat."
 }
 
 if ($SkipLaunch) {
