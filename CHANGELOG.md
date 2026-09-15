@@ -5,6 +5,35 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-15 — Correctif : PIP_CONSTRAINT ne marchait pas non plus pour CLIP
+
+Confirme par un troisieme run reel identique : meme apres le correctif
+PIP_CONSTRAINT, l'installation de CLIP echouait exactement de la meme
+facon (`ModuleNotFoundError: No module named 'pkg_resources'`). Verifie
+avant de recorriger, comme demande : la suppression de `pkg_resources`
+dans setuptools 82.0 (8 fevrier 2026) tient toujours a ce jour (derniere
+version documentee : 84.0.0, la demande de restauration cote
+`pypa/setuptools` n'a pas abouti) -- le diagnostic restait donc valide.
+Ce qui ne l'etait pas : le changelog de pip confirme que les fichiers de
+contraintes, PIP_CONSTRAINT inclus, ne s'appliquent plus aux
+environnements de build isoles depuis une version recente de pip
+(remplace par `PIP_BUILD_CONSTRAINT`, non garanti present selon la
+version de pip embarquee).
+
+Remplace par la correction concretement rapportee comme fonctionnelle
+sur les tickets GitHub d'AUTOMATIC1111 pour cette meme erreur : fixer
+`setuptools==69.5.1` directement DANS le venv, puis installer CLIP avec
+`--no-build-isolation` (pip reutilise alors le setuptools deja installe
+au lieu de recreer un environnement isole avec la derniere version).
+Fait avant le lancement de webui-user.bat (qui trouve alors CLIP deja
+importable et saute sa propre tentative d'installation), avec l'URL du
+paquet CLIP lue directement dans `modules/launch_utils.py` de
+l'installation plutot que codee en dur (secours sur l'URL vue dans le
+journal d'erreur reel si cette lecture echoue). Positionne avant la
+sortie anticipee de `-SkipLaunch` -- une version intermediaire de ce
+correctif l'avait place apres par erreur, le sautant silencieusement
+dans ce cas precis.
+
 ## 2026-09-15 — Correctif : "NUL" comme -RedirectStandardInput echouait
 
 Confirme par un run reel juste apres le correctif precedent : la ligne

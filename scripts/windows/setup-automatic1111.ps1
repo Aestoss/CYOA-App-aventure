@@ -33,9 +33,14 @@
        webui's default (outdated) PyTorch install command so it actually
        runs on that hardware instead of crashing on the first generation --
        see the comment above that step for why this is needed.
-    5. Edits webui-user.bat to add the --api flag if it isn't already there
+    5. Pre-installs CLIP into the venv with a pinned setuptools version,
+       working around a real, current (Sept 2026) compatibility break
+       between setuptools 82+ and CLIP's legacy setup.py -- see the comment
+       above that step for the full story and why the obvious PIP_CONSTRAINT
+       fix doesn't actually work.
+    6. Edits webui-user.bat to add the --api flag if it isn't already there
        (idempotent -- running this script again never adds it twice).
-    6. Launches webui-user.bat and waits for its API to actually answer --
+    7. Launches webui-user.bat and waits for its API to actually answer --
        the very first launch installs several GB of dependencies (PyTorch
        etc.) and can take 10-15 minutes, so this polls patiently instead of
        declaring success too early.
@@ -404,7 +409,80 @@ if (Test-BlackwellGpu) {
 }
 
 # ---------------------------------------------------------------------------
-# 5. Make sure --api is enabled (idempotent: never adds it twice)
+# 5. Pre-install CLIP into the venv myself, working around a real,
+#    reproduced-twice failure: setuptools 82.0 (Feb 2026) deleted
+#    pkg_resources entirely, and OpenAI's CLIP package -- an unpinned
+#    git-based dependency this webui installs into every fresh venv --
+#    still imports it in its legacy setup.py. pip's isolated build
+#    environment always grabs the newest setuptools regardless of what's
+#    installed elsewhere, so CLIP's build fails with "ModuleNotFoundError:
+#    No module named 'pkg_resources'" on any fresh install done today,
+#    independent of GPU.
+#
+#    PIP_CONSTRAINT (this step's previous approach) turned out NOT to
+#    apply here -- confirmed both by the identical failure on a real
+#    re-run and by pip's own changelog: constraints files (including
+#    PIP_CONSTRAINT) no longer affect isolated build environments as of a
+#    recent pip version; PIP_BUILD_CONSTRAINT is the replacement, but
+#    isn't guaranteed present in whatever pip version this venv's Python
+#    bootstrapped. The combination below is what's actually confirmed
+#    working in AUTOMATIC1111's own GitHub issues for this exact error:
+#    pin an older setuptools IN the venv, then install CLIP with
+#    --no-build-isolation so pip reuses that already-installed setuptools
+#    instead of creating a fresh isolated env with the newest one. Doing
+#    this ourselves, before webui-user.bat's own install step runs, means
+#    that step finds CLIP already importable and skips reinstalling it.
+#
+#    Placed before -SkipLaunch's early exit further down (unlike an earlier
+#    version of this fix) -- this is genuinely part of "setting everything
+#    up", not something that should be skipped along with the actual launch.
+# ---------------------------------------------------------------------------
+
+Write-Step "Pre-installation de CLIP (contourne un bug reel de compatibilite setuptools)"
+
+$VenvDir = Join-Path $ResolvedWebUiDir "venv"
+$VenvPython = Join-Path $VenvDir "Scripts\python.exe"
+
+if (-not (Test-Path $VenvPython)) {
+  Write-Info "Pas encore de venv -- creation..."
+  if ($PythonLauncher -eq "py -3.10") { & py -3.10 -m venv $VenvDir } else { & python -m venv $VenvDir }
+}
+
+if (Test-Path $VenvPython) {
+  & $VenvPython -c "import clip" 2>$null
+  if ($LASTEXITCODE -eq 0) {
+    Write-Ok "CLIP est deja installe dans le venv."
+  } else {
+    Write-Info "Fixation de setuptools a une version compatible (69.5.1) dans le venv..."
+    & $VenvPython -m pip install "setuptools==69.5.1" --quiet
+
+    # Read the exact URL AUTOMATIC1111 itself would install, straight from
+    # its own launch_utils.py, so this keeps working if that pinned commit
+    # ever changes -- falls back to the last-known-good URL (the one seen
+    # failing in a real log) only if that file's shape changed too much to
+    # find it automatically.
+    $ClipPackageUrl = "https://github.com/openai/CLIP/archive/d50d76daa670286dd6cacf3bcd80b5e4823fc8e1.zip"
+    $LaunchUtilsPath = Join-Path $ResolvedWebUiDir "modules\launch_utils.py"
+    if (Test-Path $LaunchUtilsPath) {
+      $launchUtilsContent = Get-Content $LaunchUtilsPath -Raw
+      $urlMatch = [regex]::Match($launchUtilsContent, "https://github\.com/openai/CLIP/archive/[a-f0-9]+\.zip")
+      if ($urlMatch.Success) { $ClipPackageUrl = $urlMatch.Value }
+    }
+
+    Write-Info "Installation de CLIP avec --no-build-isolation..."
+    & $VenvPython -m pip install $ClipPackageUrl --no-build-isolation --prefer-binary --quiet
+    if ($LASTEXITCODE -eq 0) {
+      Write-Ok "CLIP installe avec succes."
+    } else {
+      Write-Info "Echec de la pre-installation de CLIP -- le lancement plus bas tentera quand meme (et affichera l'erreur reelle dans le journal si ca echoue encore)."
+    }
+  }
+} else {
+  Write-Info "Venv introuvable meme apres tentative de creation -- ce correctif sera tente par le webui lui-meme au lancement."
+}
+
+# ---------------------------------------------------------------------------
+# 6. Make sure --api is enabled (idempotent: never adds it twice)
 # ---------------------------------------------------------------------------
 
 Write-Step "Activation du flag --api"
@@ -432,28 +510,7 @@ if ($SkipLaunch) {
 }
 
 # ---------------------------------------------------------------------------
-# 5b. Pin setuptools below 82 for pip's build step, via the PIP_CONSTRAINT
-#     env var (inherited by the child process below). setuptools 82.0
-#     (Feb 2026) deleted pkg_resources entirely, and OpenAI's CLIP package
-#     -- an unpinned git-based dependency this webui installs every fresh
-#     venv -- still imports it in its legacy setup.py, so pip's isolated
-#     build environment (which always grabs the newest setuptools
-#     regardless of what's already installed) fails with
-#     "ModuleNotFoundError: No module named 'pkg_resources'" on any fresh
-#     install done today, independent of GPU. Confirmed against a real
-#     failure log, not assumed. PIP_CONSTRAINT is pip's own documented
-#     mechanism for constraining a package version even inside build
-#     isolation, so this doesn't require --no-build-isolation or patching
-#     AUTOMATIC1111's own launch.py (which a future git pull would just
-#     overwrite anyway).
-# ---------------------------------------------------------------------------
-
-$PipConstraintPath = Join-Path $WorkDir "pip-constraints.txt"
-Set-Content -Path $PipConstraintPath -Value "setuptools<81" -Encoding ASCII
-$env:PIP_CONSTRAINT = $PipConstraintPath
-
-# ---------------------------------------------------------------------------
-# 6. Launch and wait for the API to actually answer -- the first run
+# 7. Launch and wait for the API to actually answer -- the first run
 #    installs several GB of dependencies, so this is patient on purpose.
 # ---------------------------------------------------------------------------
 
