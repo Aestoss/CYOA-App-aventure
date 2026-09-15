@@ -19,6 +19,22 @@ machine Windows (jamais exécutable dans ce bac à sable) :
   ensuite une adresse qui n'était jamais reliée au proxy local, d'où le
   405. Corrigé en exigeant au moins un tiret dans le sous-domaine et en
   prenant la dernière correspondance trouvée.
+- **Jeton correct rejeté avec 401 (bug de fond, présent depuis le début)** :
+  une fois le DNS résolu, l'appel authentifié via le tunnel échouait encore
+  en 401 avec le *bon* jeton. Reproduit et confirmé en local (Caddy installé
+  et testé dans le bac à sable) : Caddy trie les directives d'un bloc selon
+  un ordre de priorité fixe qui lui est propre, **pas** selon l'ordre
+  d'écriture dans le Caddyfile -- et `respond` est trié *avant*
+  `reverse_proxy`. Le `respond "Unauthorized" 401` final (sans matcher, donc
+  qui correspond à toute requête) s'exécutait donc en premier sur chaque
+  requête, avant que `reverse_proxy` ait la moindre chance de s'exécuter --
+  quel que soit le jeton fourni. Ce bug existait depuis la création du pont,
+  jamais détecté car seul le rejet "sans jeton" avait été testé jusqu'ici, le
+  test "avec jeton" ne s'exécutant qu'une fois arrivé au tunnel public.
+  Corrigé en enveloppant les trois `reverse_proxy` et le `respond` final dans
+  un bloc `route { }`, qui force l'exécution dans l'ordre écrit. Revalidé
+  en local pour les trois routes (Ollama, `/bridge/status`, `/sdapi`) avec
+  et sans jeton avant de pousser.
 - **Diagnostic DNS automatique** : une fois l'URL correctement capturée,
   un nouveau cas est apparu en test réel -- « le nom distant n'a pas pu
   être résolu » -- typique d'un antivirus/pare-feu/DNS de routeur qui

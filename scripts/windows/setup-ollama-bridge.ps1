@@ -333,11 +333,18 @@ $caddyfileContent = @"
 		not path /sdapi/*
 	}
 
-	reverse_proxy @authorizedStatus 127.0.0.1:$WatcherPort
-	reverse_proxy @authorizedSd 127.0.0.1:$SdPort
-	reverse_proxy @authorizedOllama 127.0.0.1:$OllamaPort
+	# Caddy sorts directives of different kinds by its own fixed priority list,
+	# not by the order they're written -- and "respond" sorts before
+	# "reverse_proxy". Without this route{} block, the unconditional fallback
+	# respond below would run FIRST on every request and always return 401,
+	# even with a correct token (reverse_proxy would never get a chance to run).
+	route {
+		reverse_proxy @authorizedStatus 127.0.0.1:$WatcherPort
+		reverse_proxy @authorizedSd 127.0.0.1:$SdPort
+		reverse_proxy @authorizedOllama 127.0.0.1:$OllamaPort
 
-	respond "Unauthorized" 401
+		respond "Unauthorized" 401
+	}
 }
 "@
 Set-Content -Path $CaddyfilePath -Value $caddyfileContent -Encoding UTF8
