@@ -5,6 +5,25 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-15 — Correctifs du pont PC (tunnel Cloudflare)
+
+Deux bugs découverts en testant `setup-ollama-bridge.ps1` sur une vraie
+machine Windows (jamais exécutable dans ce bac à sable) :
+
+- **Plantage à l'ouverture du tunnel** : `Start-Process` refuse que
+  `-RedirectStandardOutput` et `-RedirectStandardError` pointent vers le
+  même fichier. Le script écrivait les deux vers `cloudflared.log`, ce qui
+  faisait planter la commande avant même que le tunnel s'ouvre. Corrigé en
+  séparant en deux fichiers (`cloudflared.log` / `cloudflared.err.log`),
+  fusionnés lors de la recherche de l'URL publique.
+- **Vérification de bout en bout trop impatiente** : une fois le tunnel
+  ouvert, le script vérifiait sous 20s (10 tentatives × 2s) que la route
+  publique répond bien 401 sans jeton — insuffisant, le réseau Cloudflare
+  peut mettre plus de temps à propager une URL `trycloudflare.com` toute
+  fraîche. Porté à 60s (20 × 3s), avec un message de progression toutes les
+  5 tentatives et le détail de la dernière erreur réseau en cas d'échec
+  final, pour distinguer un problème réseau/pare-feu d'un vrai bug Caddy.
+
 ## 2026-09-15 — Génération d'image locale (Stable Diffusion)
 
 Prépare l'utilisation d'un modèle d'image local sur le PC pendant que

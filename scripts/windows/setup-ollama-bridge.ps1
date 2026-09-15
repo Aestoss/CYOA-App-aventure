@@ -377,14 +377,18 @@ if ($NoWatcher) {
   }
 }
 
+$script:LastHttpError = $null
+
 function Get-HttpStatus($uri, $headers) {
   try {
     $resp = Invoke-WebRequest -UseBasicParsing -Uri $uri -Headers $headers -Method Post `
       -ContentType "application/json" `
       -Body '{"model":"__probe__","messages":[{"role":"user","content":"ping"}]}' `
       -TimeoutSec 15
+    $script:LastHttpError = $null
     return [int]$resp.StatusCode
   } catch {
+    $script:LastHttpError = $_.Exception.Message
     if ($_.Exception.Response) { return [int]$_.Exception.Response.StatusCode }
     return -1
   }
@@ -465,17 +469,24 @@ Write-Step "Validation de bout en bout via l'URL publique"
 
 $publicStatusNoAuth = $null
 $tries = 0
-while ($tries -lt 10) {
+$maxTries = 20
+while ($tries -lt $maxTries) {
   $publicStatusNoAuth = Get-HttpStatus "$TunnelUrl/v1/chat/completions" @{}
   if ($publicStatusNoAuth -eq 401) { break }
-  Start-Sleep -Seconds 2
+  Start-Sleep -Seconds 3
   $tries++
+  if ($tries % 5 -eq 0) {
+    Write-Host "    ... toujours en attente de la propagation du tunnel ($tries/$maxTries)"
+  }
 }
 
 if ($publicStatusNoAuth -eq 401) {
   Write-Ok "Sans jeton via le tunnel public : correctement rejete (401)."
 } else {
-  Write-Fail "Sans jeton via le tunnel public : reponse $publicStatusNoAuth (attendu 401). Le tunnel met peut-etre encore quelques secondes a se propager -- reessayez ce script si ca persiste."
+  $detail = if ($script:LastHttpError) { " Detail : $($script:LastHttpError)" } else { "" }
+  Write-Fail "Sans jeton via le tunnel public : reponse $publicStatusNoAuth (attendu 401) apres $($maxTries * 3)s d'attente.$detail"
+  Write-Host "    Le tunnel Cloudflare lui-meme s'est bien ouvert (URL : $TunnelUrl) -- ce n'est donc pas un probleme de Caddy/Ollama,"
+  Write-Host "    plutot une propagation lente ou bloquee du reseau Cloudflare. Verifiez votre pare-feu/antivirus et reessayez ce script."
   Stop-Bridge
   exit 1
 }
