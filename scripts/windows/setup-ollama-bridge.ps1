@@ -123,6 +123,7 @@ $CloudflaredExe = Join-Path $BinDir "cloudflared.exe"
 $ConfigPath   = Join-Path $WorkDir "config.json"
 $CaddyfilePath = Join-Path $WorkDir "Caddyfile"
 $TunnelLogPath = Join-Path $WorkDir "cloudflared.log"
+$TunnelErrLogPath = Join-Path $WorkDir "cloudflared.err.log"
 $TranscriptPath = Join-Path $WorkDir "bridge.log"
 $WatcherScriptPath = Join-Path $PSScriptRoot "ollama-watcher.ps1"
 $ProxyPort    = 8787
@@ -425,11 +426,12 @@ try {
 Write-Step "Ouverture du tunnel Cloudflare"
 
 if (Test-Path $TunnelLogPath) { Remove-Item $TunnelLogPath -Force }
+if (Test-Path $TunnelErrLogPath) { Remove-Item $TunnelErrLogPath -Force }
 
 $cloudflaredProcess = Start-Process -FilePath $CloudflaredExe `
   -ArgumentList "tunnel", "--url", "http://127.0.0.1:$ProxyPort" `
   -WindowStyle Hidden -PassThru `
-  -RedirectStandardError $TunnelLogPath -RedirectStandardOutput $TunnelLogPath
+  -RedirectStandardOutput $TunnelLogPath -RedirectStandardError $TunnelErrLogPath
 $script:ChildProcesses += $cloudflaredProcess
 $cfg.cloudflaredPid = $cloudflaredProcess.Id
 Save-BridgeConfig $cfg
@@ -438,17 +440,17 @@ $TunnelUrl = $null
 $tries = 0
 while (-not $TunnelUrl -and $tries -lt 30) {
   Start-Sleep -Seconds 1
-  if (Test-Path $TunnelLogPath) {
-    $logContent = Get-Content $TunnelLogPath -Raw -ErrorAction SilentlyContinue
-    if ($logContent -match "https://[a-zA-Z0-9-]+\.trycloudflare\.com") {
-      $TunnelUrl = $Matches[0]
-    }
+  $logContent = ""
+  if (Test-Path $TunnelLogPath) { $logContent += (Get-Content $TunnelLogPath -Raw -ErrorAction SilentlyContinue) }
+  if (Test-Path $TunnelErrLogPath) { $logContent += (Get-Content $TunnelErrLogPath -Raw -ErrorAction SilentlyContinue) }
+  if ($logContent -match "https://[a-zA-Z0-9-]+\.trycloudflare\.com") {
+    $TunnelUrl = $Matches[0]
   }
   $tries++
 }
 
 if (-not $TunnelUrl) {
-  Write-Fail "Impossible de recuperer l'URL du tunnel apres 30s. Regardez $TunnelLogPath pour le detail."
+  Write-Fail "Impossible de recuperer l'URL du tunnel apres 30s. Regardez $TunnelErrLogPath (et $TunnelLogPath) pour le detail."
   Stop-Bridge
   exit 1
 }
