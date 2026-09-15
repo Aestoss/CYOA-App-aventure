@@ -21,10 +21,18 @@ sur le port 7860, mais n'installait pas AUTOMATIC1111 lui-même.
 - Même logique pour un **modèle Stable Diffusion** déjà téléchargé : si le
   dossier `models\Stable-diffusion` est vide, cherche un `.safetensors`/
   `.ckpt` dans Téléchargements/Bureau et le déplace automatiquement au bon
-  endroit. Aucun téléchargement automatique par défaut si rien n'est
-  trouvé (le choix du modèle — style, licence, plusieurs Go — reste à
-  l'utilisateur) ; un paramètre `-ModelUrl` optionnel permet de fournir un
-  lien direct si souhaité.
+  endroit. **Correctif du même jour** : la première version s'arrêtait là
+  si rien n'était trouvé, en demandant à l'utilisateur de télécharger un
+  modèle à la main — contraire à l'objectif d'un script d'installation
+  entièrement automatique. Elle télécharge maintenant un modèle par défaut
+  (Stable Diffusion 1.5, fp16, ~2 Go, hébergé sur Hugging Face sans
+  authentification requise — vérifié accessible avant intégration) quand
+  rien n'est trouvé et qu'aucune `-ModelUrl` n'est fournie ; `-ModelUrl`
+  permet de choisir un autre modèle, `-NoAutoModel` de revenir à l'ancien
+  comportement (s'arrêter et choisir soi-même). Le téléchargement désactive
+  temporairement la barre de progression de `Invoke-WebRequest`, dont le
+  rendu ralentit considérablement les téléchargements volumineux sous
+  Windows PowerShell 5.1.
 - Installe Python 3.10 et Git via winget si absents (même approche que
   l'installation d'Ollama dans le script existant).
 - Active `--api` dans `webui-user.bat` de façon idempotente (jamais ajouté

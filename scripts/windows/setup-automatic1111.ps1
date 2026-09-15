@@ -23,9 +23,11 @@
     3. Looks for a Stable Diffusion checkpoint (.safetensors/.ckpt) already
        sitting in Downloads or Desktop -- if your install has none yet and
        one turns up there, moves it into the install's models folder instead
-       of asking you to place it by hand. If none exist anywhere, tells you
-       exactly what to download and where, then stops (a multi-GB model file
-       is your choice to make, not something to grab automatically).
+       of asking you to place it by hand. If none exist anywhere and no
+       -ModelUrl was given, downloads a default checkpoint automatically
+       (Stable Diffusion 1.5, fp16, ~2 GB) so the install finishes without
+       you doing anything by hand -- use -ModelUrl to fetch a different model
+       instead, or -NoAutoModel to stop and pick one yourself.
     4. Edits webui-user.bat to add the --api flag if it isn't already there
        (idempotent -- running this script again never adds it twice).
     5. Launches webui-user.bat and waits for its API to actually answer --
@@ -54,13 +56,18 @@
 .PARAMETER ModelUrl
   Optional direct download URL for a Stable Diffusion checkpoint
   (.safetensors). If given and no checkpoint is found anywhere, downloads
-  this URL into the models folder instead of stopping to ask you to fetch
-  one yourself.
+  this URL into the models folder instead of the built-in default.
 
 .PARAMETER SdPort
   Port the WebUI's API should listen on. Defaults to 7860 (AUTOMATIC1111's
   own default) -- matches setup-ollama-bridge.ps1's default -SdPort, keep
   them in sync if you change one.
+
+.PARAMETER NoAutoModel
+  If no checkpoint is found anywhere and this is set, stop and print manual
+  download instructions instead of automatically fetching the default
+  Stable Diffusion 1.5 checkpoint. Use this if you'd rather pick your own
+  model without an unplanned ~2 GB download.
 
 .PARAMETER SkipLaunch
   Set everything up (install, detect, place model, add --api) but don't
@@ -72,8 +79,14 @@ param(
   [string]$WebUiDir = "",
   [string]$ModelUrl = "",
   [int]$SdPort = 7860,
+  [switch]$NoAutoModel,
   [switch]$SkipLaunch
 )
+
+# Default checkpoint used when nothing else is found and -ModelUrl isn't
+# given -- Stable Diffusion 1.5, fp16, ungated (no HF login/token needed),
+# ~2 GB. Verified reachable before wiring it in here (2026-09).
+$DefaultModelUrl = "https://huggingface.co/Comfy-Org/stable-diffusion-v1-5-archive/resolve/main/v1-5-pruned-emaonly-fp16.safetensors"
 
 $ErrorActionPreference = "Stop"
 
@@ -238,9 +251,8 @@ $ModelsDir = Join-Path $ResolvedWebUiDir "models\Stable-diffusion"
 New-Item -ItemType Directory -Force -Path $ModelsDir | Out-Null
 
 # ---------------------------------------------------------------------------
-# 3. Find (or fetch) a checkpoint -- same auto-detection spirit, but a
-#    multi-GB model file is a real choice (style, license, size), so this
-#    only grabs one automatically if -ModelUrl was explicitly given.
+# 3. Find (or fetch) a checkpoint -- same auto-detection spirit: only ask you
+#    to do something by hand if you explicitly opted out with -NoAutoModel.
 # ---------------------------------------------------------------------------
 
 Write-Step "Verification d'un modele Stable Diffusion"
@@ -268,26 +280,36 @@ if ($existingCheckpoints -and $existingCheckpoints.Count -gt 0) {
       Move-Item -Path $file.FullName -Destination $dest -Force
       Write-Ok "Deplace vers le dossier des modeles : $($file.Name)"
     }
-  } elseif ($ModelUrl) {
-    Write-Info "Telechargement depuis l'URL fournie (peut prendre plusieurs minutes selon la taille)..."
-    $destName = Split-Path -Leaf ([Uri]$ModelUrl).LocalPath
-    if (-not $destName) { $destName = "model.safetensors" }
-    $dest = Join-Path $ModelsDir $destName
-    try {
-      Invoke-WebRequest -Uri $ModelUrl -OutFile $dest -UseBasicParsing
-      Write-Ok "Modele telecharge : $destName"
-    } catch {
-      Write-Fail "Le telechargement a echoue -- $($_.Exception.Message). Telechargez le modele manuellement dans $ModelsDir puis relancez ce script."
-      exit 1
-    }
-  } else {
-    Write-Fail "Aucun modele trouve, et aucune -ModelUrl fournie."
+  } elseif ($NoAutoModel) {
+    Write-Fail "Aucun modele trouve, et -NoAutoModel est actif."
     Write-Host "    Telechargez un modele Stable Diffusion (fichier .safetensors, plusieurs Go)"
     Write-Host "    depuis Civitai (https://civitai.com) ou Hugging Face (https://huggingface.co),"
     Write-Host "    placez-le dans :"
     Write-Host "      $ModelsDir"
     Write-Host "    puis relancez ce script -- il le detectera automatiquement."
     exit 1
+  } else {
+    $downloadUrl = if ($ModelUrl) { $ModelUrl } else { $DefaultModelUrl }
+    $label = if ($ModelUrl) { "l'URL fournie" } else { "le modele par defaut (Stable Diffusion 1.5, fp16, ~2 Go)" }
+    Write-Info "Aucun modele trouve -- telechargement de $label..."
+    Write-Info "Cela peut prendre plusieurs minutes selon votre connexion. Utilisez -ModelUrl pour un autre modele, ou -NoAutoModel pour choisir vous-meme."
+    $destName = Split-Path -Leaf ([Uri]$downloadUrl).LocalPath
+    if (-not $destName) { $destName = "model.safetensors" }
+    $dest = Join-Path $ModelsDir $destName
+    # Invoke-WebRequest's default progress-bar rendering makes large
+    # downloads dramatically slower in Windows PowerShell 5.1 -- disabled
+    # only for the duration of this call, restored right after.
+    $prevProgressPreference = $ProgressPreference
+    $ProgressPreference = "SilentlyContinue"
+    try {
+      Invoke-WebRequest -Uri $downloadUrl -OutFile $dest -UseBasicParsing
+      Write-Ok "Modele telecharge : $destName"
+    } catch {
+      Write-Fail "Le telechargement a echoue -- $($_.Exception.Message). Telechargez le modele manuellement dans $ModelsDir puis relancez ce script."
+      exit 1
+    } finally {
+      $ProgressPreference = $prevProgressPreference
+    }
   }
 }
 
