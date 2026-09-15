@@ -1471,6 +1471,13 @@ async function playAction(action) {
   const input = document.getElementById('actionInput');
   input.value = '';
   const content = document.getElementById('pageContent');
+  // Echo the action immediately rather than leaving the reader staring at
+  // an emptied input box for the next several seconds -- it's the cheapest
+  // possible signal that the click/submit actually registered.
+  const echoedAction = document.createElement('div');
+  echoedAction.className = 'player-action';
+  echoedAction.textContent = `→ ${action}`;
+  content.appendChild(echoedAction);
   const pending = document.createElement('p');
   pending.className = 'loading';
   pending.textContent = debugModeOn ? t('narratorApplyingInstruction') : t('narratorThinking');
@@ -1480,20 +1487,61 @@ async function playAction(action) {
   const providerOverride = resolveProviderOverride();
 
   const updatedAtBefore = currentSave.updatedAt;
+  // The chapter text streams in as it's written (see POST .../turn/stream
+  // and playTurnStreaming server-side) -- this paragraph starts empty and
+  // fills in live, replacing the "narrator thinking" placeholder the moment
+  // the first words arrive, well before the full turn (including the
+  // slower, invisible state/bookkeeping call) finishes.
+  let streaming = null;
   try {
-    const res = await fetch(`${API}/saves/${currentSaveId}/turn`, {
+    const res = await fetch(`${API}/saves/${currentSaveId}/turn/stream`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ action, authorMode: debugModeOn, debug: debugModeOn, ...(providerOverride ? { providerOverride } : {}) })
     });
-    const text = await res.text();
-    let data;
-    try { data = JSON.parse(text); } catch (e) { throw new Error(t('illegibleResponse')(res.status)); }
-    if (!res.ok) throw new Error(data.error || 'Unknown error');
+    if (!res.ok || !res.body) throw new Error(t('illegibleResponse')(res.status));
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let streamedText = '';
+    let doneEvent = null;
+    let errorMessage = null;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let newlineIndex;
+      while ((newlineIndex = buffer.indexOf('\n')) !== -1) {
+        const line = buffer.slice(0, newlineIndex).trim();
+        buffer = buffer.slice(newlineIndex + 1);
+        if (!line) continue;
+        let event;
+        try { event = JSON.parse(line); } catch (e) { continue; }
+        if (event.type === 'chunk') {
+          if (!streaming) {
+            pending.remove();
+            streaming = document.createElement('p');
+            streaming.className = 'chapter-streaming';
+            content.appendChild(streaming);
+          }
+          streamedText += event.text;
+          streaming.textContent = streamedText;
+        } else if (event.type === 'done') {
+          doneEvent = event;
+        } else if (event.type === 'error') {
+          errorMessage = event.message;
+        }
+      }
+    }
+
+    if (errorMessage) throw new Error(errorMessage);
+    if (!doneEvent) throw new Error(t('illegibleResponse')(res.status));
     await refreshSave(true);
   } catch (e) {
     if (!(await attemptRecovery(updatedAtBefore))) {
-      pending.textContent = t('errorPrefix') + e.message + t('retryHint');
+      (streaming || pending).textContent = t('errorPrefix') + e.message + t('retryHint');
     }
   }
 }

@@ -14,6 +14,25 @@ async function throwApiError(providerName, res) {
   throw err;
 }
 
+// Yields each SSE "data:" payload (trimmed) from a Node.js readable stream —
+// Anthropic, OpenAI, OpenRouter, Gemini (with alt=sse) and Ollama's
+// OpenAI-compatible endpoint all frame their streaming responses this way,
+// so every streamX() function below reuses this instead of its own parser.
+// Buffers across chunk boundaries since a "data: ..." line can arrive split
+// across two network packets.
+async function* sseDataLines(nodeStream) {
+  let buffer = '';
+  for await (const chunk of nodeStream) {
+    buffer += chunk.toString('utf8');
+    let newlineIndex;
+    while ((newlineIndex = buffer.indexOf('\n')) !== -1) {
+      const line = buffer.slice(0, newlineIndex).trim();
+      buffer = buffer.slice(newlineIndex + 1);
+      if (line.startsWith('data:')) yield line.slice(5).trim();
+    }
+  }
+}
+
 async function callAnthropic({ system, user, apiKey, model }) {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -44,6 +63,36 @@ async function callAnthropic({ system, user, apiKey, model }) {
   };
 }
 
+// NOTE: implemented from Anthropic's documented streaming event shape
+// (content_block_delta events carrying a text_delta) but not exercised
+// against a real Anthropic key in this session — only Gemini and the mock
+// provider were. Falls back safely: if this turns out to be wrong,
+// generateText()'s caller still gets a correct final `text` from the
+// accumulated deltas, it just wouldn't stream cleanly.
+async function streamAnthropic({ system, user, apiKey, model, onDelta }) {
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify({ model: model || 'claude-sonnet-4-6', max_tokens: 8192, system, messages: [{ role: 'user', content: user }], stream: true })
+  });
+  if (!res.ok) await throwApiError('Anthropic', res);
+  let text = '';
+  let usage = { inputTokens: 0, outputTokens: 0 };
+  for await (const payload of sseDataLines(res.body)) {
+    let data;
+    try { data = JSON.parse(payload); } catch (e) { continue; }
+    if (data.type === 'content_block_delta' && data.delta?.text) {
+      text += data.delta.text;
+      onDelta(data.delta.text);
+    } else if (data.type === 'message_start' && data.message?.usage) {
+      usage.inputTokens = data.message.usage.input_tokens || 0;
+    } else if (data.type === 'message_delta' && data.usage) {
+      usage.outputTokens = data.usage.output_tokens || 0;
+    }
+  }
+  return { text, usage };
+}
+
 async function callOpenAI({ system, user, apiKey, model }) {
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
@@ -62,6 +111,31 @@ async function callOpenAI({ system, user, apiKey, model }) {
     text: data.choices[0].message.content,
     usage: { inputTokens: data.usage?.prompt_tokens || 0, outputTokens: data.usage?.completion_tokens || 0 }
   };
+}
+
+// NOTE: implemented from OpenAI's documented chat.completion.chunk streaming
+// shape, but not exercised against a real OpenAI key in this session (only
+// Gemini and the mock provider were) — same fallback caveat as streamAnthropic.
+async function streamOpenAI({ system, user, apiKey, model, onDelta }) {
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({ model: model || 'gpt-4o', messages: [{ role: 'system', content: system }, { role: 'user', content: user }], stream: true, stream_options: { include_usage: true } })
+  });
+  if (!res.ok) await throwApiError('OpenAI', res);
+  let text = '';
+  let usage = { inputTokens: 0, outputTokens: 0 };
+  for await (const payload of sseDataLines(res.body)) {
+    if (payload === '[DONE]') break;
+    let data;
+    try { data = JSON.parse(payload); } catch (e) { continue; }
+    const delta = data.choices?.[0]?.delta?.content;
+    if (delta) { text += delta; onDelta(delta); }
+    if (data.usage) {
+      usage = { inputTokens: data.usage.prompt_tokens || 0, outputTokens: data.usage.completion_tokens || 0 };
+    }
+  }
+  return { text, usage };
 }
 
 async function callOpenRouter({ system, user, apiKey, model }) {
@@ -84,6 +158,31 @@ async function callOpenRouter({ system, user, apiKey, model }) {
   };
 }
 
+// OpenRouter proxies the OpenAI chat-completions shape, streaming included —
+// same caveat as streamOpenAI/streamAnthropic, not exercised against a real
+// OpenRouter key in this session.
+async function streamOpenRouter({ system, user, apiKey, model, onDelta }) {
+  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({ model: model || 'anthropic/claude-sonnet-4.6', messages: [{ role: 'system', content: system }, { role: 'user', content: user }], stream: true })
+  });
+  if (!res.ok) await throwApiError('OpenRouter', res);
+  let text = '';
+  let usage = { inputTokens: 0, outputTokens: 0 };
+  for await (const payload of sseDataLines(res.body)) {
+    if (payload === '[DONE]') break;
+    let data;
+    try { data = JSON.parse(payload); } catch (e) { continue; }
+    const delta = data.choices?.[0]?.delta?.content;
+    if (delta) { text += delta; onDelta(delta); }
+    if (data.usage) {
+      usage = { inputTokens: data.usage.prompt_tokens || 0, outputTokens: data.usage.completion_tokens || 0 };
+    }
+  }
+  return { text, usage };
+}
+
 async function callGemini({ system, user, apiKey, model }) {
   const m = model || 'gemini-3.6-flash';
   const res = await fetch(
@@ -103,6 +202,38 @@ async function callGemini({ system, user, apiKey, model }) {
     text: (data.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join(''),
     usage: { inputTokens: data.usageMetadata?.promptTokenCount || 0, outputTokens: data.usageMetadata?.candidatesTokenCount || 0 }
   };
+}
+
+// Verified against the real Gemini API (streamGenerateContent?alt=sse) during
+// development: parts occasionally carry a `thoughtSignature` with no `text`
+// (an internal-reasoning artifact of "thinking" models) — skip those, only
+// forward parts that actually have text. usageMetadata is cumulative on every
+// chunk, so the last one seen wins rather than summing.
+async function streamGemini({ system, user, apiKey, model, onDelta }) {
+  const m = model || 'gemini-3.6-flash';
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${m}:streamGenerateContent?key=${apiKey}&alt=sse`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents: [{ role: 'user', parts: [{ text: user }] }] })
+    }
+  );
+  if (!res.ok) await throwApiError('Gemini', res);
+  let text = '';
+  let usage = { inputTokens: 0, outputTokens: 0 };
+  for await (const payload of sseDataLines(res.body)) {
+    let data;
+    try { data = JSON.parse(payload); } catch (e) { continue; }
+    const parts = data.candidates?.[0]?.content?.parts || [];
+    for (const part of parts) {
+      if (part.text) { text += part.text; onDelta(part.text); }
+    }
+    if (data.usageMetadata) {
+      usage = { inputTokens: data.usageMetadata.promptTokenCount || 0, outputTokens: data.usageMetadata.candidatesTokenCount || 0 };
+    }
+  }
+  return { text, usage };
 }
 
 // Ollama exposes an OpenAI-compatible endpoint (/v1/chat/completions) which is
@@ -128,6 +259,33 @@ async function callOllama({ system, user, apiKey, model, baseUrl }) {
     text: data.choices[0].message.content,
     usage: { inputTokens: data.usage?.prompt_tokens || 0, outputTokens: data.usage?.completion_tokens || 0 }
   };
+}
+
+// Ollama's OpenAI-compatible endpoint mirrors OpenAI's own streaming chunk
+// shape when stream:true is set — same pattern as streamOpenAI. Not
+// exercised against a real Ollama instance in this session (no such
+// environment available here), only Gemini and the mock provider were.
+async function streamOllama({ system, user, apiKey, model, baseUrl, onDelta }) {
+  const url = `${(baseUrl || 'http://localhost:11434').replace(/\/$/, '')}/v1/chat/completions`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}) },
+    body: JSON.stringify({ model: model || 'llama3.1', messages: [{ role: 'system', content: system }, { role: 'user', content: user }], stream: true })
+  });
+  if (!res.ok) await throwApiError('Ollama', res);
+  let text = '';
+  let usage = { inputTokens: 0, outputTokens: 0 };
+  for await (const payload of sseDataLines(res.body)) {
+    if (payload === '[DONE]') break;
+    let data;
+    try { data = JSON.parse(payload); } catch (e) { continue; }
+    const delta = data.choices?.[0]?.delta?.content;
+    if (delta) { text += delta; onDelta(delta); }
+    if (data.usage) {
+      usage = { inputTokens: data.usage.prompt_tokens || 0, outputTokens: data.usage.completion_tokens || 0 };
+    }
+  }
+  return { text, usage };
 }
 
 // Lists models already pulled on the Ollama instance, via the same
@@ -266,8 +424,45 @@ async function callMock({ system, user }) {
   // Test hooks so the win/loss wiring can be exercised end-to-end without a
   // real API key: a real model would judge this from context, but the mock
   // is deterministic and doesn't read the story, so it keys off the action text.
-  const actionMatch = user.match(/PLAYER ACTION THIS TURN: (.*)/);
+  const actionMatch = user.match(/(?:PLAYER ACTION THIS TURN|AUTHOR INSTRUCTION THIS TURN[^:]*): (.*)/);
   const action = (actionMatch && actionMatch[1]) || '';
+
+  // Narration/state split (see lib/promptBuilder.js buildNarrationPrompt/
+  // buildStatePrompt) — detected by their distinctive system-prompt markers
+  // so the mock produces the matching shape instead of falling into the
+  // single-call hooks below, which would return the old, incompatible shape.
+  const isNarration = /===CHAPTER===/.test(system || '');
+  const isState = /You maintain the hidden bookkeeping/.test(system || '');
+
+  if (isNarration) {
+    if (/\bwin\b/i.test(action)) {
+      return { usage: noUsage, text: '===CHAPTER===\nThe fog parts at last, and you see clearly what it was hiding — and what to do about it.\n===META===\n' + JSON.stringify({ outcome: 'success', skill_used: null, game_over: { result: 'victory', text: null }, suggested_actions: [] }) };
+    }
+    if (/\blose\b/i.test(action)) {
+      return { usage: noUsage, text: '===CHAPTER===\nThe fog thickens until you can no longer tell which way leads back to the light.\n===META===\n' + JSON.stringify({ outcome: 'failure', skill_used: null, game_over: { result: 'defeat', text: null }, suggested_actions: [] }) };
+    }
+    if (/\btake the lantern\b/i.test(action)) {
+      return { usage: noUsage, text: '===CHAPTER===\nYou lift the lantern from its hook. Keeper Oduya says nothing, but her eyes follow it.\n===META===\n' + JSON.stringify({ outcome: 'success', skill_used: null, game_over: null, suggested_actions: ['Ask why she\'s watching you', 'Light the lantern', 'Put it back'] }) };
+    }
+    return {
+      usage: noUsage,
+      text: '===CHAPTER===\nYou step forward, and the fog seems to lean in around you, as if listening. Somewhere above, the lighthouse lens turns without a keeper\'s hand.\n===META===\n' +
+        JSON.stringify({ outcome: 'n/a', skill_used: null, game_over: null, suggested_actions: ['Call out to the Keeper', 'Climb the steps', 'Look for another way in'] })
+    };
+  }
+
+  if (isState) {
+    const tookLantern = /take the lantern/i.test(user);
+    return {
+      usage: noUsage,
+      text: JSON.stringify({
+        tracked_item_updates: tookLantern ? [{ name: 'Inventory', new_value: 'a small brass lantern' }, { name: 'Keeper Trust', new_value: 4 }] : [],
+        secret_info: tookLantern ? 'Keeper Oduya left the lantern out on purpose, to see who would take it.' : '',
+        state_updates: { location: 'Lighthouse steps', new_facts: [], characters_changed: [], inventory_changed: tookLantern ? ['+ brass lantern'] : [] },
+        image_prompt: 'A foggy lighthouse at dusk, glass architecture, a lone figure on stone steps'
+      })
+    };
+  }
   if (/\bwin\b/i.test(action)) {
     return {
       usage: noUsage,
@@ -333,7 +528,21 @@ async function callMock({ system, user }) {
   };
 }
 
+// Chunks the mock's own (deterministic) output word by word so local/offline
+// testing exercises the same progressive-rendering code path a real
+// streaming provider would, without needing any network access or key.
+async function streamMock({ system, user, onDelta }) {
+  const { text, usage } = await callMock({ system, user });
+  const words = text.split(/(?<=\s)/); // keep each word's trailing whitespace attached
+  for (const w of words) {
+    onDelta(w);
+    await sleep(15);
+  }
+  return { text, usage };
+}
+
 const providers = { anthropic: callAnthropic, openai: callOpenAI, openrouter: callOpenRouter, gemini: callGemini, ollama: callOllama, mock: callMock };
+const streamProviders = { anthropic: streamAnthropic, openai: streamOpenAI, openrouter: streamOpenRouter, gemini: streamGemini, ollama: streamOllama, mock: streamMock };
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -371,4 +580,25 @@ async function generateText({ provider, system, user, apiKey, model, baseUrl }) 
   throw lastError; // unreachable, but keeps the return type honest
 }
 
-module.exports = { generateText, listOllamaModels, getOllamaBridgeStatus };
+// Same retry policy as generateText, but only up to the first delta actually
+// delivered to the caller — once streaming has started, retrying would mean
+// either duplicating or discarding text the reader may already be seeing, so
+// a mid-stream failure is simply propagated instead.
+async function streamText({ provider, system, user, apiKey, model, baseUrl, onDelta }) {
+  const fn = streamProviders[provider] || streamMock;
+  let firstChunkReceived = false;
+  const wrappedOnDelta = (chunk) => { firstChunkReceived = true; onDelta(chunk); };
+  let lastError;
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+    try {
+      return await fn({ system, user, apiKey, model, baseUrl, onDelta: wrappedOnDelta });
+    } catch (e) {
+      lastError = e;
+      if (firstChunkReceived || !isRetryable(e) || attempt === RETRY_DELAYS_MS.length) throw e;
+      await sleep(RETRY_DELAYS_MS[attempt]);
+    }
+  }
+  throw lastError; // unreachable, but keeps the return type honest
+}
+
+module.exports = { generateText, streamText, listOllamaModels, getOllamaBridgeStatus };

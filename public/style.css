@@ -378,7 +378,7 @@ input[type="range"] { width: 100%; margin: 6px 0 4px; accent-color: var(--accent
   padding-bottom: 18px;
   border-bottom: 1px solid var(--border);
 }
-.chapter .player-action {
+.player-action {
   font-family: var(--sans);
   font-size: 0.85rem;
   color: var(--accent);
@@ -387,6 +387,17 @@ input[type="range"] { width: 100%; margin: 6px 0 4px; accent-color: var(--accent
 }
 .chapter p { margin: 0 0 14px; }
 .chapter p:last-child { margin-bottom: 0; }
+
+/* Live-streamed chapter text (see playAction in app.js): plain textContent
+   updated on every chunk, so paragraph breaks are preserved with
+   white-space rather than real <p> tags until the final formatted version
+   replaces this once the turn is fully done. */
+.chapter-streaming {
+  font-family: var(--serif);
+  font-size: 1.08rem;
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
 
 .suggested-actions {
   display: flex;

@@ -5,6 +5,50 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-15 — Chapitre affiché en direct, écho immédiat de l'action
+
+Suite à l'analyse des temps de génération réels (mesurés via les métriques
+Railway : ~20-30s par tour) et de ce qui fluidifie la lecture (comparaison
+avec Infinite Worlds) — trois changements pour réduire l'attente perçue
+sans attendre un chantier de refonte complet.
+
+- **Écho immédiat de l'action jouée** : au clic, l'action du joueur
+  s'affiche tout de suite dans le fil (au lieu de vider silencieusement le
+  champ et attendre) — signal instantané que le clic a bien été pris en
+  compte, avant même que le serveur ait répondu.
+- **Le chapitre s'affiche au fur et à mesure qu'il s'écrit**, comme
+  Infinite Worlds, au lieu d'apparaître d'un bloc à la toute fin :
+  - Nouveau découpage du tour en deux appels IA séquentiels
+    (`lib/promptBuilder.js` : `buildNarrationPrompt` / `buildStatePrompt`,
+    `lib/gameEngine.js` : `playTurnStreaming`) — un appel rapide qui ne
+    produit que le texte du chapitre + les actions suggérées + la
+    victoire/défaite (streamé en direct), suivi d'un second appel,
+    invisible pour le joueur, qui déduit du chapitre déjà écrit les mises à
+    jour d'état (objets suivis, informations secrètes, nouveaux faits,
+    prompt d'image) — jamais streamé, personne ne le regarde.
+  - Nouvelle route `POST /api/saves/:id/turn/stream` (JSON en flux,
+    ligne par ligne) et streaming réel implémenté pour tous les
+    fournisseurs texte dans `providers/textProviders.js`.
+  - L'ancienne route `POST /api/saves/:id/turn` (un seul appel, tout le
+    JSON d'un coup) reste intacte et utilisée telle quelle par la
+    régénération de tour — seul le parcours de jeu normal (`playAction`
+    dans `public/app.js`) utilise le nouveau chemin streamé.
+
+Vérifié avec de vrais appels à l'API Gemini (pas seulement le fournisseur
+factice) : format de sortie texte du narrateur (`===CHAPTER===`/`===META===`)
+et JSON de l'appel d'état tous deux corrects du premier coup ; streaming
+réel confirmé de bout en bout (navigateur → route → Gemini → navigateur,
+via Playwright) avec le texte qui s'affiche progressivement puis se
+stabilise sur la version finale formatée ; premiers mots du chapitre
+visibles en ~4-9s au lieu d'attendre les ~20-30s complets ; contenu diffusé en direct
+identique (une fois débarrassé des espaces de fin) au texte persisté ;
+objets suivis/secretInfo/faits mémorisés correctement dérivés du chapitre
+par le second appel. Implémentations de streaming pour Anthropic, OpenAI,
+OpenRouter et Ollama écrites selon leurs formats documentés respectifs mais
+non testées avec de vraies clés dans cette session (seuls Gemini et le
+fournisseur factice l'ont été) — repli automatique sur un envoi non
+fragmenté en cas de souci avec un fournisseur donné.
+
 ## 2026-09-15 — Statut Ollama en direct, repli automatique, outillage PC
 
 Complète le chantier Ollama : jusqu'ici, si le pont local (PC + tunnel)

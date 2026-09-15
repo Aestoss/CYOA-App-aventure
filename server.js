@@ -17,7 +17,7 @@ const {
   addTrackedItem, updateTrackedItem, deleteTrackedItem,
   addNpc, updateNpc, deleteNpc,
   createSave, getSave, selectCharacter, continueAfterVictory, deleteSave,
-  playTurn, rewindToTurn, regenerateTurn, getSettings,
+  playTurn, playTurnStreaming, rewindToTurn, regenerateTurn, getSettings,
   listAvailableOllamaModels, getOllamaStatus
 } = require('./lib/gameEngine');
 const { getTotalCosts, getWorldCosts } = require('./lib/costTracker');
@@ -369,6 +369,41 @@ app.post('/api/saves/:id/turn', async (req, res) => {
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: e.message });
+  }
+});
+
+// Streaming counterpart of the route above: same effect (persists a turn
+// exactly the same way, via the shared playTurnStreaming/persistTurn path),
+// but the response is newline-delimited JSON events instead of one JSON
+// object, so the client can show the chapter text as it's written instead
+// of waiting for the whole turn (narration + state) to finish. Each line is
+// one of: {"type":"chunk","text":...}, {"type":"done","turn":...}, or
+// {"type":"error","message":...} (terminal either way).
+app.post('/api/saves/:id/turn/stream', async (req, res) => {
+  const { action, authorMode, debug, providerOverride } = req.body;
+  if (!action || !action.trim()) return res.status(400).json({ error: 'action is required' });
+
+  res.writeHead(200, {
+    'content-type': 'application/x-ndjson; charset=utf-8',
+    'cache-control': 'no-cache',
+    'x-accel-buffering': 'no' // ask any reverse proxy in front of Railway not to buffer this
+  });
+  const send = (event) => res.write(JSON.stringify(event) + '\n');
+
+  try {
+    const save = getSave(req.params.id);
+    const turn = await playTurnStreaming(req.params.id, action.trim(), {
+      authorMode: Boolean(authorMode),
+      providerOverride,
+      onChapterChunk: (text) => send({ type: 'chunk', text })
+    });
+    const itemDefs = db.get('trackedItemDefs').filter({ worldId: save.worldId }).value();
+    send({ type: 'done', turn: publicTurn(turn, { debug: Boolean(debug), itemDefs }) });
+  } catch (e) {
+    console.error(e);
+    send({ type: 'error', message: e.message });
+  } finally {
+    res.end();
   }
 });
 
