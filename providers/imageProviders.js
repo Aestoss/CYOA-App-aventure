@@ -87,4 +87,43 @@ async function generateImage({ provider, prompt, apiKey, model, baseUrl }) {
   return fn({ prompt, apiKey, model, baseUrl });
 }
 
-module.exports = { generateImage };
+// Best-effort classification by filename -- AUTOMATIC1111's API doesn't
+// report what a checkpoint is meant to draw, so this guesses from known
+// names. Covers the two checkpoints setup-automatic1111.ps1 downloads by
+// default (NoobAI-XL, RealVisXL) plus other well-known models in each
+// family, so a manually added checkpoint still gets a sensible label
+// instead of none. Falls back to 'other', never to no category at all --
+// the dropdown always shows "<what it does> - <name>".
+const ILLUSTRATION_KEYWORDS = ['noobai', 'illustrious', 'pony', 'animagine', 'waifu', 'niji', 'anything', 'counterfeit', 'aingdiffusion'];
+const PHOTOREAL_KEYWORDS = ['realvis', 'juggernaut', 'epicrealism', 'photoreal', 'realistic', 'dreamshaper', 'absolutereality', 'realism'];
+
+function classifyLocalSdModel(filename) {
+  const lower = filename.toLowerCase();
+  if (ILLUSTRATION_KEYWORDS.some(k => lower.includes(k))) return 'illustration';
+  if (PHOTOREAL_KEYWORDS.some(k => lower.includes(k))) return 'photorealistic';
+  return 'other';
+}
+
+// Lists checkpoints currently installed in AUTOMATIC1111, via its documented
+// /sdapi/v1/sd-models endpoint -- feeds the per-world "Image model" preset
+// dropdown so it reflects what's actually on disk instead of requiring the
+// exact filename to be typed by hand. `value` (the filename, with
+// extension) is what gets saved as world.imageModel and sent back as
+// override_settings.sd_model_checkpoint by callLocalSD above.
+async function listLocalSdModels({ apiKey, baseUrl }) {
+  const url = `${(baseUrl || 'http://localhost:7860').replace(/\/$/, '')}/sdapi/v1/sd-models`;
+  const res = await fetch(url, {
+    headers: { ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}) },
+    timeout: 5000
+  });
+  if (!res.ok) throw new Error(`Local Stable Diffusion API error ${res.status}: ${await res.text()}`);
+  const data = await res.json();
+  return (data || []).map(m => {
+    const rawName = (m.filename || '').split(/[\\/]/).pop() || m.model_name || m.title || 'model';
+    const value = rawName;
+    const name = rawName.replace(/\.(safetensors|ckpt)$/i, '');
+    return { value, name, category: classifyLocalSdModel(rawName) };
+  });
+}
+
+module.exports = { generateImage, listLocalSdModels };

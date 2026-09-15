@@ -18,7 +18,7 @@ const {
   addNpc, updateNpc, deleteNpc,
   createSave, getSave, selectCharacter, continueAfterVictory, deleteSave,
   playTurn, playTurnStreaming, rewindToTurn, regenerateTurn, regenerateTurnStreaming, getSettings,
-  listAvailableOllamaModels, getOllamaStatus
+  listAvailableOllamaModels, getOllamaStatus, listAvailableLocalSdModels
 } = require('./lib/gameEngine');
 const { getTotalCosts, getWorldCosts } = require('./lib/costTracker');
 
@@ -521,6 +521,17 @@ app.get('/api/ollama/status', async (req, res) => {
 app.get('/api/ollama/models', async (req, res) => {
   try {
     const models = await listAvailableOllamaModels();
+    res.json({ models });
+  } catch (e) {
+    res.status(502).json({ error: e.message, models: [] });
+  }
+});
+
+// ---------- Local Stable Diffusion (installed checkpoints) ----------
+
+app.get('/api/localsd/models', async (req, res) => {
+  try {
+    const models = await listAvailableLocalSdModels();
     res.json({ models });
   } catch (e) {
     res.status(502).json({ error: e.message, models: [] });

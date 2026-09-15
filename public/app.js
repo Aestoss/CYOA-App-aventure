@@ -102,8 +102,9 @@ const UI = {
     worldContentWarningsLabel: 'Avertissements de contenu', worldContentWarningsHint: '(séparés par des virgules)',
     worldContentWarningsPlaceholder: 'violence, horreur...',
     worldCharacterSelectTextLabel: 'Texte à la sélection du personnage', worldCharacterSelectTextHint: '(optionnel, affiché en plus de l\'avertissement contenu mature)',
-    worldImageModelLabel: "Modèle d'image", worldImageModelHint: "(optionnel — remplace le modèle par défaut du fournisseur ; pour l'IA locale, nom exact du fichier checkpoint, ex. NoobAI-XL-v1.1.safetensors pour l'illustration ou RealVisXL_V5.0_fp16.safetensors pour le photoréaliste)",
+    worldImageModelLabel: "Modèle d'image", worldImageModelHint: "(optionnel — remplace le modèle par défaut du fournisseur ; pour l'IA locale, choisissez dans la liste détectée ou tapez le nom exact du fichier checkpoint)",
     worldImageModelPlaceholder: 'ex : NoobAI-XL-v1.1.safetensors',
+    imageModelCategoryIllustration: 'Illustration', imageModelCategoryPhotorealistic: 'Photoréaliste', imageModelCategoryOther: 'Autre',
     worldDesignNotesLabel: "Notes de conception", worldDesignNotesHint: "(usage personnel, jamais envoyé à l'IA, sans effet sur le jeu — l'idée d'origine par défaut)",
     worldInstructionsLabel: 'Instructions principales',
     worldAuthorStyleLabel: "Style d'auteur", worldAuthorStyleHint: '(ex : "Neil Gaiman", "un romancier de thriller")',
@@ -287,8 +288,9 @@ const UI = {
     worldContentWarningsLabel: 'Content warnings', worldContentWarningsHint: '(comma-separated)',
     worldContentWarningsPlaceholder: 'violence, horror...',
     worldCharacterSelectTextLabel: 'Text at character selection', worldCharacterSelectTextHint: '(optional, shown alongside the mature-content warning)',
-    worldImageModelLabel: 'Image model', worldImageModelHint: "(optional — overrides the provider's default model; for local AI, the exact checkpoint filename, e.g. NoobAI-XL-v1.1.safetensors for illustration or RealVisXL_V5.0_fp16.safetensors for photorealistic)",
+    worldImageModelLabel: 'Image model', worldImageModelHint: "(optional — overrides the provider's default model; for local AI, pick from the detected list or type the exact checkpoint filename)",
     worldImageModelPlaceholder: 'e.g. NoobAI-XL-v1.1.safetensors',
+    imageModelCategoryIllustration: 'Illustration', imageModelCategoryPhotorealistic: 'Photorealistic', imageModelCategoryOther: 'Other',
     worldDesignNotesLabel: 'Design notes', worldDesignNotesHint: "(personal use, never sent to the AI, no effect on gameplay — defaults to the original idea)",
     worldInstructionsLabel: 'Main instructions',
     worldAuthorStyleLabel: 'Author style', worldAuthorStyleHint: '(e.g. "Neil Gaiman", "a thriller novelist")',
@@ -684,6 +686,8 @@ function populateWorldEditor(world, playableCharacters) {
   document.getElementById('worldContentWarningsInput').value = (world.contentWarnings || []).join(', ');
   document.getElementById('worldCharacterSelectTextInput').value = world.characterSelectText || '';
   document.getElementById('worldImageModelInput').value = world.imageModel || '';
+  document.getElementById('worldImageModelPreset').value = '';
+  refreshLocalSdModels();
   document.getElementById('worldDesignNotesInput').value = world.designNotes || '';
   document.getElementById('worldSettingInput').value = world.setting || '';
   document.getElementById('worldToneInput').value = world.tone || '';
@@ -1917,6 +1921,48 @@ document.getElementById('ollamaRefreshBtn').onclick = () => {
 
 setInterval(pollOllamaStatus, 12000);
 pollOllamaStatus();
+
+// ---------- Local Stable Diffusion model detection (per-world "Image model" preset) ----------
+//
+// Same pattern as the Ollama text-model preset: fetched on demand (when the
+// World editor opens, see populateWorldEditor) rather than polled, since
+// it's only relevant while that panel is visible. Silently falls back to
+// manual typing if the bridge isn't reachable.
+
+let localSdModels = [];
+
+function renderWorldImageModelPresets() {
+  const select = document.getElementById('worldImageModelPreset');
+  const customLabel = select.options[0]; // "(custom / manual)" — always kept as the first option
+  select.innerHTML = '';
+  select.appendChild(customLabel);
+  const categoryLabels = {
+    illustration: t('imageModelCategoryIllustration'),
+    photorealistic: t('imageModelCategoryPhotorealistic'),
+    other: t('imageModelCategoryOther')
+  };
+  localSdModels.forEach(({ value, name, category }) => {
+    const opt = document.createElement('option');
+    opt.value = value;
+    opt.textContent = `${categoryLabels[category] || categoryLabels.other} - ${name}`;
+    select.appendChild(opt);
+  });
+}
+
+async function refreshLocalSdModels() {
+  try {
+    const { models } = await fetch(`${API}/localsd/models`).then(r => r.json());
+    localSdModels = models || [];
+  } catch (e) {
+    localSdModels = [];
+  }
+  renderWorldImageModelPresets();
+}
+
+document.getElementById('worldImageModelPreset').onchange = () => {
+  const presetValue = document.getElementById('worldImageModelPreset').value;
+  if (presetValue) document.getElementById('worldImageModelInput').value = presetValue;
+};
 
 async function loadSettings() {
   const s = await fetch(`${API}/settings`).then(r => r.json());

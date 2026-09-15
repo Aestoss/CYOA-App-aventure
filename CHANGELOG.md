@@ -5,6 +5,28 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-15 — Detection automatique des modeles IA locale (menu deroulant)
+
+Ajout d'un menu deroulant qui detecte les checkpoints deja presents sur le
+PC via AUTOMATIC1111 (`/sdapi/v1/sd-models`), pour ne plus avoir a taper le
+nom de fichier a la main dans le champ "Modele d'image" d'un monde :
+
+- `providers/imageProviders.js` expose `listLocalSdModels`, qui classe
+  chaque checkpoint trouve par mot-cle sur son nom de fichier
+  ("illustration" pour NoobAI-XL/Illustrious/Pony/etc.,
+  "photorealiste" pour RealVisXL/Juggernaut/etc., "autre" sinon — toujours
+  une categorie, jamais rien).
+- Nouvelle route `GET /api/localsd/models` (meme schema que
+  `/api/ollama/models`), branchee via `listAvailableLocalSdModels` dans
+  `lib/gameEngine.js`.
+- Cote interface, l'editeur de monde affiche desormais un menu deroulant
+  au-dessus du champ texte, avec le format demande : "Illustration - nom"
+  / "Photorealiste - nom" / "Autre - nom" — le choisir remplit le champ
+  texte (qui reste modifiable a la main), sur le meme principe que le menu
+  de presets deja utilise pour le modele de texte Ollama. Rafraichi a
+  chaque ouverture de l'editeur de monde ; echoue silencieusement vers la
+  saisie manuelle si le pont PC n'est pas joignable.
+
 ## 2026-09-15 — Deux profils de modele local (illustration + photorealiste)
 
 Suite a la question "NoobAI-XL fait-il aussi du photorealiste ?" — reponse
