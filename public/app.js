@@ -1541,7 +1541,16 @@ async function playAction(action) {
     await refreshSave(true);
   } catch (e) {
     if (!(await attemptRecovery(updatedAtBefore))) {
-      (streaming || pending).textContent = t('errorPrefix') + e.message + t('retryHint');
+      // Nothing was actually persisted (attemptRecovery would have caught
+      // it otherwise) -- remove the echoed action and any partial live text
+      // rather than leaving them stacked permanently below the real last
+      // page, which read as "pagination broke". Put the action back in the
+      // input so retrying doesn't mean retyping it.
+      echoedAction.remove();
+      pending.remove();
+      if (streaming) streaming.remove();
+      input.value = action;
+      alert(t('errorPrefix') + e.message + t('retryHint'));
     }
   }
 }
@@ -1589,28 +1598,77 @@ document.getElementById('regenerateConfirmBtn').onclick = async () => {
   const turn = currentTurns[currentPageIndex];
   const action = document.getElementById('regenerateActionInput').value.trim();
   const note = document.getElementById('regenerateNoteInput').value.trim();
-  const btn = document.getElementById('regenerateConfirmBtn');
   const updatedAtBefore = currentSave.updatedAt;
-  btn.disabled = true;
+
+  document.getElementById('regeneratePopover').classList.add('hidden');
+  // Regeneration replaces the page currently on screen, so it's cleared up
+  // front (unlike playAction, which appends after the existing last page) --
+  // same live-streaming treatment otherwise, and a plain renderPage() cheaply
+  // restores the untouched original from memory if this fails, no refetch needed.
+  const content = document.getElementById('pageContent');
+  content.innerHTML = '';
+  const echoedAction = document.createElement('div');
+  echoedAction.className = 'player-action';
+  echoedAction.textContent = `→ ${action || turn.playerAction}`;
+  content.appendChild(echoedAction);
+  const pending = document.createElement('p');
+  pending.className = 'loading';
+  pending.textContent = debugModeOn ? t('narratorApplyingInstruction') : t('narratorThinking');
+  content.appendChild(pending);
+  document.getElementById('suggestedActions').innerHTML = '';
+
+  let streaming = null;
   try {
-    const res = await fetch(`${API}/saves/${currentSaveId}/turns/${turn.turnNumber}/regenerate`, {
+    const res = await fetch(`${API}/saves/${currentSaveId}/turns/${turn.turnNumber}/regenerate/stream`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ action, note, debug: debugModeOn })
     });
-    const text = await res.text();
-    let data;
-    try { data = JSON.parse(text); } catch (e) { throw new Error(t('illegibleResponse')(res.status)); }
-    if (!res.ok) throw new Error(data.error);
-    document.getElementById('regeneratePopover').classList.add('hidden');
+    if (!res.ok || !res.body) throw new Error(t('illegibleResponse')(res.status));
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let streamedText = '';
+    let doneEvent = null;
+    let errorMessage = null;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let newlineIndex;
+      while ((newlineIndex = buffer.indexOf('\n')) !== -1) {
+        const line = buffer.slice(0, newlineIndex).trim();
+        buffer = buffer.slice(newlineIndex + 1);
+        if (!line) continue;
+        let event;
+        try { event = JSON.parse(line); } catch (e) { continue; }
+        if (event.type === 'chunk') {
+          if (!streaming) {
+            pending.remove();
+            streaming = document.createElement('p');
+            streaming.className = 'chapter-streaming';
+            content.appendChild(streaming);
+          }
+          streamedText += event.text;
+          streaming.textContent = streamedText;
+        } else if (event.type === 'done') {
+          doneEvent = event;
+        } else if (event.type === 'error') {
+          errorMessage = event.message;
+        }
+      }
+    }
+
+    if (errorMessage) throw new Error(errorMessage);
+    if (!doneEvent) throw new Error(t('illegibleResponse')(res.status));
     await refreshSave(true);
   } catch (e) {
-    document.getElementById('regeneratePopover').classList.add('hidden');
     if (!(await attemptRecovery(updatedAtBefore))) {
+      renderPage();
       alert(t('errorPrefix') + e.message + t('regenFailedHint'));
     }
-  } finally {
-    btn.disabled = false;
   }
 };
 
@@ -1685,7 +1743,7 @@ const MODEL_PRESETS = {
   ],
   gemini: [
     { id: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash — $0.75/$3.75 per 1M' },
-    { id: 'gemini-3.6-pro', label: 'Gemini 3.6 Pro — $2/$12 per 1M' }
+    { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro (preview)' }
   ],
   ollama: [
     { id: 'llama3.1:8b', label: 'Llama 3.1 8B — rapide, ~5 Go VRAM' },

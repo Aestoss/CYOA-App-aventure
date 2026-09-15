@@ -5,6 +5,50 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-15 — Correctifs streaming (plantage META tronqué, pagination, régénération)
+
+Retours utilisateur après un vrai test en conditions réelles (clé Anthropic,
+Haiku 4.5) du lot streaming ci-dessous : la génération était bien rapide et
+fluide, mais un plantage est apparu, avec un symptôme qui donnait
+l'impression que la pagination par tour avait disparu.
+
+- **Corrigé le plantage "Narration META was truncated"** : si le petit
+  bloc JSON de fin (`===META===` — issue, compétence utilisée, victoire/
+  défaite, actions suggérées) arrivait tronqué ou mal formé, toute la
+  réponse était rejetée avec une erreur brute affichée au joueur, alors que
+  le chapitre lui-même (déjà lu en direct) était intact.
+  `splitNarrationResponse` (`lib/promptBuilder.js`) retombe maintenant sur
+  des valeurs par défaut sûres pour les champs manquants au lieu de tout
+  rejeter — seule une absence totale de texte de chapitre est encore une
+  vraie erreur.
+- **Corrigé "la pagination a disparu"** : ce n'était pas la pagination —
+  sur un tour en échec, l'action affichée en écho et le texte en cours de
+  streaming restaient accrochés en permanence sous la vraie dernière page
+  au lieu d'être nettoyés, donnant l'impression d'un flux cassé.
+  `playAction` (`public/app.js`) retire maintenant proprement ces éléments
+  en cas d'échec confirmé, remet l'action tapée dans le champ de saisie, et
+  affiche l'erreur via une alerte au lieu de la injecter dans le fil de
+  lecture.
+- **Régénération de tour passée sur le même chemin streamé** que la
+  génération normale (demande explicite) : nouvelle route `POST
+  /api/saves/:id/turns/:turnNumber/regenerate/stream` et fonction
+  `regenerateTurnStreaming` (`lib/gameEngine.js`), même traitement en
+  direct côté interface. L'ancienne route non streamée reste disponible et
+  inchangée. Cohérent avec la demande : création/édition de monde restent
+  volontairement non streamées, l'attente y est acceptable.
+- Corrigé au passage : l'entrée « Gemini 3.6 Pro » du menu déroulant de
+  modèles n'existe pas (404 côté API) — remplacée par un modèle réel.
+
+Vérifié avec de vrais appels Gemini (`gemini-3.5-flash-lite`, pour ménager
+un quota de test limité) : tour joué, second tour, puis régénération du
+premier via la nouvelle route streamée, les trois aboutissant correctement
+sans troncature. Testé aussi le cas exact du bug rapporté (META tronqué
+simulé) : le chapitre reste affiché, aucun plantage. Un modèle qui ignore
+complètement le format demandé (Gemma 4 31B, testé à la demande de
+l'utilisateur) confirme la robustesse : il ne fait plus planter
+l'application, même s'il n'est pas utilisable pour un vrai test de rendu
+narratif (il ignore l'instruction de format).
+
 ## 2026-09-15 — Chapitre affiché en direct, écho immédiat de l'action
 
 Suite à l'analyse des temps de génération réels (mesurés via les métriques

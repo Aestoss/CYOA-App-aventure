@@ -17,7 +17,7 @@ const {
   addTrackedItem, updateTrackedItem, deleteTrackedItem,
   addNpc, updateNpc, deleteNpc,
   createSave, getSave, selectCharacter, continueAfterVictory, deleteSave,
-  playTurn, playTurnStreaming, rewindToTurn, regenerateTurn, getSettings,
+  playTurn, playTurnStreaming, rewindToTurn, regenerateTurn, regenerateTurnStreaming, getSettings,
   listAvailableOllamaModels, getOllamaStatus
 } = require('./lib/gameEngine');
 const { getTotalCosts, getWorldCosts } = require('./lib/costTracker');
@@ -418,6 +418,35 @@ app.post('/api/saves/:id/turns/:turnNumber/regenerate', async (req, res) => {
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: e.message });
+  }
+});
+
+// Streaming counterpart of the route above — same newline-delimited JSON
+// event protocol as POST /api/saves/:id/turn/stream.
+app.post('/api/saves/:id/turns/:turnNumber/regenerate/stream', async (req, res) => {
+  const { action, note, debug, providerOverride } = req.body;
+  const turnNumber = Number(req.params.turnNumber);
+
+  res.writeHead(200, {
+    'content-type': 'application/x-ndjson; charset=utf-8',
+    'cache-control': 'no-cache',
+    'x-accel-buffering': 'no'
+  });
+  const send = (event) => res.write(JSON.stringify(event) + '\n');
+
+  try {
+    const save = getSave(req.params.id);
+    const turn = await regenerateTurnStreaming(req.params.id, turnNumber, {
+      action, note, providerOverride,
+      onChapterChunk: (text) => send({ type: 'chunk', text })
+    });
+    const itemDefs = db.get('trackedItemDefs').filter({ worldId: save.worldId }).value();
+    send({ type: 'done', turn: publicTurn(turn, { debug: Boolean(debug), itemDefs }) });
+  } catch (e) {
+    console.error(e);
+    send({ type: 'error', message: e.message });
+  } finally {
+    res.end();
   }
 });
 
