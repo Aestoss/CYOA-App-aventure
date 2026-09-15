@@ -5,6 +5,24 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-15 — Correctif : le simple fait d'ecrire sur stderr plantait tout
+
+Confirme par un run reel : la toute premiere commande du correctif CLIP
+precedent (`& $VenvPython -c "import clip" 2>$null`) faisait planter le
+script entier avec une "NativeCommandError", avant meme d'avoir pu
+determiner si CLIP etait installe ou non.
+
+Cause, verifiee (pas supposee) : sous Windows PowerShell 5.1, toute
+sortie sur stderr d'une commande native est transformee en `ErrorRecord`
+des qu'elle est capturee -- meme rediriger vers `2>$null` ne l'empeche
+pas. Comme ce script fixe `$ErrorActionPreference = "Stop"` en haut du
+fichier, cet `ErrorRecord` devient une erreur bloquante et arrete tout,
+meme si la sortie stderr en question n'etait qu'un avertissement pip sans
+rapport avec un echec reel. Corrige en abaissant temporairement
+`$ErrorActionPreference` a `"Continue"` autour de ce bloc de commandes
+natives (restaure juste apres) -- `$LASTEXITCODE` continue d'etre verifie
+normalement pour detecter un vrai echec.
+
 ## 2026-09-15 — Correctif : PIP_CONSTRAINT ne marchait pas non plus pour CLIP
 
 Confirme par un troisieme run reel identique : meme apres le correctif
