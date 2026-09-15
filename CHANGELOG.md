@@ -5,6 +5,17 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-15 — Ajout de 2 modèles Gemini à la liste déroulante
+
+Ajout de `gemini-3.5-flash-lite` (utilisé et confirmé fonctionnel pendant
+les tests réels de ce jour) et `gemma-4-31b-it` (Gemma 4, sorti en avril
+2026, servi via la même API Gemini) aux préréglages du menu déroulant de
+modèle. L'ID exact de Gemma a été vérifié par recherche avant ajout,
+après l'incident précédent où `gemini-3.6-pro` (un ID inventé/inexistant)
+s'était retrouvé dans les préréglages. Le libellé de Gemma note
+explicitement que le format de réponse attendu (chapitre + bloc META) n'est
+pas fiablement respecté par ce modèle, observé pendant les tests.
+
 ## 2026-09-15 — Correctif : le chapitre affiché se terminait par "===META"
 
 Signalé par l'utilisateur en conditions réelles (Haiku 4.5) : le texte

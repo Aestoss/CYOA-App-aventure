@@ -1749,7 +1749,9 @@ const MODEL_PRESETS = {
   ],
   gemini: [
     { id: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash — $0.75/$3.75 per 1M' },
-    { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro (preview)' }
+    { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro (preview)' },
+    { id: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash Lite — économique, bon pour les tests' },
+    { id: 'gemma-4-31b-it', label: 'Gemma 4 31B — quota gratuit généreux, format moins fiable' }
   ],
   ollama: [
     { id: 'llama3.1:8b', label: 'Llama 3.1 8B — rapide, ~5 Go VRAM' },
