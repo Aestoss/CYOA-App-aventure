@@ -5,6 +5,58 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-15 — Réorganisation complète de la page de tour (inspirée d'Infinite Worlds)
+
+Suite à l'analyse d'une vraie capture d'écran d'Infinite Worlds (confirmée
+élément par élément par l'utilisateur) et de plusieurs maquettes comparées
+avant implémentation :
+
+- **Le texte du tour passe en premier**, immédiatement après le titre/
+  personnage/objectif — tout le reste (icônes 🔍/✏️, info secrète, image,
+  objets suivis, actions) suit en dessous, plus au-dessus comme avant.
+- **Carte à deux volets toujours visible** (`public/index.html` :
+  `.segmented-card`) remplaçant l'ancien bouton 🖋️ + popover caché :
+  "Ton action" (🎯) et "Instruction au narrateur (optionnel)" (🖋️) sont
+  désormais deux champs permanents, chacun avec sa propre icône. Envoyer
+  avec les deux remplis combine action ET instruction en un seul tour ;
+  avec seulement l'instruction remplie, c'est l'ancien "mode auteur" (une
+  instruction hors-personnage pure) ; avec seulement l'action, un tour
+  normal.
+- **Backend** : `authorNote` (déjà utilisé par la régénération pour "je
+  veux qu'il se passe plutôt...") est maintenant aussi accepté par
+  `POST /turn` et `POST /turn/stream` — c'était la seule vraie modification
+  back-end nécessaire, `playTurn`/`playTurnStreaming` le supportaient déjà.
+  Le texte du prompt ("NARRATOR GUIDANCE FOR THIS RETRY...") a été
+  généralisé en "FOR THIS TURN" puisqu'il s'applique maintenant aussi hors
+  régénération.
+- **Navigation de tour unifiée**, affichée sur toutes les pages (tour
+  actuel, passé, ou fin de partie) : "Tour X / Y" puis une rangée à trois
+  boutons [‹ Précédent] [🔄 Régénérer, centré] [Suivant ›] — Régénérer et
+  Suivant apparaissent désormais aussi sur les pages passées (avant,
+  seules "Reprendre à partir d'ici" y était disponible).
+- **Sécurité ajoutée en cours de route, pas dans la demande initiale** :
+  régénérer un tour, quel qu'il soit, fait un rewind puis rejoue
+  (`rewindToTurn` dans `lib/gameEngine.js`) — donc régénérer un tour passé
+  supprime silencieusement tous les tours suivants, exactement comme
+  "Reprendre à partir d'ici". Ajout d'un avertissement visible dans la
+  popover ("supprimera aussi les N tours suivants") et d'une confirmation
+  native quand ce n'est pas le dernier tour, pour ne pas exposer une
+  action aussi destructrice sans le signaler.
+- **Bug de structure trouvé en testant** : la popover de régénération était
+  restée imbriquée dans `#latestPageActions`, qui est justement masqué sur
+  une page passée — elle ne s'ouvrait donc jamais visuellement depuis une
+  page passée malgré un JS correct. Sortie comme élément frère indépendant.
+- 👤 (fiche personnage) volontairement laissé de côté cette fois — son
+  popup n'a pas encore été conçu, sera fait dans une prochaine passe.
+
+Vérifié en navigateur réel (Playwright, fournisseur mock, sauvegarde à
+plusieurs tours) : ordre du DOM, indicateur de tour sur chaque page,
+double-soumission action+instruction, soumission instruction seule,
+avertissement + confirmation avant régénération d'un tour passé (annulée
+puis acceptée pour de vrai — total de tours réduit comme attendu),
+régénération du dernier tour sans avertissement ni confirmation, bouton
+d'édition du monde fonctionnel depuis sa nouvelle position.
+
 ## 2026-09-15 — Refonte de la barre d'action (bas de l'écran)
 
 Demandé après capture d'écran mobile : le bouton "mode auteur" (🔍) était

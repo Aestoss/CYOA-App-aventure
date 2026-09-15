@@ -287,14 +287,12 @@ input[type="range"] { width: 100%; margin: 6px 0 4px; accent-color: var(--accent
 
 /* Story view */
 .story-header-row { display: flex; align-items: center; justify-content: space-between; }
-.story-header-actions { display: flex; gap: 8px; }
 #storyTitle { font-family: var(--serif); font-weight: 600; margin: 0 0 14px; }
 
-.page-nav { display: flex; align-items: center; justify-content: center; gap: 14px; margin-bottom: 16px; }
-.page-nav.hidden { display: none; }
-.page-nav .icon-btn { border-color: var(--accent); color: var(--accent); }
-.page-nav .icon-btn:disabled { border-color: var(--border); color: var(--text-dim); }
-.page-indicator { font-size: 0.85rem; color: var(--text-dim); min-width: 90px; text-align: center; }
+/* Icons about the turn (reveal hidden info, edit the world) sit right below
+   the chapter text -- the text itself always comes first, everything else
+   about the turn follows it. */
+.turn-icon-row { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 14px; }
 
 .secret-info-box {
   background: rgba(201, 150, 44, 0.1);
@@ -321,34 +319,65 @@ input[type="range"] { width: 100%; margin: 6px 0 4px; accent-color: var(--accent
 }
 .regenerate-popover.hidden { display: none; }
 .regenerate-popover-actions { display: flex; align-items: center; gap: 16px; }
-
-/* Sticky on the whole row, not just the form: the icon buttons (🔍/🖋️/🔄)
-   are siblings of .action-form, not inside it, so if only the form were
-   sticky it would anchor to the viewport bottom on its own while the icons
-   (normal document flow) drifted independently as the textarea grows taller
-   -- visually splitting a single row in two. */
-.action-row {
-  display: flex;
-  gap: 8px;
-  align-items: flex-end;
-  position: sticky;
-  bottom: 0;
-  background: var(--bg);
-  padding: 8px 0 calc(12px + env(safe-area-inset-bottom));
+.regenerate-warning {
+  background: rgba(217, 119, 111, 0.12);
+  border: 1px solid rgba(217, 119, 111, 0.4);
+  color: #d9776f;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  margin: 0 0 12px;
 }
-.action-row .action-form { flex: 1; margin: 0; }
+.regenerate-warning.hidden { display: none; }
 
-/* Auto-growing textareas (action box, regenerate popover, author-instruction
-   popover): grow in height as you type instead of scrolling horizontally,
-   capped so a very long message scrolls internally rather than taking over
-   the screen. Height is set from JS (autoGrowTextarea in app.js) on input. */
-.action-form textarea,
+/* The two always-visible fields (player action, optional narrator
+   instruction) as one card with a small icon per field, instead of a
+   popover that silently repurposed a single shared box -- if both fields
+   have text, both are sent together as one turn (see playAction in app.js). */
+.segmented-card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 14px;
+}
+.segment { display: flex; gap: 10px; padding: 12px; margin: 0; }
+.segment + .segment { border-top: 1px solid var(--border); }
+.segment-icon { font-size: 1.1rem; line-height: 1.4; flex-shrink: 0; }
+.segment-body { flex: 1; display: flex; flex-direction: column; }
+.segment-label { font-size: 0.76rem; color: var(--text-dim); margin-bottom: 5px; }
+.segment-body textarea { margin: 0; background: var(--bg-input); }
+
+.send-btn { width: 100%; }
+
+.latest-page-actions.hidden { display: none; }
+
+/* Auto-growing textareas (action/instruction fields, regenerate popover):
+   grow in height as you type instead of scrolling horizontally, capped so a
+   very long message scrolls internally rather than taking over the screen.
+   Height is set from JS (autoGrowTextarea in app.js) on input. */
+.segment-body textarea,
 .regenerate-popover textarea {
   resize: none;
   overflow-y: auto;
   max-height: 160px;
 }
-.latest-page-actions.hidden { display: none; }
+
+/* Shown on every page (latest, past, game-over) -- position in the story
+   and the ability to move through it don't depend on any of that. */
+.turn-nav { margin-top: 4px; }
+.turn-indicator { text-align: center; color: var(--text-dim); font-size: 0.82rem; margin-bottom: 8px; }
+.nav-row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; align-items: center; }
+.nav-link {
+  background: none; border: none; color: var(--text-dim);
+  font-family: var(--sans); font-size: 0.9rem; cursor: pointer;
+  padding: 10px 4px; min-height: 44px; display: flex; align-items: center; gap: 4px;
+}
+.nav-link:hover { color: var(--accent); }
+.nav-link:disabled { color: var(--border); cursor: default; }
+.nav-link.center { justify-content: center; }
+.nav-link.right { justify-content: flex-end; }
+.nav-link.hidden { display: none; }
 .story-character { color: var(--text-dim); font-size: 0.85rem; margin: -10px 0 14px; }
 .story-character.hidden { display: none; }
 .story-objective { color: var(--accent); font-size: 0.9rem; margin: -6px 0 16px; }

@@ -360,10 +360,14 @@ app.post('/api/saves/:id/continue', (req, res) => {
 
 app.post('/api/saves/:id/turn', async (req, res) => {
   try {
-    const { action, authorMode, debug, providerOverride } = req.body;
+    const { action, authorMode, authorNote, debug, providerOverride } = req.body;
     if (!action || !action.trim()) return res.status(400).json({ error: 'action is required' });
     const save = getSave(req.params.id);
-    const turn = await playTurn(req.params.id, action.trim(), { authorMode: Boolean(authorMode), providerOverride });
+    const turn = await playTurn(req.params.id, action.trim(), {
+      authorMode: Boolean(authorMode),
+      authorNote: authorNote && authorNote.trim() ? authorNote.trim() : undefined,
+      providerOverride
+    });
     const itemDefs = db.get('trackedItemDefs').filter({ worldId: save.worldId }).value();
     res.json(publicTurn(turn, { debug: Boolean(debug), itemDefs }));
   } catch (e) {
@@ -380,7 +384,7 @@ app.post('/api/saves/:id/turn', async (req, res) => {
 // one of: {"type":"chunk","text":...}, {"type":"done","turn":...}, or
 // {"type":"error","message":...} (terminal either way).
 app.post('/api/saves/:id/turn/stream', async (req, res) => {
-  const { action, authorMode, debug, providerOverride } = req.body;
+  const { action, authorMode, authorNote, debug, providerOverride } = req.body;
   if (!action || !action.trim()) return res.status(400).json({ error: 'action is required' });
 
   res.writeHead(200, {
@@ -394,6 +398,7 @@ app.post('/api/saves/:id/turn/stream', async (req, res) => {
     const save = getSave(req.params.id);
     const turn = await playTurnStreaming(req.params.id, action.trim(), {
       authorMode: Boolean(authorMode),
+      authorNote: authorNote && authorNote.trim() ? authorNote.trim() : undefined,
       providerOverride,
       onChapterChunk: (text) => send({ type: 'chunk', text })
     });

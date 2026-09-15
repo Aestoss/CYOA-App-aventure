@@ -79,25 +79,40 @@
   <section id="view-story" class="view hidden">
     <div class="story-header-row">
       <button id="backBtn" class="text-btn" data-i18n="backToStories"></button>
-      <div class="story-header-actions">
-        <button id="editWorldBtn" class="icon-btn" data-i18n-title="editWorldBtn">✏️</button>
-      </div>
     </div>
     <h2 id="storyTitle"></h2>
     <p id="storyCharacter" class="story-character hidden"></p>
     <p id="storyObjective" class="story-objective hidden"></p>
 
-    <div id="pageNav" class="page-nav">
-      <button id="prevPageBtn" class="icon-btn" data-i18n-title="prevPageBtn">‹</button>
-      <span id="pageIndicator" class="page-indicator"></span>
-      <button id="nextPageBtn" class="icon-btn" data-i18n-title="nextPageBtn">›</button>
-    </div>
-
-    <div id="secretInfoBox" class="secret-info-box hidden"></div>
-    <div id="trackedItemsPanel" class="tracked-items-panel hidden"></div>
-    <div id="storyImage" class="story-image hidden"><img id="storyImageEl" alt=""></div>
+    <!-- The turn's own text always comes first -- everything else about the
+         turn (reveal/edit, secret info, image, tracked items, actions) is
+         secondary and follows below it. -->
     <div id="pageContent" class="chapter-feed"></div>
     <div id="gameOverBanner" class="game-over-banner hidden"></div>
+
+    <div class="turn-icon-row">
+      <button id="authorModeBtn" class="icon-btn" data-i18n-title="authorModeBtn">🔍</button>
+      <button id="editWorldBtn" class="icon-btn" data-i18n-title="editWorldBtn">✏️</button>
+    </div>
+    <div id="secretInfoBox" class="secret-info-box hidden"></div>
+    <div id="storyImage" class="story-image hidden"><img id="storyImageEl" alt=""></div>
+    <div id="trackedItemsPanel" class="tracked-items-panel hidden"></div>
+
+    <!-- Not nested inside pastPageActions/latestPageActions: regenerateBtn
+         lives in the always-visible turn-nav below and works on both a past
+         page and the latest one, so this popover must stay reachable
+         regardless of which of the two blocks below is hidden. -->
+    <div id="regeneratePopover" class="regenerate-popover hidden">
+      <p id="regenerateWarning" class="regenerate-warning hidden"></p>
+      <label><span data-i18n="regenerateActionLabel"></span><textarea rows="1" id="regenerateActionInput"></textarea></label>
+      <label><span data-i18n="regenerateNoteLabel"></span> <span class="hint-inline" data-i18n="regenerateNoteHint"></span>
+        <textarea rows="1" id="regenerateNoteInput"></textarea>
+      </label>
+      <div class="regenerate-popover-actions">
+        <button id="regenerateConfirmBtn" class="primary-btn" data-i18n="regenerateConfirmBtn"></button>
+        <button id="regenerateCancelBtn" class="text-btn" data-i18n="cancelBtn"></button>
+      </div>
+    </div>
 
     <div id="pastPageActions" class="past-page-actions hidden">
       <button id="resumeFromPageBtn" class="primary-btn" data-i18n="resumeFromPageBtn"></button>
@@ -105,34 +120,37 @@
     </div>
 
     <div id="latestPageActions" class="latest-page-actions">
-      <div id="regeneratePopover" class="regenerate-popover hidden">
-        <label><span data-i18n="regenerateActionLabel"></span><textarea rows="1" id="regenerateActionInput"></textarea></label>
-        <label><span data-i18n="regenerateNoteLabel"></span> <span class="hint-inline" data-i18n="regenerateNoteHint"></span>
-          <textarea rows="1" id="regenerateNoteInput"></textarea>
-        </label>
-        <div class="regenerate-popover-actions">
-          <button id="regenerateConfirmBtn" class="primary-btn" data-i18n="regenerateConfirmBtn"></button>
-          <button id="regenerateCancelBtn" class="text-btn" data-i18n="cancelBtn"></button>
-        </div>
-      </div>
-      <div id="authorInstructionPopover" class="regenerate-popover hidden">
-        <label><span data-i18n="authorInstructionPopoverLabel"></span>
-          <textarea rows="1" id="authorInstructionInput" data-i18n-placeholder="authorInstructionPlaceholder"></textarea>
-        </label>
-        <div class="regenerate-popover-actions">
-          <button id="authorInstructionConfirmBtn" class="primary-btn" data-i18n="authorInstructionConfirmBtn"></button>
-          <button id="authorInstructionCancelBtn" class="text-btn" data-i18n="cancelBtn"></button>
-        </div>
-      </div>
       <div id="suggestedActions" class="suggested-actions"></div>
-      <div class="action-row">
-        <button id="authorModeBtn" class="icon-btn" data-i18n-title="authorModeBtn">🔍</button>
-        <button id="authorInstructionBtn" class="icon-btn hidden" data-i18n-title="authorInstructionBtn">🖋️</button>
-        <button id="regenerateBtn" class="icon-btn hidden" data-i18n-title="regenerateBtn">🔄</button>
-        <form id="actionForm" class="action-form">
-          <textarea id="actionInput" rows="1" data-i18n-placeholder="actionInputPlaceholder" autocomplete="off"></textarea>
-          <button type="submit" class="primary-btn" data-i18n="sendBtn"></button>
-        </form>
+      <form id="actionForm">
+        <div class="segmented-card">
+          <label class="segment action">
+            <span class="segment-icon" aria-hidden="true">🎯</span>
+            <span class="segment-body">
+              <span class="segment-label" data-i18n="actionSegmentLabel"></span>
+              <textarea id="actionInput" rows="1" data-i18n-placeholder="actionInputPlaceholder" autocomplete="off"></textarea>
+            </span>
+          </label>
+          <label class="segment instruction">
+            <span class="segment-icon" aria-hidden="true">🖋️</span>
+            <span class="segment-body">
+              <span class="segment-label" data-i18n="instructionSegmentLabel"></span>
+              <textarea id="instructionInput" rows="1" data-i18n-placeholder="instructionPlaceholder" autocomplete="off"></textarea>
+            </span>
+          </label>
+        </div>
+        <button type="submit" class="primary-btn send-btn" data-i18n="sendBtn"></button>
+      </form>
+    </div>
+
+    <!-- Shown on every page, latest or past, game-over or not -- position in
+         the story and the ability to move through it don't depend on any of
+         that. -->
+    <div class="turn-nav">
+      <div id="pageIndicator" class="turn-indicator"></div>
+      <div class="nav-row3">
+        <button id="prevPageBtn" class="nav-link" data-i18n-title="prevPageBtn">‹ <span data-i18n="prevTurnLabel"></span></button>
+        <button id="regenerateBtn" class="nav-link center" data-i18n-title="regenerateBtn">🔄 <span data-i18n="regenerateLabel"></span></button>
+        <button id="nextPageBtn" class="nav-link right" data-i18n-title="nextPageBtn"><span data-i18n="nextTurnLabel"></span> ›</button>
       </div>
     </div>
   </section>

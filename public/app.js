@@ -32,12 +32,12 @@ const UI = {
     backToStories: '‹ Mes histoires',
     backGeneric: '‹ Retour',
     authorModeBtn: 'Mode auteur (révéler les informations cachées)',
-    authorInstructionBtn: 'Parler au narrateur (instruction hors-personnage)',
-    authorInstructionPopoverLabel: 'Instruction au narrateur',
-    authorInstructionConfirmBtn: 'Envoyer au narrateur',
     editWorldBtn: 'Modifier le monde',
-    prevPageBtn: 'Page précédente',
-    nextPageBtn: 'Page suivante',
+    prevPageBtn: 'Tour précédent',
+    prevTurnLabel: 'Précédent',
+    nextPageBtn: 'Tour suivant',
+    nextTurnLabel: 'Suivant',
+    turnIndicator: (n, total) => `Tour ${n} / ${total}`,
     resumeFromPageBtn: "⏪ Reprendre à partir d'ici",
     resumeFromPageHint: 'Tout ce qui vient après cette page sera perdu.',
     rewindConfirm: 'Reprendre à partir de cette page ? Tout ce qui vient après sera définitivement perdu.',
@@ -46,11 +46,16 @@ const UI = {
     regenerateNoteHint: '(optionnel — "je veux qu\'il se passe plutôt...")',
     regenerateConfirmBtn: 'Régénérer',
     regenerateBtn: 'Régénérer ce tour',
+    regenerateLabel: 'Régénérer',
+    regeneratePastWarning: n => `⚠️ Régénérer ce tour supprimera aussi les ${n} tour${n > 1 ? 's' : ''} suivant${n > 1 ? 's' : ''}.`,
+    regeneratePastConfirm: 'Régénérer ce tour supprimera définitivement tous les tours suivants. Continuer ?',
     cancelBtn: 'Annuler',
     saveBtn: 'Enregistrer',
     sendBtn: 'Envoyer',
+    actionSegmentLabel: 'Ton action',
+    instructionSegmentLabel: 'Instruction au narrateur (optionnel)',
     actionInputPlaceholder: 'Que fais-tu ?',
-    authorInstructionPlaceholder: 'Instruction au narrateur (hors-personnage)...',
+    instructionPlaceholder: 'Ce que tu veux qu\'il se passe...',
     narratorThinking: 'Le narrateur réfléchit...',
     narratorApplyingInstruction: "Le narrateur applique l'instruction...",
     illegibleResponse: n => `Réponse du serveur illisible (HTTP ${n}).`,
@@ -212,12 +217,12 @@ const UI = {
     backToStories: '‹ My stories',
     backGeneric: '‹ Back',
     authorModeBtn: 'Author mode (reveal hidden information)',
-    authorInstructionBtn: 'Talk to the narrator (out-of-character instruction)',
-    authorInstructionPopoverLabel: 'Instruction to the narrator',
-    authorInstructionConfirmBtn: 'Send to narrator',
     editWorldBtn: 'Edit the world',
-    prevPageBtn: 'Previous page',
-    nextPageBtn: 'Next page',
+    prevPageBtn: 'Previous turn',
+    prevTurnLabel: 'Previous',
+    nextPageBtn: 'Next turn',
+    nextTurnLabel: 'Next',
+    turnIndicator: (n, total) => `Turn ${n} / ${total}`,
     resumeFromPageBtn: '⏪ Resume from here',
     resumeFromPageHint: 'Everything after this page will be lost.',
     rewindConfirm: 'Resume from this page? Everything after it will be permanently lost.',
@@ -226,11 +231,16 @@ const UI = {
     regenerateNoteHint: '(optional — "I want this to happen instead...")',
     regenerateConfirmBtn: 'Regenerate',
     regenerateBtn: 'Regenerate this turn',
+    regenerateLabel: 'Regenerate',
+    regeneratePastWarning: n => `⚠️ Regenerating this turn will also delete the ${n} turn${n > 1 ? 's' : ''} after it.`,
+    regeneratePastConfirm: 'Regenerating this turn will permanently delete every turn after it. Continue?',
     cancelBtn: 'Cancel',
     saveBtn: 'Save',
     sendBtn: 'Send',
+    actionSegmentLabel: 'Your action',
+    instructionSegmentLabel: 'Instruction to the narrator (optional)',
     actionInputPlaceholder: 'What do you do?',
-    authorInstructionPlaceholder: 'Instruction to the narrator (out-of-character)...',
+    instructionPlaceholder: 'What you want to happen...',
     narratorThinking: 'The narrator is thinking...',
     narratorApplyingInstruction: 'The narrator is applying the instruction...',
     illegibleResponse: n => `Unreadable server response (HTTP ${n}).`,
@@ -407,7 +417,7 @@ let currentSave = null;     // last-fetched save object (gameOver, activeCharact
 let currentTurns = [];      // all turns of the open save, oldest first — one "page" each
 let currentPageIndex = 0;   // which turn is currently displayed
 let debugModeOn = false;    // "mode auteur": reveals hidden info (secret info box, outcome badges) -- talking
-                             // to the narrator directly is a separate, explicit action (see authorInstructionBtn)
+                             // to the narrator is a separate, always-visible field (#instructionInput below)
 let previousView = 'home';
 let currentHomeTab = 'create'; // which home tab is active: 'create' | 'worlds' | 'saves'
 let pendingFirstAction = null; // world.firstAction while a background-popup first turn is being prefetched
@@ -1279,16 +1289,14 @@ function applySaveData(data, jumpToLatest) {
     objectiveEl.classList.add('hidden');
   }
   document.getElementById('authorModeBtn').classList.toggle('active', debugModeOn);
-  document.getElementById('authorInstructionBtn').classList.toggle('hidden', !debugModeOn);
   document.getElementById('regeneratePopover').classList.add('hidden');
-  document.getElementById('authorInstructionPopover').classList.add('hidden');
 
   // Worlds with a "background" popup generate their real first turn on
   // demand (world.firstAction) once a character is chosen — until that
   // first turn exists, show the popup and prefetch it behind the scenes
   // instead of trying to render a page that doesn't exist yet.
   if (currentTurns.length === 0 && data.world.background) {
-    document.getElementById('pageNav').classList.add('hidden');
+    document.querySelector('.turn-nav').classList.add('hidden');
     document.getElementById('secretInfoBox').classList.add('hidden');
     document.getElementById('trackedItemsPanel').classList.add('hidden');
     document.getElementById('storyImage').classList.add('hidden');
@@ -1299,6 +1307,7 @@ function applySaveData(data, jumpToLatest) {
     showBackgroundModal(data.world);
     return;
   }
+  document.querySelector('.turn-nav').classList.remove('hidden');
 
   currentPageIndex = jumpToLatest ? currentTurns.length - 1 : Math.min(currentPageIndex, currentTurns.length - 1);
   renderPage();
@@ -1380,12 +1389,15 @@ function renderPage() {
   const total = currentTurns.length;
   const isLatest = currentPageIndex === total - 1;
 
-  // A single-page save has nothing to navigate — hide the bar entirely
-  // rather than show two simultaneously-disabled, barely-visible arrows.
-  document.getElementById('pageNav').classList.toggle('hidden', total <= 1);
-  document.getElementById('pageIndicator').textContent = `Page ${currentPageIndex + 1} / ${total}`;
+  // Shown on every page regardless of latest/past/game-over -- where you are
+  // in the story and whether you can move through it don't depend on that.
+  document.getElementById('pageIndicator').textContent = t('turnIndicator')(currentPageIndex + 1, total);
   document.getElementById('prevPageBtn').disabled = currentPageIndex === 0;
   document.getElementById('nextPageBtn').disabled = isLatest;
+  // The opening chapter (turn 0) can never be regenerated (see
+  // regenerateTurn in gameEngine.js) -- everything else can be, whether
+  // it's the latest turn or a past one.
+  document.getElementById('regenerateBtn').classList.toggle('hidden', turn.turnNumber < 1);
 
   const secretBox = document.getElementById('secretInfoBox');
   if (debugModeOn) {
@@ -1426,7 +1438,6 @@ function renderPage() {
     latestActions.classList.toggle('hidden', Boolean(gameOver));
     if (!gameOver) {
       renderSuggestions(turn.suggestedActions || []);
-      document.getElementById('regenerateBtn').classList.toggle('hidden', turn.turnNumber < 1);
     }
   }
 }
@@ -1481,7 +1492,7 @@ function renderSuggestions(actions) {
     const btn = document.createElement('button');
     btn.className = 'suggestion-btn';
     btn.textContent = a;
-    btn.onclick = () => playAction(a);
+    btn.onclick = () => playAction({ actionText: a, instructionText: document.getElementById('instructionInput').value.trim() });
     wrap.appendChild(btn);
   });
 }
@@ -1507,17 +1518,33 @@ function resolveProviderOverride() {
   return { provider: fallbackProvider, model: document.getElementById('fallbackModel').value.trim() };
 }
 
-async function playAction(action, { authorMode = false, sourceInput = null } = {}) {
-  const input = sourceInput || document.getElementById('actionInput');
-  input.value = '';
-  resizeTextarea(input);
+// actionText and instructionText are the raw contents of the two always-
+// visible fields (see the segmented-card markup in index.html). Which
+// combination is present decides the turn's semantics: both -> a normal
+// action with narrator guidance layered on top; only the instruction ->
+// the old "author mode" case, a pure out-of-character instruction with
+// nothing for the character to actually do; only the action -> an
+// ordinary turn. At least one of the two must be non-empty (callers check
+// this before calling in).
+async function playAction({ actionText, instructionText }) {
+  const actionEl = document.getElementById('actionInput');
+  const instructionEl = document.getElementById('instructionInput');
+  actionEl.value = '';
+  instructionEl.value = '';
+  resizeTextarea(actionEl);
+  resizeTextarea(instructionEl);
+
+  const authorMode = !actionText && Boolean(instructionText);
+  const effectiveAction = actionText || instructionText;
+  const authorNote = (actionText && instructionText) ? instructionText : undefined;
+
   const content = document.getElementById('pageContent');
   // Echo the action immediately rather than leaving the reader staring at
   // an emptied input box for the next several seconds -- it's the cheapest
   // possible signal that the click/submit actually registered.
   const echoedAction = document.createElement('div');
   echoedAction.className = 'player-action';
-  echoedAction.textContent = `→ ${action}`;
+  echoedAction.textContent = `→ ${effectiveAction}`;
   content.appendChild(echoedAction);
   const pending = document.createElement('p');
   pending.className = 'loading';
@@ -1538,7 +1565,7 @@ async function playAction(action, { authorMode = false, sourceInput = null } = {
     const res = await fetch(`${API}/saves/${currentSaveId}/turn/stream`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ action, authorMode, debug: debugModeOn, ...(providerOverride ? { providerOverride } : {}) })
+      body: JSON.stringify({ action: effectiveAction, authorMode, authorNote, debug: debugModeOn, ...(providerOverride ? { providerOverride } : {}) })
     });
     if (!res.ok || !res.body) throw new Error(t('illegibleResponse')(res.status));
 
@@ -1590,8 +1617,10 @@ async function playAction(action, { authorMode = false, sourceInput = null } = {
       echoedAction.remove();
       pending.remove();
       if (streaming) streaming.remove();
-      input.value = action;
-      resizeTextarea(input);
+      actionEl.value = actionText;
+      instructionEl.value = instructionText;
+      resizeTextarea(actionEl);
+      resizeTextarea(instructionEl);
       alert(t('errorPrefix') + e.message + t('retryHint'));
     }
   }
@@ -1599,34 +1628,15 @@ async function playAction(action, { authorMode = false, sourceInput = null } = {
 
 document.getElementById('actionForm').onsubmit = (e) => {
   e.preventDefault();
-  const input = document.getElementById('actionInput');
-  const val = input.value.trim();
-  if (val) playAction(val, { sourceInput: input });
-};
-
-document.getElementById('authorInstructionBtn').onclick = () => {
-  document.getElementById('regeneratePopover').classList.add('hidden');
-  const ta = document.getElementById('authorInstructionInput');
-  ta.value = '';
-  resizeTextarea(ta);
-  document.getElementById('authorInstructionPopover').classList.remove('hidden');
-  ta.focus();
-};
-document.getElementById('authorInstructionCancelBtn').onclick = () => {
-  document.getElementById('authorInstructionPopover').classList.add('hidden');
-};
-document.getElementById('authorInstructionConfirmBtn').onclick = () => {
-  const ta = document.getElementById('authorInstructionInput');
-  const val = ta.value.trim();
-  if (!val) return;
-  document.getElementById('authorInstructionPopover').classList.add('hidden');
-  playAction(val, { authorMode: true, sourceInput: ta });
+  const actionText = document.getElementById('actionInput').value.trim();
+  const instructionText = document.getElementById('instructionInput').value.trim();
+  if (actionText || instructionText) playAction({ actionText, instructionText });
 };
 
 autoGrowTextarea(document.getElementById('actionInput'), () => document.getElementById('actionForm').requestSubmit());
+autoGrowTextarea(document.getElementById('instructionInput'), () => document.getElementById('actionForm').requestSubmit());
 autoGrowTextarea(document.getElementById('regenerateActionInput'));
 autoGrowTextarea(document.getElementById('regenerateNoteInput'));
-autoGrowTextarea(document.getElementById('authorInstructionInput'), () => document.getElementById('authorInstructionConfirmBtn').click());
 
 document.getElementById('prevPageBtn').onclick = () => {
   if (currentPageIndex > 0) { currentPageIndex--; renderPage(); }
@@ -1654,13 +1664,26 @@ document.getElementById('resumeFromPageBtn').onclick = async () => {
 
 document.getElementById('regenerateBtn').onclick = () => {
   const turn = currentTurns[currentPageIndex];
-  document.getElementById('authorInstructionPopover').classList.add('hidden');
   const actionField = document.getElementById('regenerateActionInput');
   const noteField = document.getElementById('regenerateNoteInput');
   actionField.value = turn.playerAction;
   noteField.value = '';
   resizeTextarea(actionField);
   resizeTextarea(noteField);
+
+  // Regenerating rewinds to just before this turn and replays it, which
+  // silently discards every turn after it (see rewindToTurn in
+  // gameEngine.js) -- exactly like "Resume from here", so a turn that
+  // isn't the latest gets the same explicit warning before it happens.
+  const turnsAfter = currentTurns.length - 1 - currentPageIndex;
+  const warning = document.getElementById('regenerateWarning');
+  if (turnsAfter > 0) {
+    warning.textContent = t('regeneratePastWarning')(turnsAfter);
+    warning.classList.remove('hidden');
+  } else {
+    warning.classList.add('hidden');
+  }
+
   document.getElementById('regeneratePopover').classList.remove('hidden');
 };
 document.getElementById('regenerateCancelBtn').onclick = () => {
@@ -1668,6 +1691,8 @@ document.getElementById('regenerateCancelBtn').onclick = () => {
 };
 document.getElementById('regenerateConfirmBtn').onclick = async () => {
   const turn = currentTurns[currentPageIndex];
+  const turnsAfter = currentTurns.length - 1 - currentPageIndex;
+  if (turnsAfter > 0 && !confirm(t('regeneratePastConfirm'))) return;
   const action = document.getElementById('regenerateActionInput').value.trim();
   const note = document.getElementById('regenerateNoteInput').value.trim();
   const updatedAtBefore = currentSave.updatedAt;
