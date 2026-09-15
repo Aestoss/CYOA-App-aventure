@@ -27,6 +27,14 @@ machine Windows (jamais exécutable dans ce bac à sable) :
   script compare maintenant automatiquement la résolution DNS système à
   celle du DNS public 1.1.1.1 et indique directement si le blocage vient
   de l'antivirus/DNS local plutôt que de renvoyer un message générique.
+  Première version de cette détection cassée à l'usage : elle comparait le
+  message d'erreur à un texte français littéral (`"résol"`), mais
+  PowerShell 5.1 Windows lit un fichier `.ps1` sans BOM avec le codepage
+  ANSI du système -- les caractères accentués du script lui-même étaient
+  donc corrompus au chargement et ne correspondaient plus jamais au
+  message (correctement décodé, lui) renvoyé par .NET. Remplacé par une
+  détection sur le type d'exception (`WebExceptionStatus.NameResolutionFailure`,
+  `SocketError.HostNotFound`), indépendante de la langue de Windows.
 
 - **Plantage à l'ouverture du tunnel** : `Start-Process` refuse que
   `-RedirectStandardOutput` et `-RedirectStandardError` pointent vers le

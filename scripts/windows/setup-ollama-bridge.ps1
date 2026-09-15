@@ -378,6 +378,7 @@ if ($NoWatcher) {
 }
 
 $script:LastHttpError = $null
+$script:LastHttpErrorIsDns = $false
 
 function Get-HttpStatus($uri, $headers) {
   try {
@@ -386,9 +387,26 @@ function Get-HttpStatus($uri, $headers) {
       -Body '{"model":"__probe__","messages":[{"role":"user","content":"ping"}]}' `
       -TimeoutSec 15
     $script:LastHttpError = $null
+    $script:LastHttpErrorIsDns = $false
     return [int]$resp.StatusCode
   } catch {
     $script:LastHttpError = $_.Exception.Message
+    # Detected by exception type/status rather than message text: the message is
+    # localized (e.g. French "n'a pas pu etre resolu" vs English "could not be
+    # resolved"), and this .ps1 file's own accented literals can't be relied on
+    # to match either, since Windows PowerShell 5.1 reads a non-BOM script file
+    # using the system ANSI codepage, silently mangling non-ASCII characters.
+    $script:LastHttpErrorIsDns = $false
+    $probe = $_.Exception
+    while ($probe) {
+      if ($probe -is [System.Net.WebException] -and $probe.Status -eq [System.Net.WebExceptionStatus]::NameResolutionFailure) {
+        $script:LastHttpErrorIsDns = $true
+      }
+      if ($probe -is [System.Net.Sockets.SocketException] -and $probe.SocketErrorCode -eq [System.Net.Sockets.SocketError]::HostNotFound) {
+        $script:LastHttpErrorIsDns = $true
+      }
+      $probe = $probe.InnerException
+    }
     if ($_.Exception.Response) { return [int]$_.Exception.Response.StatusCode }
     return -1
   }
@@ -493,7 +511,7 @@ if ($publicStatusNoAuth -eq 401) {
   Write-Fail "Sans jeton via le tunnel public : reponse $publicStatusNoAuth (attendu 401) apres $($maxTries * 3)s d'attente.$detail"
   Write-Host "    Le tunnel Cloudflare lui-meme s'est bien ouvert (URL : $TunnelUrl) -- ce n'est donc pas un probleme de Caddy/Ollama."
 
-  if ($script:LastHttpError -match "résol|resolved|resolve") {
+  if ($script:LastHttpErrorIsDns) {
     $tunnelHost = ([Uri]$TunnelUrl).Host
     Write-Host ""
     Write-Host "    Ceci ressemble a un blocage DNS local plutot qu'a un vrai probleme de propagation :"
