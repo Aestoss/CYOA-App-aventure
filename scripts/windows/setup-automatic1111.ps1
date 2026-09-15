@@ -25,12 +25,17 @@
        one turns up there, moves it into the install's models folder instead
        of asking you to place it by hand. If none exist anywhere and no
        -ModelUrl was given, downloads a default checkpoint automatically
-       (Stable Diffusion 1.5, fp16, ~2 GB) so the install finishes without
-       you doing anything by hand -- use -ModelUrl to fetch a different model
-       instead, or -NoAutoModel to stop and pick one yourself.
-    4. Edits webui-user.bat to add the --api flag if it isn't already there
+       (NoobAI-XL v1.1, SDXL/anime/illustration, uncensored, ~7.1 GB) so the
+       install finishes without you doing anything by hand -- use -ModelUrl
+       to fetch a different model instead, or -NoAutoModel to stop and pick
+       one yourself.
+    4. Detects an RTX 50xx (Blackwell) GPU and, if found, overrides this
+       webui's default (outdated) PyTorch install command so it actually
+       runs on that hardware instead of crashing on the first generation --
+       see the comment above that step for why this is needed.
+    5. Edits webui-user.bat to add the --api flag if it isn't already there
        (idempotent -- running this script again never adds it twice).
-    5. Launches webui-user.bat and waits for its API to actually answer --
+    6. Launches webui-user.bat and waits for its API to actually answer --
        the very first launch installs several GB of dependencies (PyTorch
        etc.) and can take 10-15 minutes, so this polls patiently instead of
        declaring success too early.
@@ -84,9 +89,13 @@ param(
 )
 
 # Default checkpoint used when nothing else is found and -ModelUrl isn't
-# given -- Stable Diffusion 1.5, fp16, ungated (no HF login/token needed),
-# ~2 GB. Verified reachable before wiring it in here (2026-09).
-$DefaultModelUrl = "https://huggingface.co/Comfy-Org/stable-diffusion-v1-5-archive/resolve/main/v1-5-pruned-emaonly-fp16.safetensors"
+# given -- NoobAI-XL v1.1 (Laxhar Lab), an SDXL/Illustrious-based anime and
+# illustration checkpoint, epsilon-prediction (works with plain samplers,
+# unlike the separate v-pred release which needs extra WebUI settings),
+# uncensored, ~7.1 GB. Picked as the closest realistic match to the kind of
+# AI-illustration look apps like Infinite Worlds use -- Infinite Worlds
+# itself is closed-source and doesn't publish an exact checkpoint to match.
+$DefaultModelUrl = "https://huggingface.co/Laxhar/noobai-XL-1.1/resolve/main/NoobAI-XL-v1.1.safetensors"
 
 $ErrorActionPreference = "Stop"
 
@@ -290,7 +299,7 @@ if ($existingCheckpoints -and $existingCheckpoints.Count -gt 0) {
     exit 1
   } else {
     $downloadUrl = if ($ModelUrl) { $ModelUrl } else { $DefaultModelUrl }
-    $label = if ($ModelUrl) { "l'URL fournie" } else { "le modele par defaut (Stable Diffusion 1.5, fp16, ~2 Go)" }
+    $label = if ($ModelUrl) { "l'URL fournie" } else { "le modele par defaut (NoobAI-XL v1.1, SDXL/anime/illustration, non censure, ~7.1 Go)" }
     Write-Info "Aucun modele trouve -- telechargement de $label..."
     Write-Info "Cela peut prendre plusieurs minutes selon votre connexion. Utilisez -ModelUrl pour un autre modele, ou -NoAutoModel pour choisir vous-meme."
     $destName = Split-Path -Leaf ([Uri]$downloadUrl).LocalPath
@@ -305,7 +314,13 @@ if ($existingCheckpoints -and $existingCheckpoints.Count -gt 0) {
       Invoke-WebRequest -Uri $downloadUrl -OutFile $dest -UseBasicParsing
       Write-Ok "Modele telecharge : $destName"
     } catch {
-      Write-Fail "Le telechargement a echoue -- $($_.Exception.Message). Telechargez le modele manuellement dans $ModelsDir puis relancez ce script."
+      Write-Fail "Le telechargement a echoue -- $($_.Exception.Message)."
+      if (-not $ModelUrl) {
+        Write-Host "    Si Hugging Face demande une connexion (modele marque 'contenu mature'),"
+        Write-Host "    telechargez-le a la main depuis un navigateur ou vous etes connecte :"
+        Write-Host "      $downloadUrl"
+      }
+      Write-Host "    Placez le fichier dans $ModelsDir puis relancez ce script -- il le detectera."
       exit 1
     } finally {
       $ProgressPreference = $prevProgressPreference
@@ -314,13 +329,56 @@ if ($existingCheckpoints -and $existingCheckpoints.Count -gt 0) {
 }
 
 # ---------------------------------------------------------------------------
-# 4. Make sure --api is enabled (idempotent: never adds it twice)
+# 4. RTX 50xx (Blackwell) needs a newer PyTorch than this webui pins by
+#    default. AUTOMATIC1111's launch_utils.py still hardcodes torch==2.1.2
+#    (CUDA 12.1), which has no compiled kernels for the 50-series' sm_120
+#    architecture -- confirmed by real user reports, not assumed -- and
+#    fails on the very first generation with "no kernel image is available
+#    for execution on the device", well after the lengthy first-run install
+#    already succeeded. Detected and overridden here via webui-user.bat's
+#    own TORCH_COMMAND mechanism, which replaces that pinned install
+#    command with one pointed at PyTorch's cu128 (Blackwell-compatible)
+#    wheels -- everyone else's webui-user.bat is left untouched.
 # ---------------------------------------------------------------------------
 
-Write-Step "Activation du flag --api"
+Write-Step "Verification de la compatibilite GPU (RTX 50xx / Blackwell)"
+
+function Test-BlackwellGpu {
+  try {
+    $names = Get-CimInstance Win32_VideoController -ErrorAction Stop | Select-Object -ExpandProperty Name
+    return [bool]($names | Where-Object { $_ -match "RTX 50\d0" })
+  } catch {
+    return $false
+  }
+}
 
 $WebUiUserBat = Join-Path $ResolvedWebUiDir "webui-user.bat"
 $batContent = Get-Content $WebUiUserBat -Raw
+
+if (Test-BlackwellGpu) {
+  Write-Info "GPU RTX 50xx (Blackwell) detecte -- le PyTorch installe par defaut par ce webui n'a pas de noyaux compiles pour cette architecture et plante a la premiere generation d'image."
+  $torchLine = "set TORCH_COMMAND=pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128"
+  if ($batContent -match "(?m)^set TORCH_COMMAND=[^\r\n]*cu128") {
+    Write-Ok "TORCH_COMMAND est deja configure pour cu128 (compatible Blackwell)."
+  } elseif ($batContent -match "(?m)^set TORCH_COMMAND=[^\r\n]*") {
+    $batContent = $batContent -replace "(?m)^set TORCH_COMMAND=[^\r\n]*", $torchLine
+    Set-Content -Path $WebUiUserBat -Value $batContent -Encoding ASCII
+    Write-Ok "TORCH_COMMAND remplace par la version compatible cu128."
+  } else {
+    Add-Content -Path $WebUiUserBat -Value "`r`n$torchLine" -Encoding ASCII
+    $batContent = Get-Content $WebUiUserBat -Raw
+    Write-Ok "TORCH_COMMAND (cu128) ajoute a webui-user.bat."
+  }
+  Write-Info "Si le venv existant (dossier 'venv') a deja installe l'ancien torch, supprimez ce dossier avant de relancer pour forcer sa reinstallation."
+} else {
+  Write-Ok "Pas de GPU Blackwell (RTX 50xx) detecte -- aucun changement necessaire."
+}
+
+# ---------------------------------------------------------------------------
+# 5. Make sure --api is enabled (idempotent: never adds it twice)
+# ---------------------------------------------------------------------------
+
+Write-Step "Activation du flag --api"
 
 if ($batContent -match "(?m)^set COMMANDLINE_ARGS=[^\r\n]*--api") {
   Write-Ok "--api est deja active dans webui-user.bat."
@@ -345,7 +403,7 @@ if ($SkipLaunch) {
 }
 
 # ---------------------------------------------------------------------------
-# 5. Launch and wait for the API to actually answer -- the first run
+# 6. Launch and wait for the API to actually answer -- the first run
 #    installs several GB of dependencies, so this is patient on purpose.
 # ---------------------------------------------------------------------------
 

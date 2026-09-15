@@ -5,6 +5,59 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-15 — Script de nettoyage des telechargements IA image inutilises
+
+Nouveau `scripts/windows/cleanup-unused-image-tools.ps1`, suite a une
+recherche menee par l'utilisateur sur son PC qui a remonte deux categories
+de telechargements existants ne servant a rien pour Fogbound :
+
+- Deux modeles Hugging Face en cache (`runwayml/stable-diffusion-v1-5`,
+  `stabilityai/sd-turbo`, ~10.6 Go a eux deux) au format diffusers
+  (dossier pipeline multi-fichiers), pas un `.safetensors`/`.ckpt` unique
+  chargeable par AUTOMATIC1111 — et de toute facon des modeles anciens,
+  moderes et de qualite inferieure au NoobAI-XL desormais telecharge par
+  defaut par `setup-automatic1111.ps1` pour le style recherche (proche
+  d'Infinite Worlds, non censure). Les convertir n'aurait donc pas eu de
+  sens.
+- Une archive ComfyUI portable jamais extraite (~1.95 Go) avec son script
+  d'installation — ComfyUI est une UI differente d'AUTOMATIC1111 avec une
+  API differente (graphe de noeuds, pas `/sdapi/v1/txt2img`), donc
+  l'adopter demanderait de reecrire la partie fournisseur d'image cote
+  backend de Fogbound, pas juste lancer un script.
+
+Le script cherche ces elements automatiquement (cache Hugging Face
+standard, dossiers Telechargements/Bureau/Documents), affiche ce qu'il
+trouve et leur taille, et ne supprime rien par defaut — `-Delete` propose
+la suppression, avec une confirmation tapee (`OUI`) avant d'agir, vu qu'il
+s'agit de plusieurs Go de telechargements existants.
+
+## 2026-09-15 — Modele par defaut NoobAI-XL + correctif RTX 50xx (Blackwell)
+
+Deux ajouts a `setup-automatic1111.ps1` suite a une question sur quel
+modele choisir pour se rapprocher du style d'Infinite Worlds sur une RTX
+5080 :
+
+- **Modele par defaut change** pour NoobAI-XL v1.1 (Laxhar Lab), un
+  checkpoint SDXL/Illustrious anime et illustration, non censure, version
+  epsilon-prediction (compatible avec les samplers standards, contrairement
+  a la version v-pred separee qui demande des reglages WebUI en plus).
+  Infinite Worlds etant closed-source et ne publiant pas son modele exact,
+  c'est le choix le plus proche et le mieux considere actuellement pour ce
+  style. Le message d'echec de telechargement mentionne maintenant que
+  Hugging Face peut demander une connexion pour ce modele (marque "contenu
+  mature") et donne l'URL a ouvrir dans un navigateur si besoin.
+- **Correctif de compatibilite RTX 50xx (Blackwell) decouvert en
+  recherchant la question** : AUTOMATIC1111 fixe encore par defaut
+  torch==2.1.2 (CUDA 12.1) dans son `launch_utils.py`, une version sans
+  noyaux compiles pour l'architecture sm_120 des GPU 50xx (confirme par de
+  vrais rapports d'utilisateurs RTX 5080/5090) — le premier lancement
+  reussirait a installer les dependances puis planterait a la toute
+  premiere generation d'image avec "no kernel image is available for
+  execution on the device". Le script detecte maintenant une RTX 50xx via
+  `Win32_VideoController` et remplace `TORCH_COMMAND` dans
+  `webui-user.bat` par un pip install pointant vers les wheels PyTorch
+  cu128 (compatibles Blackwell) avant le premier lancement.
+
 ## 2026-09-15 — Script d'installation automatique d'AUTOMATIC1111
 
 Nouveau `scripts/windows/setup-automatic1111.ps1`, la pièce manquante pour
