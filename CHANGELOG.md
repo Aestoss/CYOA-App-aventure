@@ -7,8 +7,18 @@ que commit par commit.
 
 ## 2026-09-15 — Correctifs du pont PC (tunnel Cloudflare)
 
-Deux bugs découverts en testant `setup-ollama-bridge.ps1` sur une vraie
+Trois bugs découverts en testant `setup-ollama-bridge.ps1` sur une vraie
 machine Windows (jamais exécutable dans ce bac à sable) :
+
+- **Mauvaise URL de tunnel capturée** : cloudflared écrit dans ses logs
+  son propre point de terminaison de contrôle (`https://api.trycloudflare.com`)
+  avant d'afficher le nom d'hôte réellement assigné au tunnel (toujours un
+  sous-domaine à plusieurs mots séparés par des tirets, jamais un mot seul
+  comme "api"). L'expression régulière capturait la première correspondance
+  trouvée -- donc systématiquement la mauvaise URL -- et le script testait
+  ensuite une adresse qui n'était jamais reliée au proxy local, d'où le
+  405. Corrigé en exigeant au moins un tiret dans le sous-domaine et en
+  prenant la dernière correspondance trouvée.
 
 - **Plantage à l'ouverture du tunnel** : `Start-Process` refuse que
   `-RedirectStandardOutput` et `-RedirectStandardError` pointent vers le

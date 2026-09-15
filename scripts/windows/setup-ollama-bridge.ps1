@@ -447,8 +447,14 @@ while (-not $TunnelUrl -and $tries -lt 30) {
   $logContent = ""
   if (Test-Path $TunnelLogPath) { $logContent += (Get-Content $TunnelLogPath -Raw -ErrorAction SilentlyContinue) }
   if (Test-Path $TunnelErrLogPath) { $logContent += (Get-Content $TunnelErrLogPath -Raw -ErrorAction SilentlyContinue) }
-  if ($logContent -match "https://[a-zA-Z0-9-]+\.trycloudflare\.com") {
-    $TunnelUrl = $Matches[0]
+  # cloudflared also logs its own control-plane endpoint (https://api.trycloudflare.com)
+  # before printing the actual per-tunnel hostname. Real quick-tunnel names are always a
+  # multi-word hyphenated subdomain (e.g. good-toy-perfect-mice.trycloudflare.com), never
+  # a bare word like "api" -- require a hyphen to tell them apart, and take the last match
+  # in case the control-plane URL is mentioned again later (retries, telemetry, ...).
+  $urlMatches = [regex]::Matches($logContent, "https://[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)+\.trycloudflare\.com")
+  if ($urlMatches.Count -gt 0) {
+    $TunnelUrl = $urlMatches[$urlMatches.Count - 1].Value
   }
   $tries++
 }
