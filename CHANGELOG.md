@@ -5,6 +5,32 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-15 — Correctif : le chapitre affiché se terminait par "===META"
+
+Signalé par l'utilisateur en conditions réelles (Haiku 4.5) : le texte
+streamé se terminait quasiment systématiquement par un fragment du
+marqueur de fin, du type "===MET" ou "===META", visible par le joueur.
+
+Cause : `forwardChapterChunk` (`lib/gameEngine.js`) décidait si le texte
+reçu jusqu'ici pouvait être affiché en cherchant `===META===` dans le
+buffer accumulé (`indexOf`) -- mais tant que le marqueur n'est pas
+*entièrement* arrivé, `indexOf` renvoie -1, exactement comme s'il n'allait
+jamais arriver. Si la coupure entre deux morceaux du flux tombait pile au
+milieu du marqueur (ex: un morceau se terminant par "...\n===MET", le
+suivant commençant par "A===\n{...}"), le fragment "===MET" était
+considéré comme du texte de chapitre normal et affiché au joueur -- sans
+aucun moyen de le retirer une fois déjà affiché.
+
+Corrigé en retenant systématiquement les 9 derniers caractères du buffer
+tant que le marqueur complet n'a pas été trouvé (la longueur de
+"===META===" moins un caractère) -- juste assez pour ne jamais pouvoir
+afficher un préfixe du marqueur, avec un délai totalement imperceptible
+pour le lecteur. Vérifié avec plusieurs découpages volontairement
+pathologiques du marqueur (coupé en deux au milieu, coupé caractère par
+caractère) contre la logique exacte du correctif : aucune fuite dans
+aucun cas, texte final identique au cas de référence en un seul morceau.
+Revérifié aussi de bout en bout via `playTurnStreaming` (fournisseur mock).
+
 ## 2026-09-15 — Correctif : les 3 actions suggérées disparaissaient parfois
 
 Bug de fond dans le format streaming introduit ce jour même (chapitre en
