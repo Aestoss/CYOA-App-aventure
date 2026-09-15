@@ -24,15 +24,27 @@
        folder (no winget PATH guesswork -- see notes below).
     3. Generates (once) or reuses a secret bearer token, writes a Caddyfile
        that only forwards requests carrying that token, and starts Caddy.
-    4. Starts a Cloudflare "quick tunnel" pointing at Caddy and extracts the
+    4. Starts ollama-watcher.ps1 (a separate script next to this one), which
+       polls nvidia-smi and shows a tray icon (green/orange) so you can see
+       locally when the GPU is busy enough that a game might stutter. Caddy
+       routes /bridge/status to it, alongside the route to Ollama itself.
+    5. Starts a Cloudflare "quick tunnel" pointing at Caddy and extracts the
        public https://xxxx.trycloudflare.com URL it gets assigned.
-    5. Validates the FULL path from the public internet: confirms a request
+    6. Validates the FULL path from the public internet: confirms a request
        without the token is rejected (401) and a request with it reaches
        Ollama and gets a real completion back.
-    6. Pushes the new tunnel URL + secret to Fogbound's own Settings via its
-       API (POST /api/settings), then reads them back to confirm.
-    7. Keeps running in the foreground (Caddy + the tunnel must stay alive
+    7. Pushes the new tunnel URL + secret to Fogbound's own Settings via its
+       API (POST /api/settings), then reads them back to confirm. Fogbound
+       polls /bridge/status through the same tunnel to show its own
+       hors ligne/indisponible/disponible indicator and to decide, instantly
+       and without any extra round trip, whether to offer your configured
+       fallback provider for a given turn.
+    8. Keeps running in the foreground (Caddy + the tunnel must stay alive
        for this to keep working) until you press Ctrl+C, then cleans up.
+
+  See install-startup-task.ps1 to have this run automatically at logon
+  instead of by hand every time, with Windows itself restarting it if it
+  ever crashes while the PC stays on.
 
   Run it again any time you want to start a session -- the tunnel URL
   rotates every run (quick tunnels don't have a fixed hostname), so the
@@ -63,13 +75,20 @@
 .PARAMETER SkipFogboundUpdate
   If set, does everything except push settings to Fogbound automatically --
   use this if you'd rather copy the URL into Settings by hand.
+
+.PARAMETER NoWatcher
+  If set, skips starting the GPU watcher / tray icon entirely. Ollama and
+  the tunnel still work without it -- you just lose the local busy/idle
+  indicator and Fogbound's status indicator will show "offline" for the
+  /bridge/status route specifically (Ollama generation itself is unaffected).
 #>
 
 [CmdletBinding()]
 param(
   [string]$FogboundUrl = "https://fogbound-production.up.railway.app",
   [string]$Model = "qwen3:14b",
-  [switch]$SkipFogboundUpdate
+  [switch]$SkipFogboundUpdate,
+  [switch]$NoWatcher
 )
 
 $ErrorActionPreference = "Stop"
@@ -85,11 +104,20 @@ $CloudflaredExe = Join-Path $BinDir "cloudflared.exe"
 $ConfigPath   = Join-Path $WorkDir "config.json"
 $CaddyfilePath = Join-Path $WorkDir "Caddyfile"
 $TunnelLogPath = Join-Path $WorkDir "cloudflared.log"
+$TranscriptPath = Join-Path $WorkDir "bridge.log"
+$WatcherScriptPath = Join-Path $PSScriptRoot "ollama-watcher.ps1"
 $ProxyPort    = 8787
 $OllamaPort   = 11434
+$WatcherPort  = 8788
 
 New-Item -ItemType Directory -Force -Path $WorkDir | Out-Null
 New-Item -ItemType Directory -Force -Path $BinDir  | Out-Null
+
+# Mirrors everything below into a log file too, so a run launched hidden by
+# the Windows Scheduled Task (see install-startup-task.ps1) leaves something
+# inspectable -- Write-Host alone would otherwise vanish with no console
+# attached. Doesn't suppress the normal console output when run by hand.
+try { Start-Transcript -Path $TranscriptPath -Append | Out-Null } catch {}
 
 $script:ChildProcesses = @()
 
@@ -122,7 +150,7 @@ function Stop-StaleBridge {
   if (Test-Path $ConfigPath) {
     try {
       $cfg = Get-Content $ConfigPath -Raw | ConvertFrom-Json
-      foreach ($pidField in @('caddyPid', 'cloudflaredPid')) {
+      foreach ($pidField in @('caddyPid', 'cloudflaredPid', 'watcherPid')) {
         $procId = $cfg.$pidField
         if ($procId) {
           $proc = Get-Process -Id $procId -ErrorAction SilentlyContinue
@@ -137,7 +165,7 @@ function Get-BridgeConfig {
   if (Test-Path $ConfigPath) {
     return Get-Content $ConfigPath -Raw | ConvertFrom-Json
   }
-  return [pscustomobject]@{ secret = $null; caddyPid = $null; cloudflaredPid = $null }
+  return [pscustomobject]@{ secret = $null; caddyPid = $null; cloudflaredPid = $null; watcherPid = $null }
 }
 
 function Save-BridgeConfig($cfg) {
@@ -265,10 +293,23 @@ if (-not $cfg.secret) {
 }
 $Secret = $cfg.secret
 
+# Two routes behind the same bearer token: /bridge/status* goes to the GPU
+# watcher (ollama-watcher.ps1, a separate lightweight process -- see below)
+# so Fogbound can tell "offline" from "busy" from "available"; everything
+# else goes to Ollama itself, unchanged from before.
 $caddyfileContent = @"
 :$ProxyPort {
-	@authorized header Authorization "Bearer $Secret"
-	reverse_proxy @authorized 127.0.0.1:$OllamaPort
+	@authorizedStatus {
+		header Authorization "Bearer $Secret"
+		path /bridge/status*
+	}
+	@authorizedOllama {
+		header Authorization "Bearer $Secret"
+		not path /bridge/status*
+	}
+
+	reverse_proxy @authorizedStatus 127.0.0.1:$WatcherPort
+	reverse_proxy @authorizedOllama 127.0.0.1:$OllamaPort
 
 	respond "Unauthorized" 401
 }
@@ -287,6 +328,28 @@ $script:ChildProcesses += $caddyProcess
 $cfg.caddyPid = $caddyProcess.Id
 Save-BridgeConfig $cfg
 Start-Sleep -Seconds 2
+
+Write-Step "Demarrage du surveillant GPU (indicateur hors ligne/indisponible/disponible)"
+
+if ($NoWatcher) {
+  Write-Host "    Ignore (-NoWatcher)."
+} elseif (-not (Test-Path $WatcherScriptPath)) {
+  Write-Fail "ollama-watcher.ps1 introuvable a cote de ce script -- l'indicateur de statut ne fonctionnera pas, mais Ollama et le tunnel restent utilisables."
+} else {
+  $watcherProcess = Start-Process -FilePath "powershell.exe" `
+    -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$WatcherScriptPath`"", "-Port", $WatcherPort `
+    -WindowStyle Hidden -PassThru
+  $script:ChildProcesses += $watcherProcess
+  $cfg.watcherPid = $watcherProcess.Id
+  Save-BridgeConfig $cfg
+  Start-Sleep -Seconds 2
+  try {
+    Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$WatcherPort/" -TimeoutSec 3 | Out-Null
+    Write-Ok "Surveillant GPU actif sur le port $WatcherPort."
+  } catch {
+    Write-Fail "Le surveillant GPU ne repond pas encore sur le port $WatcherPort (regardez $WorkDir\watcher.log). Ollama et le tunnel restent utilisables sans lui."
+  }
+}
 
 function Get-HttpStatus($uri, $headers) {
   try {
@@ -390,6 +453,18 @@ try {
   exit 1
 }
 
+if (-not $NoWatcher) {
+  try {
+    $statusResp = Invoke-RestMethod -Method Get -Uri "$TunnelUrl/bridge/status" -Headers @{ Authorization = "Bearer $Secret" } -TimeoutSec 15
+    Write-Ok "Point de statut GPU joignable via le tunnel public -- etat actuel : $($statusResp.state)"
+  } catch {
+    # Not fatal: the actual text generation above already proved end to end --
+    # this only means Fogbound's colored indicator will show "hors ligne"
+    # until it's sorted out.
+    Write-Fail "Point de statut /bridge/status injoignable via le tunnel -- $($_.Exception.Message). La generation de texte fonctionne ; seul l'indicateur de statut dans Fogbound sera incorrect."
+  }
+}
+
 # ---------------------------------------------------------------------------
 # 6. Push settings to Fogbound automatically
 # ---------------------------------------------------------------------------
@@ -432,9 +507,12 @@ Write-Host " URL du tunnel   : $TunnelUrl"
 Write-Host " Modele utilise  : $Model"
 Write-Host " Fogbound        : $FogboundUrl"
 Write-Host ""
+Write-Host " Surveillant GPU  : $(if ($NoWatcher) { 'desactive (-NoWatcher)' } else { 'actif (icone dans la barre des taches)' })"
+Write-Host ""
 Write-Host " Dernière étape (manuelle) : ouvrez Fogbound -> Reglages, mettez"
 Write-Host " Fournisseur = 'Ollama (local)' et Modele = '$Model', puis Enregistrer."
 Write-Host ""
+Write-Host " Journal complet de cette execution : $TranscriptPath"
 Write-Host " Laissez cette fenetre ouverte tant que vous jouez avec Ollama."
 Write-Host " Appuyez sur Ctrl+C pour tout arreter proprement."
 Write-Host "=================================================================" -ForegroundColor Yellow
@@ -443,6 +521,7 @@ try {
   while ($true) { Start-Sleep -Seconds 5 }
 } finally {
   Write-Host ""
-  Write-Host "Arret du proxy et du tunnel..."
+  Write-Host "Arret du proxy, du surveillant et du tunnel..."
   Stop-Bridge
+  try { Stop-Transcript | Out-Null } catch {}
 }

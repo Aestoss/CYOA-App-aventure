@@ -171,6 +171,15 @@ const UI = {
     keyGeminiLabel: 'Clé API Gemini', keyGeminiHint: '(gratuite pour tester)',
     ollamaBaseUrlLabel: 'Adresse du serveur Ollama', ollamaBaseUrlHint: '(local uniquement — pas accessible si Fogbound tourne sur Railway, sauf via un tunnel)',
     keyOllamaLabel: 'Clé API Ollama', keyOllamaHint: '(généralement inutile en local)',
+    ollamaStatusOffline: 'Ollama : hors ligne', ollamaStatusBusy: 'Ollama : indisponible (GPU sollicité)', ollamaStatusAvailable: 'Ollama : disponible',
+    ollamaRefreshBtn: '🔄 Actualiser',
+    fallbackProviderLabel: 'Fournisseur de secours', fallbackProviderHint: '(utilisé ponctuellement si Ollama est hors ligne ou indisponible)',
+    fallbackProviderNone: '(aucun)',
+    fallbackModelLabel: 'Modèle de secours',
+    fallbackConfirmOfflineMsg: 'Ollama semble hors ligne (PC éteint ou pont non démarré).',
+    fallbackConfirmBusyMsg: 'Le GPU de votre PC est très sollicité — la génération via Ollama risque d\'être lente.',
+    fallbackConfirmUseBtn: 'Utiliser {provider} pour ce tour',
+    fallbackConfirmWaitBtn: 'Essayer quand même avec Ollama',
     settingsImagesHeading: 'Images', imagesEnabledLabel: "Génération d'images",
     keyStabilityLabel: 'Clé API Stability', keyReplicateLabel: 'Clé API Replicate',
     keyAlreadySaved: '•••••••• (déjà enregistrée)',
@@ -336,6 +345,15 @@ const UI = {
     keyGeminiLabel: 'Gemini API key', keyGeminiHint: '(free to try)',
     ollamaBaseUrlLabel: 'Ollama server address', ollamaBaseUrlHint: "(local only — unreachable if Fogbound runs on Railway, unless tunneled)",
     keyOllamaLabel: 'Ollama API key', keyOllamaHint: '(usually unnecessary locally)',
+    ollamaStatusOffline: 'Ollama: offline', ollamaStatusBusy: 'Ollama: unavailable (GPU busy)', ollamaStatusAvailable: 'Ollama: available',
+    ollamaRefreshBtn: '🔄 Refresh',
+    fallbackProviderLabel: 'Fallback provider', fallbackProviderHint: '(used one-off if Ollama is offline or unavailable)',
+    fallbackProviderNone: '(none)',
+    fallbackModelLabel: 'Fallback model',
+    fallbackConfirmOfflineMsg: 'Ollama appears to be offline (PC off, or the bridge isn\'t running).',
+    fallbackConfirmBusyMsg: 'Your PC\'s GPU is under heavy load — generating via Ollama may be slow.',
+    fallbackConfirmUseBtn: 'Use {provider} for this turn',
+    fallbackConfirmWaitBtn: 'Try with Ollama anyway',
     settingsImagesHeading: 'Images', imagesEnabledLabel: 'Image generation',
     keyStabilityLabel: 'Stability API key', keyReplicateLabel: 'Replicate API key',
     keyAlreadySaved: '•••••••• (already saved)',
@@ -1260,10 +1278,11 @@ function hideBackgroundModal() {
 // static one for worlds with a background) while the player reads the popup.
 async function triggerFirstTurn(action) {
   try {
+    const providerOverride = resolveProviderOverride();
     const res = await fetch(`${API}/saves/${currentSaveId}/turn`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ action, authorMode: false, debug: debugModeOn })
+      body: JSON.stringify({ action, authorMode: false, debug: debugModeOn, ...(providerOverride ? { providerOverride } : {}) })
     });
     const text = await res.text();
     let data;
@@ -1427,6 +1446,27 @@ function renderSuggestions(actions) {
   });
 }
 
+// Decides whether to offer the fallback provider for this one turn, using
+// only the already-known background-polled status (see pollOllamaStatus) --
+// deliberately no network check here, so this never adds latency to
+// submitting a turn. Returns a providerOverride object, or null to proceed
+// with the primary provider as configured.
+function resolveProviderOverride() {
+  if (document.getElementById('textProvider').value !== 'ollama') return null;
+  if (ollamaStatus.state === 'available') return null;
+
+  const fallbackProvider = document.getElementById('fallbackProvider').value;
+  if (!fallbackProvider) return null; // nothing configured to fall back to
+
+  const reason = t(ollamaStatus.state === 'busy' ? 'fallbackConfirmBusyMsg' : 'fallbackConfirmOfflineMsg');
+  const providerLabel = PROVIDER_LABELS[fallbackProvider] || fallbackProvider;
+  const question = t('fallbackConfirmUseBtn').replace('{provider}', providerLabel);
+  const useFallback = confirm(`${reason}\n\n${question}`);
+  if (!useFallback) return null;
+
+  return { provider: fallbackProvider, model: document.getElementById('fallbackModel').value.trim() };
+}
+
 async function playAction(action) {
   const input = document.getElementById('actionInput');
   input.value = '';
@@ -1437,12 +1477,14 @@ async function playAction(action) {
   content.appendChild(pending);
   document.getElementById('suggestedActions').innerHTML = '';
 
+  const providerOverride = resolveProviderOverride();
+
   const updatedAtBefore = currentSave.updatedAt;
   try {
     const res = await fetch(`${API}/saves/${currentSaveId}/turn`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ action, authorMode: debugModeOn, debug: debugModeOn })
+      body: JSON.stringify({ action, authorMode: debugModeOn, debug: debugModeOn, ...(providerOverride ? { providerOverride } : {}) })
     });
     const text = await res.text();
     let data;
@@ -1627,12 +1669,59 @@ document.getElementById('textModelPreset').onchange = () => {
   if (presetId) document.getElementById('textModel').value = presetId;
 };
 
+// ---------- Ollama bridge status (hors ligne / indisponible / disponible) ----------
+//
+// Polled continuously in the background (not just while Settings is open) so
+// that submitting a turn (playAction) can make its fallback decision off the
+// last-known value instantly, with zero added latency in that critical path.
+
+const PROVIDER_LABELS = { anthropic: 'Anthropic (Claude)', openai: 'OpenAI', openrouter: 'OpenRouter', gemini: 'Google (Gemini)' };
+let ollamaStatus = { state: 'offline' };
+
+function renderOllamaStatusIndicator() {
+  const dot = document.getElementById('ollamaStatusDot');
+  const text = document.getElementById('ollamaStatusText');
+  const state = ollamaStatus.state || 'offline';
+  dot.className = 'status-dot status-dot-' + state;
+  text.textContent = t(state === 'available' ? 'ollamaStatusAvailable' : state === 'busy' ? 'ollamaStatusBusy' : 'ollamaStatusOffline');
+}
+
+async function pollOllamaStatus() {
+  try {
+    ollamaStatus = await fetch(`${API}/ollama/status`).then(r => r.json());
+  } catch (e) {
+    ollamaStatus = { state: 'offline' };
+  }
+  renderOllamaStatusIndicator();
+}
+
+async function refreshOllamaModels() {
+  try {
+    const { models } = await fetch(`${API}/ollama/models`).then(r => r.json());
+    if (models && models.length) {
+      MODEL_PRESETS.ollama = models.map(id => ({ id, label: id }));
+      if (document.getElementById('textProvider').value === 'ollama') renderModelPresets('ollama');
+    }
+  } catch (e) { /* keep the static placeholder list if the bridge isn't reachable */ }
+}
+
+document.getElementById('ollamaRefreshBtn').onclick = () => {
+  pollOllamaStatus();
+  refreshOllamaModels();
+};
+
+setInterval(pollOllamaStatus, 12000);
+pollOllamaStatus();
+
 async function loadSettings() {
   const s = await fetch(`${API}/settings`).then(r => r.json());
   document.getElementById('textProvider').value = s.textProvider;
   document.getElementById('textModel').value = s.textModel || '';
   renderModelPresets(s.textProvider);
   document.getElementById('ollamaBaseUrl').value = s.ollamaBaseUrl || '';
+  document.getElementById('fallbackProvider').value = s.fallbackProvider || '';
+  document.getElementById('fallbackModel').value = s.fallbackModel || '';
+  refreshOllamaModels();
   document.getElementById('responseLanguage').value = s.language || 'fr';
   const lengthIdx = CHAPTER_LENGTH_VALUES.indexOf(s.chapterLength);
   document.getElementById('chapterLengthSlider').value = lengthIdx >= 0 ? lengthIdx : 1;
@@ -1655,6 +1744,8 @@ document.getElementById('saveSettingsBtn').onclick = async () => {
     textProvider: document.getElementById('textProvider').value,
     textModel: document.getElementById('textModel').value.trim(),
     ollamaBaseUrl: document.getElementById('ollamaBaseUrl').value.trim(),
+    fallbackProvider: document.getElementById('fallbackProvider').value,
+    fallbackModel: document.getElementById('fallbackModel').value.trim(),
     language: document.getElementById('responseLanguage').value,
     chapterLength: CHAPTER_LENGTH_VALUES[Number(document.getElementById('chapterLengthSlider').value)] || 'medium',
     imageProvider: document.getElementById('imageProvider').value,
@@ -1678,6 +1769,7 @@ document.getElementById('saveSettingsBtn').onclick = async () => {
     document.getElementById(`key-${p}`).value = '';
   });
   await loadSettings();
+  pollOllamaStatus(); // ollamaBaseUrl may have just changed
   setTimeout(() => { document.getElementById('settingsStatus').textContent = ''; }, 2000);
 };
 

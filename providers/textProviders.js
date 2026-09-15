@@ -130,6 +130,43 @@ async function callOllama({ system, user, apiKey, model, baseUrl }) {
   };
 }
 
+// Lists models already pulled on the Ollama instance, via the same
+// OpenAI-compatible surface as callOllama — feeds the Settings model
+// dropdown so it reflects what's actually installed instead of a fixed list.
+async function listOllamaModels({ apiKey, baseUrl }) {
+  const url = `${(baseUrl || 'http://localhost:11434').replace(/\/$/, '')}/v1/models`;
+  const res = await fetch(url, {
+    headers: { ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}) },
+    timeout: 5000
+  });
+  if (!res.ok) await throwApiError('Ollama', res);
+  const data = await res.json();
+  return (data.data || []).map(m => m.id);
+}
+
+// Reads the bridge's own /bridge/status route (served by the watcher script
+// on the PC, not by Ollama itself — see scripts/windows) to tell apart
+// "offline" (nothing answers) from "busy" (GPU under heavy load — another
+// game, or a generation already in flight) from "available". Deliberately
+// short-timeout and never throws: this backs a status indicator that's
+// polled every few seconds, not a request that should ever hang the caller.
+async function getOllamaBridgeStatus({ apiKey, baseUrl }) {
+  const url = `${(baseUrl || 'http://localhost:11434').replace(/\/$/, '')}/bridge/status`;
+  try {
+    const res = await fetch(url, {
+      headers: { ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}) },
+      timeout: 3000
+    });
+    if (!res.ok) return { state: 'offline' };
+    const data = await res.json();
+    // `state` is derived from `busy` here rather than trusted from the
+    // watcher's own payload, so this stays correct even if that shape drifts.
+    return { ...data, state: data.busy ? 'busy' : 'available' };
+  } catch (e) {
+    return { state: 'offline' };
+  }
+}
+
 // Deterministic fake provider — no network, no key required. Used for local
 // testing and as a safe default so the app never fails with "no key set".
 async function callMock({ system, user }) {
@@ -334,4 +371,4 @@ async function generateText({ provider, system, user, apiKey, model, baseUrl }) 
   throw lastError; // unreachable, but keeps the return type honest
 }
 
-module.exports = { generateText };
+module.exports = { generateText, listOllamaModels, getOllamaBridgeStatus };

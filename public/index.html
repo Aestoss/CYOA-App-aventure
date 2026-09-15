@@ -295,6 +295,23 @@
       <label class="key-field"><span data-i18n="keyGeminiLabel"></span> <span class="hint-inline" data-i18n="keyGeminiHint"></span><input id="key-gemini" type="password" placeholder="AIza..."></label>
       <label class="key-field"><span data-i18n="ollamaBaseUrlLabel"></span> <span class="hint-inline" data-i18n="ollamaBaseUrlHint"></span><input id="ollamaBaseUrl" type="text" placeholder="http://localhost:11434"></label>
       <label class="key-field"><span data-i18n="keyOllamaLabel"></span> <span class="hint-inline" data-i18n="keyOllamaHint"></span><input id="key-ollama" type="password" placeholder="(optionnel)"></label>
+      <div id="ollamaStatusRow" class="ollama-status-row">
+        <span id="ollamaStatusDot" class="status-dot status-dot-offline"></span>
+        <span id="ollamaStatusText" data-i18n="ollamaStatusOffline"></span>
+        <button type="button" id="ollamaRefreshBtn" class="text-btn small-btn" data-i18n="ollamaRefreshBtn"></button>
+      </div>
+      <label><span data-i18n="fallbackProviderLabel"></span> <span class="hint-inline" data-i18n="fallbackProviderHint"></span>
+        <select id="fallbackProvider">
+          <option value="" data-i18n="fallbackProviderNone"></option>
+          <option value="anthropic">Anthropic (Claude)</option>
+          <option value="openai">OpenAI</option>
+          <option value="openrouter" data-i18n="providerOpenrouter"></option>
+          <option value="gemini">Google (Gemini)</option>
+        </select>
+      </label>
+      <label><span data-i18n="fallbackModelLabel"></span> <span class="hint-inline" data-i18n="modelHint"></span>
+        <input id="fallbackModel" type="text" placeholder="ex : claude-sonnet-4-6">
+      </label>
     </div>
 
     <div class="settings-group">

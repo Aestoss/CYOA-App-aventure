@@ -5,6 +5,51 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-15 — Statut Ollama en direct, repli automatique, outillage PC
+
+Complète le chantier Ollama : jusqu'ici, si le pont local (PC + tunnel)
+tombait ou était surchargé, un tour ne faisait qu'échouer sans recours.
+
+- **Indicateur de statut Ollama** (Réglages) : point coloré + texte —
+  🔴 hors ligne (pont injoignable), 🟠 indisponible (GPU du PC sollicité —
+  autre jeu en cours, ou génération déjà en route), 🟢 disponible. Mis à
+  jour en tâche de fond toutes les 12s (`GET /api/ollama/status`), pas
+  seulement quand Réglages est ouvert.
+- **Liste des modèles installés remontée automatiquement** : le menu
+  déroulant de modèle Ollama se peuple avec ceux réellement présents sur
+  le PC (`GET /api/ollama/models`, via l'API OpenAI-compatible d'Ollama)
+  au lieu d'une liste figée ; celle-ci reste utilisée si le pont est
+  injoignable.
+- **Fournisseur de secours** (Réglages) : si Ollama est hors ligne ou
+  indisponible au moment de jouer un tour, une confirmation propose
+  d'utiliser ce fournisseur pour ce tour précis (jamais enregistré comme
+  réglage permanent). La décision utilise le dernier statut connu — aucune
+  vérification réseau supplémentaire au moment d'envoyer l'action, donc
+  aucune latence ajoutée.
+- **`scripts/windows/`** : trois scripts PowerShell pour la machine qui
+  héberge Ollama —
+  - `setup-ollama-bridge.ps1` (mis à jour) : ajoute la route
+    `/bridge/status` au Caddyfile généré, démarre le nouveau surveillant
+    GPU, journalise l'exécution dans un fichier (utile une fois lancé sans
+    fenêtre visible).
+  - `ollama-watcher.ps1` (nouveau) : icône dans la barre des tâches
+    (verte/orange selon la charge GPU via `nvidia-smi`), et le point HTTP
+    que Caddy expose sous `/bridge/status`.
+  - `install-startup-task.ps1` (nouveau) : enregistre une tâche planifiée
+    Windows pour lancer le pont automatiquement à l'ouverture de session,
+    avec relance automatique par Windows si le script plante pendant que
+    le PC reste allumé.
+
+Vérifié : `providerOverride` sur un tour utilise bien le fournisseur de
+secours pour cet appel précis sans toucher au réglage persistant (testé
+avec un faux serveur Ollama) ; `/api/ollama/status` et `/api/ollama/models`
+répondent correctement joignable/injoignable ; indicateur et repli testés
+en navigateur réel (Playwright) sur les 4 cas — GPU occupé + accepté, hors
+ligne + aucun secours configuré, hors ligne + refusé, fournisseur principal
+non-Ollama (aucune popup). Les trois scripts PowerShell n'ont en revanche
+pas pu être exécutés sur une vraie machine Windows (aucun accès dans cet
+environnement) — à valider par l'utilisateur.
+
 ## 2026-09-14 — Sélecteur de modèle avec prix, fournisseur Ollama, correctif génération Anthropic
 
 - **Corrigé un bug bloquant** : avec une vraie clé Anthropic, la génération

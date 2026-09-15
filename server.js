@@ -17,7 +17,8 @@ const {
   addTrackedItem, updateTrackedItem, deleteTrackedItem,
   addNpc, updateNpc, deleteNpc,
   createSave, getSave, selectCharacter, continueAfterVictory, deleteSave,
-  playTurn, rewindToTurn, regenerateTurn, getSettings
+  playTurn, rewindToTurn, regenerateTurn, getSettings,
+  listAvailableOllamaModels, getOllamaStatus
 } = require('./lib/gameEngine');
 const { getTotalCosts, getWorldCosts } = require('./lib/costTracker');
 
@@ -359,10 +360,10 @@ app.post('/api/saves/:id/continue', (req, res) => {
 
 app.post('/api/saves/:id/turn', async (req, res) => {
   try {
-    const { action, authorMode, debug } = req.body;
+    const { action, authorMode, debug, providerOverride } = req.body;
     if (!action || !action.trim()) return res.status(400).json({ error: 'action is required' });
     const save = getSave(req.params.id);
-    const turn = await playTurn(req.params.id, action.trim(), { authorMode: Boolean(authorMode) });
+    const turn = await playTurn(req.params.id, action.trim(), { authorMode: Boolean(authorMode), providerOverride });
     const itemDefs = db.get('trackedItemDefs').filter({ worldId: save.worldId }).value();
     res.json(publicTurn(turn, { debug: Boolean(debug), itemDefs }));
   } catch (e) {
@@ -373,10 +374,10 @@ app.post('/api/saves/:id/turn', async (req, res) => {
 
 app.post('/api/saves/:id/turns/:turnNumber/regenerate', async (req, res) => {
   try {
-    const { action, note, debug } = req.body;
+    const { action, note, debug, providerOverride } = req.body;
     const turnNumber = Number(req.params.turnNumber);
     const save = getSave(req.params.id);
-    const turn = await regenerateTurn(req.params.id, turnNumber, { action, note });
+    const turn = await regenerateTurn(req.params.id, turnNumber, { action, note, providerOverride });
     const itemDefs = db.get('trackedItemDefs').filter({ worldId: save.worldId }).value();
     res.json(publicTurn(turn, { debug: Boolean(debug), itemDefs }));
   } catch (e) {
@@ -420,11 +421,16 @@ app.get('/api/settings', (req, res) => {
 
 app.post('/api/settings', (req, res) => {
   const current = db.get('settings').value();
-  const { textProvider, textModel, ollamaBaseUrl, language, chapterLength, imageProvider, imagesEnabled, apiKeys } = req.body;
+  const {
+    textProvider, textModel, ollamaBaseUrl, fallbackProvider, fallbackModel,
+    language, chapterLength, imageProvider, imagesEnabled, apiKeys
+  } = req.body;
   const next = {
     textProvider: textProvider ?? current.textProvider,
     textModel: textModel ?? current.textModel,
     ollamaBaseUrl: ollamaBaseUrl ?? current.ollamaBaseUrl,
+    fallbackProvider: fallbackProvider ?? current.fallbackProvider,
+    fallbackModel: fallbackModel ?? current.fallbackModel,
     language: language ?? current.language,
     chapterLength: chapterLength ?? current.chapterLength,
     imageProvider: imageProvider ?? current.imageProvider,
@@ -433,6 +439,22 @@ app.post('/api/settings', (req, res) => {
   };
   db.set('settings', next).write();
   res.json({ ok: true });
+});
+
+// ---------- Ollama bridge (status + installed models) ----------
+
+app.get('/api/ollama/status', async (req, res) => {
+  const status = await getOllamaStatus();
+  res.json(status);
+});
+
+app.get('/api/ollama/models', async (req, res) => {
+  try {
+    const models = await listAvailableOllamaModels();
+    res.json({ models });
+  } catch (e) {
+    res.status(502).json({ error: e.message, models: [] });
+  }
 });
 
 const PORT = process.env.PORT || 3000;
