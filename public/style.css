@@ -322,8 +322,32 @@ input[type="range"] { width: 100%; margin: 6px 0 4px; accent-color: var(--accent
 .regenerate-popover.hidden { display: none; }
 .regenerate-popover-actions { display: flex; align-items: center; gap: 16px; }
 
-.action-row { display: flex; gap: 8px; align-items: flex-end; }
+/* Sticky on the whole row, not just the form: the icon buttons (🔍/🖋️/🔄)
+   are siblings of .action-form, not inside it, so if only the form were
+   sticky it would anchor to the viewport bottom on its own while the icons
+   (normal document flow) drifted independently as the textarea grows taller
+   -- visually splitting a single row in two. */
+.action-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  position: sticky;
+  bottom: 0;
+  background: var(--bg);
+  padding: 8px 0 calc(12px + env(safe-area-inset-bottom));
+}
 .action-row .action-form { flex: 1; margin: 0; }
+
+/* Auto-growing textareas (action box, regenerate popover, author-instruction
+   popover): grow in height as you type instead of scrolling horizontally,
+   capped so a very long message scrolls internally rather than taking over
+   the screen. Height is set from JS (autoGrowTextarea in app.js) on input. */
+.action-form textarea,
+.regenerate-popover textarea {
+  resize: none;
+  overflow-y: auto;
+  max-height: 160px;
+}
 .latest-page-actions.hidden { display: none; }
 .story-character { color: var(--text-dim); font-size: 0.85rem; margin: -10px 0 14px; }
 .story-character.hidden { display: none; }
@@ -419,15 +443,12 @@ input[type="range"] { width: 100%; margin: 6px 0 4px; accent-color: var(--accent
 .suggestion-btn:hover { border-color: var(--accent); color: var(--accent); }
 
 .action-form {
-  position: sticky;
-  bottom: 0;
   display: flex;
+  align-items: flex-end;
   gap: 8px;
-  background: var(--bg);
-  padding: 8px 0 calc(12px + env(safe-area-inset-bottom));
 }
 .action-form.hidden { display: none; }
-.action-form input { margin: 0; flex: 1; }
+.action-form textarea { margin: 0; flex: 1; }
 .action-form button { white-space: nowrap; }
 
 .game-over-banner {

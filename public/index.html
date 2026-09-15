@@ -80,7 +80,6 @@
     <div class="story-header-row">
       <button id="backBtn" class="text-btn" data-i18n="backToStories"></button>
       <div class="story-header-actions">
-        <button id="authorModeBtn" class="icon-btn" data-i18n-title="authorModeBtn">🔍</button>
         <button id="editWorldBtn" class="icon-btn" data-i18n-title="editWorldBtn">✏️</button>
       </div>
     </div>
@@ -107,20 +106,31 @@
 
     <div id="latestPageActions" class="latest-page-actions">
       <div id="regeneratePopover" class="regenerate-popover hidden">
-        <label><span data-i18n="regenerateActionLabel"></span><input type="text" id="regenerateActionInput"></label>
+        <label><span data-i18n="regenerateActionLabel"></span><textarea rows="1" id="regenerateActionInput"></textarea></label>
         <label><span data-i18n="regenerateNoteLabel"></span> <span class="hint-inline" data-i18n="regenerateNoteHint"></span>
-          <input type="text" id="regenerateNoteInput">
+          <textarea rows="1" id="regenerateNoteInput"></textarea>
         </label>
         <div class="regenerate-popover-actions">
           <button id="regenerateConfirmBtn" class="primary-btn" data-i18n="regenerateConfirmBtn"></button>
           <button id="regenerateCancelBtn" class="text-btn" data-i18n="cancelBtn"></button>
         </div>
       </div>
+      <div id="authorInstructionPopover" class="regenerate-popover hidden">
+        <label><span data-i18n="authorInstructionPopoverLabel"></span>
+          <textarea rows="1" id="authorInstructionInput" data-i18n-placeholder="authorInstructionPlaceholder"></textarea>
+        </label>
+        <div class="regenerate-popover-actions">
+          <button id="authorInstructionConfirmBtn" class="primary-btn" data-i18n="authorInstructionConfirmBtn"></button>
+          <button id="authorInstructionCancelBtn" class="text-btn" data-i18n="cancelBtn"></button>
+        </div>
+      </div>
       <div id="suggestedActions" class="suggested-actions"></div>
       <div class="action-row">
+        <button id="authorModeBtn" class="icon-btn" data-i18n-title="authorModeBtn">🔍</button>
+        <button id="authorInstructionBtn" class="icon-btn hidden" data-i18n-title="authorInstructionBtn">🖋️</button>
         <button id="regenerateBtn" class="icon-btn hidden" data-i18n-title="regenerateBtn">🔄</button>
         <form id="actionForm" class="action-form">
-          <input id="actionInput" type="text" data-i18n-placeholder="actionInputPlaceholder" autocomplete="off">
+          <textarea id="actionInput" rows="1" data-i18n-placeholder="actionInputPlaceholder" autocomplete="off"></textarea>
           <button type="submit" class="primary-btn" data-i18n="sendBtn"></button>
         </form>
       </div>

@@ -5,6 +5,48 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-15 — Refonte de la barre d'action (bas de l'écran)
+
+Demandé après capture d'écran mobile : le bouton "mode auteur" (🔍) était
+isolé tout en haut, loin du bouton de régénération (🔄) en bas ; le même
+champ texte changeait silencieusement de sens selon un toggle éloigné
+(action du joueur ↔ instruction au narrateur) ; et le champ `<input
+type="text">` défilait horizontalement une fois le texte plus long que la
+case, rendant la relecture très difficile en tapant.
+
+- **🔍 déplacé et regroupé avec 🔄** dans la barre du bas (`action-row`),
+  au lieu du haut de l'écran. Son rôle est maintenant uniquement de
+  révéler les informations cachées (bloc secret, badges de résultat) — il
+  ne change plus le sens du champ de saisie principal.
+- **Nouveau bouton 🖋️ dédié** ("parler au narrateur"), visible seulement
+  quand 🔍 est actif, qui ouvre une fenêtre dédiée (même style que la
+  popover de régénération existante) avec son propre champ et un flux
+  explicite Envoyer/Annuler — au lieu de réinterpréter silencieusement la
+  case de saisie normale. `playAction()` accepte maintenant un
+  `authorMode` explicite par appel plutôt que de lire un état global.
+- **Champs texte remplacés par des zones qui grandissent en hauteur**
+  (`<textarea>` avec redimensionnement automatique via `autoGrowTextarea`
+  dans `app.js`, plafonné à 160px puis défilement interne) au lieu de
+  défiler horizontalement — sur la case d'action principale, les deux
+  champs de la popover de régénération, et la nouvelle popover
+  d'instruction. Entrée envoie (comme avant avec l'ancien `<input>`),
+  Maj+Entrée insère un retour à la ligne — convention du chat Claude
+  actuel, citée par l'utilisateur comme référence.
+- **Correctif découvert en testant** : la ligne de boutons (🔍/🖋️/🔄 +
+  case + Envoyer) avait `position: sticky` seulement sur le `<form>`, pas
+  sur ses boutons-icônes frères — invisible avec l'ancien champ à hauteur
+  fixe, mais avec une zone qui grandit, le formulaire collé en bas du
+  viewport se détachait visuellement des icônes restées dans le flux
+  normal du document. Corrigé en rendant toute la ligne (`.action-row`)
+  sticky comme un seul bloc, plutôt que juste le formulaire.
+
+Vérifié en navigateur réel (Playwright, fournisseur mock) : positionnement
+des boutons, bascule du mode révélation, apparition/disparition de 🖋️,
+croissance et rétrécissement correct de la zone de texte sans débordement
+horizontal, alignement de la ligne complète avant/après correctif, et
+Maj+Entrée vs Entrée simple (nouvelle ligne insérée puis tour envoyé avec
+le texte complet sur deux lignes).
+
 ## 2026-09-15 — Ajout de 2 modèles Gemini à la liste déroulante
 
 Ajout de `gemini-3.5-flash-lite` (utilisé et confirmé fonctionnel pendant

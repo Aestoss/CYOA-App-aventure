@@ -31,7 +31,10 @@ const UI = {
     firstTurnError: "Le premier chapitre n'a pas pu être généré — nouvelle tentative...",
     backToStories: '‹ Mes histoires',
     backGeneric: '‹ Retour',
-    authorModeBtn: 'Mode auteur (voir le caché, parler au narrateur)',
+    authorModeBtn: 'Mode auteur (révéler les informations cachées)',
+    authorInstructionBtn: 'Parler au narrateur (instruction hors-personnage)',
+    authorInstructionPopoverLabel: 'Instruction au narrateur',
+    authorInstructionConfirmBtn: 'Envoyer au narrateur',
     editWorldBtn: 'Modifier le monde',
     prevPageBtn: 'Page précédente',
     nextPageBtn: 'Page suivante',
@@ -208,7 +211,10 @@ const UI = {
     firstTurnError: 'The first chapter could not be generated — retrying...',
     backToStories: '‹ My stories',
     backGeneric: '‹ Back',
-    authorModeBtn: 'Author mode (see hidden state, talk to the narrator)',
+    authorModeBtn: 'Author mode (reveal hidden information)',
+    authorInstructionBtn: 'Talk to the narrator (out-of-character instruction)',
+    authorInstructionPopoverLabel: 'Instruction to the narrator',
+    authorInstructionConfirmBtn: 'Send to narrator',
     editWorldBtn: 'Edit the world',
     prevPageBtn: 'Previous page',
     nextPageBtn: 'Next page',
@@ -400,11 +406,40 @@ let currentWorldSkills = []; // world.skills, needed to render character skill i
 let currentSave = null;     // last-fetched save object (gameOver, activeCharacterId, secretInfo if debug)
 let currentTurns = [];      // all turns of the open save, oldest first — one "page" each
 let currentPageIndex = 0;   // which turn is currently displayed
-let debugModeOn = false;    // "mode auteur": reveals hidden info + turns the action box into a direct narrator instruction
+let debugModeOn = false;    // "mode auteur": reveals hidden info (secret info box, outcome badges) -- talking
+                             // to the narrator directly is a separate, explicit action (see authorInstructionBtn)
 let previousView = 'home';
 let currentHomeTab = 'create'; // which home tab is active: 'create' | 'worlds' | 'saves'
 let pendingFirstAction = null; // world.firstAction while a background-popup first turn is being prefetched
 let firstTurnPromise = null;   // in-flight promise for that prefetch, so the popup close button can await it
+
+// Auto-growing textareas (action box, regenerate popover, author-instruction
+// popover): grow in height as content is typed instead of scrolling
+// horizontally like a single-line <input> did, which made re-reading a long
+// message while typing it very hard. Capped via CSS max-height so a very
+// long message scrolls internally instead of taking over the screen.
+const MAX_TEXTAREA_HEIGHT = 160; // px, matches .action-form/.regenerate-popover textarea max-height in style.css
+
+function resizeTextarea(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, MAX_TEXTAREA_HEIGHT) + 'px';
+}
+
+// submitOnEnter, if given, is called when Enter is pressed without Shift
+// (Shift+Enter still inserts a newline) -- the same convention used by
+// Claude's own chat input.
+function autoGrowTextarea(el, submitOnEnter) {
+  el.addEventListener('input', () => resizeTextarea(el));
+  if (submitOnEnter) {
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        submitOnEnter();
+      }
+    });
+  }
+  resizeTextarea(el);
+}
 
 function showView(name) {
   Object.values(views).forEach(v => v.classList.add('hidden'));
@@ -1244,7 +1279,9 @@ function applySaveData(data, jumpToLatest) {
     objectiveEl.classList.add('hidden');
   }
   document.getElementById('authorModeBtn').classList.toggle('active', debugModeOn);
+  document.getElementById('authorInstructionBtn').classList.toggle('hidden', !debugModeOn);
   document.getElementById('regeneratePopover').classList.add('hidden');
+  document.getElementById('authorInstructionPopover').classList.add('hidden');
 
   // Worlds with a "background" popup generate their real first turn on
   // demand (world.firstAction) once a character is chosen — until that
@@ -1390,9 +1427,6 @@ function renderPage() {
     if (!gameOver) {
       renderSuggestions(turn.suggestedActions || []);
       document.getElementById('regenerateBtn').classList.toggle('hidden', turn.turnNumber < 1);
-      document.getElementById('actionInput').placeholder = debugModeOn
-        ? t('authorInstructionPlaceholder')
-        : t('actionInputPlaceholder');
     }
   }
 }
@@ -1473,9 +1507,10 @@ function resolveProviderOverride() {
   return { provider: fallbackProvider, model: document.getElementById('fallbackModel').value.trim() };
 }
 
-async function playAction(action) {
-  const input = document.getElementById('actionInput');
+async function playAction(action, { authorMode = false, sourceInput = null } = {}) {
+  const input = sourceInput || document.getElementById('actionInput');
   input.value = '';
+  resizeTextarea(input);
   const content = document.getElementById('pageContent');
   // Echo the action immediately rather than leaving the reader staring at
   // an emptied input box for the next several seconds -- it's the cheapest
@@ -1486,7 +1521,7 @@ async function playAction(action) {
   content.appendChild(echoedAction);
   const pending = document.createElement('p');
   pending.className = 'loading';
-  pending.textContent = debugModeOn ? t('narratorApplyingInstruction') : t('narratorThinking');
+  pending.textContent = authorMode ? t('narratorApplyingInstruction') : t('narratorThinking');
   content.appendChild(pending);
   document.getElementById('suggestedActions').innerHTML = '';
 
@@ -1503,7 +1538,7 @@ async function playAction(action) {
     const res = await fetch(`${API}/saves/${currentSaveId}/turn/stream`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ action, authorMode: debugModeOn, debug: debugModeOn, ...(providerOverride ? { providerOverride } : {}) })
+      body: JSON.stringify({ action, authorMode, debug: debugModeOn, ...(providerOverride ? { providerOverride } : {}) })
     });
     if (!res.ok || !res.body) throw new Error(t('illegibleResponse')(res.status));
 
@@ -1556,6 +1591,7 @@ async function playAction(action) {
       pending.remove();
       if (streaming) streaming.remove();
       input.value = action;
+      resizeTextarea(input);
       alert(t('errorPrefix') + e.message + t('retryHint'));
     }
   }
@@ -1563,9 +1599,34 @@ async function playAction(action) {
 
 document.getElementById('actionForm').onsubmit = (e) => {
   e.preventDefault();
-  const val = document.getElementById('actionInput').value.trim();
-  if (val) playAction(val);
+  const input = document.getElementById('actionInput');
+  const val = input.value.trim();
+  if (val) playAction(val, { sourceInput: input });
 };
+
+document.getElementById('authorInstructionBtn').onclick = () => {
+  document.getElementById('regeneratePopover').classList.add('hidden');
+  const ta = document.getElementById('authorInstructionInput');
+  ta.value = '';
+  resizeTextarea(ta);
+  document.getElementById('authorInstructionPopover').classList.remove('hidden');
+  ta.focus();
+};
+document.getElementById('authorInstructionCancelBtn').onclick = () => {
+  document.getElementById('authorInstructionPopover').classList.add('hidden');
+};
+document.getElementById('authorInstructionConfirmBtn').onclick = () => {
+  const ta = document.getElementById('authorInstructionInput');
+  const val = ta.value.trim();
+  if (!val) return;
+  document.getElementById('authorInstructionPopover').classList.add('hidden');
+  playAction(val, { authorMode: true, sourceInput: ta });
+};
+
+autoGrowTextarea(document.getElementById('actionInput'), () => document.getElementById('actionForm').requestSubmit());
+autoGrowTextarea(document.getElementById('regenerateActionInput'));
+autoGrowTextarea(document.getElementById('regenerateNoteInput'));
+autoGrowTextarea(document.getElementById('authorInstructionInput'), () => document.getElementById('authorInstructionConfirmBtn').click());
 
 document.getElementById('prevPageBtn').onclick = () => {
   if (currentPageIndex > 0) { currentPageIndex--; renderPage(); }
@@ -1593,8 +1654,13 @@ document.getElementById('resumeFromPageBtn').onclick = async () => {
 
 document.getElementById('regenerateBtn').onclick = () => {
   const turn = currentTurns[currentPageIndex];
-  document.getElementById('regenerateActionInput').value = turn.playerAction;
-  document.getElementById('regenerateNoteInput').value = '';
+  document.getElementById('authorInstructionPopover').classList.add('hidden');
+  const actionField = document.getElementById('regenerateActionInput');
+  const noteField = document.getElementById('regenerateNoteInput');
+  actionField.value = turn.playerAction;
+  noteField.value = '';
+  resizeTextarea(actionField);
+  resizeTextarea(noteField);
   document.getElementById('regeneratePopover').classList.remove('hidden');
 };
 document.getElementById('regenerateCancelBtn').onclick = () => {
