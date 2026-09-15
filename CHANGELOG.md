@@ -5,6 +5,39 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-15 — Correctif : les 3 actions suggérées disparaissaient parfois
+
+Bug de fond dans le format streaming introduit ce jour même (chapitre en
+texte brut + petit bloc JSON `===META===`), signalé par l'utilisateur après
+plusieurs tours en conditions réelles : le texte du chapitre s'affichait
+normalement mais les 3 actions suggérées en bas de tour n'apparaissaient
+plus, sans erreur visible.
+
+Reproduit en isolant `splitNarrationResponse` (`lib/promptBuilder.js`) :
+si le modèle ajoute le moindre texte après l'accolade fermante du JSON
+`===META===` (un simple mot de politesse en fin de réponse -- un tic
+courant chez beaucoup de modèles malgré la consigne "no other text before
+or after"), `JSON.parse` échouait sur la totalité de la chaîne restante.
+Le correctif précédent contre le plantage sur META tronqué (voir plus bas)
+avalait alors silencieusement cette erreur et repartait sur les valeurs par
+défaut (`suggested_actions: []`) -- sans le moindre log, donc invisible en
+prod. C'est exactement le scénario du plantage initial, sauf que cette
+fois-ci le JSON était parfaitement valide, juste suivi de texte parasite.
+
+Corrigé en ajoutant une extraction robuste : si le `JSON.parse` direct
+échoue, on cherche le premier objet `{...}` correctement équilibré dans le
+texte restant (en ignorant les accolades à l'intérieur des chaînes) et on
+retente dessus avant d'abandonner sur les valeurs par défaut. Un
+`console.warn` avec le début du META brut est maintenant émis si
+l'abandon a quand même lieu, pour que ce cas reste diagnosticable dans les
+logs Railway au lieu d'être totalement silencieux.
+
+Vérifié par 5 cas construits directement contre `splitNarrationResponse`
+(texte parasite après le JSON, JSON encadré de ``` ```json ```, cas bien
+formé de référence, META réellement tronqué, marqueur jamais reçu) puis par
+un test de bout en bout via `playTurnStreaming` avec le fournisseur mock
+(création de monde, tour joué, actions suggérées bien présentes en sortie).
+
 ## 2026-09-15 — Correctifs du pont PC (tunnel Cloudflare)
 
 Trois bugs découverts en testant `setup-ollama-bridge.ps1` sur une vraie
