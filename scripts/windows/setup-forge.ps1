@@ -404,8 +404,21 @@ $candidateRoots = @(
   (Join-Path $env:USERPROFILE "Desktop")
 ) | Where-Object { Test-Path $_ }
 $candidates = @()
+# BUG FOUND ON A REAL RUN: "-Recurse -Depth 1 -Include ..." silently
+# IGNORES -Depth in Windows PowerShell 5.1 -- a real, documented cmdlet bug
+# (Get-ChildItem's -Depth is only honored without -Include; workaround is
+# -Filter, or as here, explicit wildcard path patterns with no -Recurse at
+# all). This scanner ended up recursing arbitrarily deep instead of the
+# intended "1 level under Downloads/Desktop", sweeping up
+# chromaforge\models\vae\ae.safetensors (3 levels down) into this
+# instance's own models folder. Explicit depth-0/depth-1 path patterns
+# below give the actually-intended scope, with no -Recurse/-Depth to be
+# silently ignored.
 foreach ($root in $candidateRoots) {
-  $candidates += Get-ChildItem -Path $root -Include "*.safetensors","*.ckpt" -File -Recurse -Depth 1 -ErrorAction SilentlyContinue
+  foreach ($pattern in @("*.safetensors", "*.ckpt")) {
+    $candidates += Get-ChildItem -Path (Join-Path $root $pattern) -File -ErrorAction SilentlyContinue
+    $candidates += Get-ChildItem -Path (Join-Path $root "*\$pattern") -File -ErrorAction SilentlyContinue
+  }
 }
 foreach ($file in $candidates) {
   $dest = Join-Path $ModelsDir $file.Name

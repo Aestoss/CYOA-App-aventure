@@ -395,6 +395,85 @@ if ($IsBlackwellGpu) {
 }
 
 # ---------------------------------------------------------------------------
+# 4b. CLIP/setuptools pre-install -- BUG FOUND ON A REAL RUN: the .NOTES/
+#     synopsis above (and setup-forge.ps1's own comments) claimed this
+#     script does "the same CLIP/setuptools defensive check as
+#     setup-forge.ps1", but that step was never actually written here --
+#     only the Blackwell/torch check above existed. Without it,
+#     chromaforge's own dependency bootstrap tries to build CLIP with
+#     whatever setuptools is already in the venv (a modern one that
+#     dropped/deprecated pkg_resources by default), which fails outright.
+#     Copied from setup-forge.ps1's identical step now that the gap is
+#     confirmed for real -- see CHANGELOG.md.
+# ---------------------------------------------------------------------------
+
+Write-Step "Pre-installation de CLIP (contourne un bug reel de compatibilite setuptools -- copie depuis setup-forge.ps1 apres l'avoir trouve manquant ici sur un run reel)"
+
+$VenvDir = Join-Path $ResolvedWebUiDir "venv"
+$venvDirMatch = [regex]::Match($batContent, '(?m)^set VENV_DIR=([^\r\n]+)')
+if ($venvDirMatch.Success -and $venvDirMatch.Groups[1].Value.Trim() -and $venvDirMatch.Groups[1].Value.Trim() -ne "-") {
+  $customVenvDir = $venvDirMatch.Groups[1].Value.Trim()
+  $VenvDir = if ([System.IO.Path]::IsPathRooted($customVenvDir)) { $customVenvDir } else { Join-Path $ResolvedWebUiDir $customVenvDir }
+  Write-Info "VENV_DIR personnalise detecte dans webui-user.bat : $VenvDir"
+}
+$VenvPython = Join-Path $VenvDir "Scripts\python.exe"
+
+if (-not (Test-Path $VenvPython)) {
+  Write-Info "Pas encore de venv -- creation..."
+  Invoke-NativeQuiet { if ($PythonLauncher -eq "py -3.10") { & py -3.10 -m venv $VenvDir } else { & python -m venv $VenvDir } }
+  if ($LASTEXITCODE -ne 0) {
+    Write-Info "La creation du venv a echoue (code $LASTEXITCODE) -- ce correctif sera tente par le webui lui-meme au lancement."
+  }
+}
+
+$ClipInstallLogPath = Join-Path $WorkDir "forge-chroma-clip-preinstall.log"
+function Write-ClipInstallLog($lines) {
+  $lines | ForEach-Object { "$_" } | Set-Content -Path $ClipInstallLogPath -Encoding UTF8
+}
+
+if (Test-Path $VenvPython) {
+  Invoke-NativeQuiet { & $VenvPython -c "import clip" 2>$null }
+  if ($LASTEXITCODE -eq 0) {
+    Write-Ok "CLIP est deja installe dans le venv."
+  } else {
+    Write-Info "Fixation de setuptools a une version compatible (69.5.1) dans le venv..."
+    $setuptoolsOutput = Invoke-NativeQuiet { & $VenvPython -m pip install "setuptools==69.5.1" wheel 2>&1 }
+    if ($LASTEXITCODE -ne 0) {
+      Write-Fail "Impossible de fixer setuptools==69.5.1/wheel -- la suite de cette etape va probablement aussi echouer. Detail :"
+      Write-ClipInstallLog $setuptoolsOutput
+      $setuptoolsOutput | Select-Object -Last 15 | ForEach-Object { Write-Host "    $_" }
+      Write-Info "Journal complet : $ClipInstallLogPath"
+    }
+
+    $ClipPackageUrl = "https://github.com/openai/CLIP/archive/d50d76daa670286dd6cacf3bcd80b5e4823fc8e1.zip"
+    $LaunchUtilsPath = Join-Path $ResolvedWebUiDir "modules\launch_utils.py"
+    if (Test-Path $LaunchUtilsPath) {
+      $launchUtilsContent = Get-Content $LaunchUtilsPath -Raw
+      $urlMatch = [regex]::Match($launchUtilsContent, "https://github\.com/openai/CLIP/archive/[a-f0-9]+\.zip")
+      if ($urlMatch.Success) { $ClipPackageUrl = $urlMatch.Value }
+    }
+
+    Write-Info "Installation de CLIP avec --no-build-isolation..."
+    $clipOutput = Invoke-NativeQuiet { & $VenvPython -m pip install $ClipPackageUrl --no-build-isolation --prefer-binary 2>&1 }
+    Write-ClipInstallLog $clipOutput
+    if ($LASTEXITCODE -eq 0) {
+      Invoke-NativeQuiet { & $VenvPython -c "import clip" 2>$null }
+      if ($LASTEXITCODE -eq 0) {
+        Write-Ok "CLIP installe avec succes."
+      } else {
+        Write-Fail "pip a rapporte un succes mais 'import clip' echoue toujours -- inattendu. Journal : $ClipInstallLogPath"
+      }
+    } else {
+      Write-Fail "Echec de la pre-installation de CLIP -- le lancement plus bas tentera quand meme (et echouera probablement pareil). Dernieres lignes :"
+      $clipOutput | Select-Object -Last 15 | ForEach-Object { Write-Host "    $_" }
+      Write-Info "Journal complet : $ClipInstallLogPath"
+    }
+  }
+} else {
+  Write-Info "Venv introuvable meme apres tentative de creation -- ce correctif sera tente par le webui lui-meme au lancement."
+}
+
+# ---------------------------------------------------------------------------
 # 5. --api + port, idempotently. Also tries to pre-seed the default
 #    checkpoint in ui-config.json (Forge's documented way to persist a
 #    default sd_model_checkpoint across restarts) -- best-effort only: the

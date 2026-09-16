@@ -5,6 +5,50 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-16 — Trois vrais bugs trouvés au round suivant (les deux precedents tenaient bon)
+
+Les deux correctifs precedents (auto-destruction du script, webui-user.bat
+manquant) ont ete confirmes tenir sur un run reel. Trois nouveaux bugs
+distincts sont apparus une fois passe ce point :
+
+1. **Fichier egare dans le mauvais dossier a cause d'un bug PowerShell
+   confirme, pas d'un defaut de conception.** Le scanner "fichiers egares
+   dans Telechargements/Bureau" de `setup-forge.ps1` utilisait
+   `Get-ChildItem -Recurse -Depth 1 -Include "*.safetensors","*.ckpt"`,
+   cense se limiter a 1 niveau sous chaque dossier scanne. Or
+   `-Recurse -Depth N` combine a `-Include` **ignore silencieusement
+   `-Depth`** en Windows PowerShell 5.1 -- bug reel et documente du
+   cmdlet lui-meme (pas specifique a ce projet). Consequence concrete
+   observee : `chromaforge\models\vae\ae.safetensors` (3 niveaux sous
+   Telechargements) a ete deplace vers le dossier de modeles de
+   l'instance Forge principale, qui l'a ensuite selectionne comme
+   "checkpoint" actif par defaut (c'est un VAE, pas un checkpoint
+   complet). **Correctif** : le scanner utilise maintenant des motifs de
+   chemin explicites (`$root\*.ext` et `$root\*\*.ext`) sans
+   `-Recurse`/`-Depth` du tout, qui ne peuvent pas etre ignores de la
+   meme facon.
+2. **Le correctif CLIP/setuptools n'existait en fait que dans les
+   commentaires de `setup-forge-chroma.ps1`, pas dans son code.** Le
+   synopsis et les commentaires du script affirmaient "meme correctif
+   defensif CLIP/setuptools que setup-forge.ps1", mais seule la
+   verification GPU Blackwell avait ete effectivement copiee -- le bloc
+   qui fixe `setuptools==69.5.1` puis installe CLIP avec
+   `--no-build-isolation` etait absent. Sans lui, le bootstrap de
+   chromaforge tentait de construire CLIP avec un setuptools moderne
+   (qui a retire/deprecie `pkg_resources` par defaut), provoquant un
+   echec de build. **Correctif** : le bloc manquant a ete copie tel quel
+   depuis `setup-forge.ps1`.
+3. **`caddy validate` non protege par `Invoke-NativeQuiet` dans
+   `setup-ollama-bridge.ps1`**, alors que cette fonction existe
+   precisement pour ce cas (voir son propre commentaire dans le script) :
+   sous `$ErrorActionPreference = "Stop"`, la moindre ligne ecrite sur
+   stderr par `caddy.exe validate` -- meme purement informative --
+   devient une erreur terminante en Windows PowerShell 5.1, tuant tout
+   le pont Ollama en silence, sans le moindre `ECHEC` affiche.
+   **Correctif** : l'appel est maintenant enveloppe dans
+   `Invoke-NativeQuiet`, avec la sortie capturee et affichee
+   explicitement en cas d'echec reel (code de sortie non nul).
+
 ## 2026-09-16 — Deux vrais bugs trouvés lors de la suite du premier run réel
 
 Toujours sur le même run réel (voir entrée précédente) : une fois le

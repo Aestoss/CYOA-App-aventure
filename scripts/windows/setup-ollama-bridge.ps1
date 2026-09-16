@@ -631,9 +631,16 @@ $caddyfileContent = @"
 "@
 Set-Content -Path $CaddyfilePath -Value $caddyfileContent -Encoding UTF8
 
-& $CaddyExe validate --config $CaddyfilePath --adapter caddyfile
+# BUG FOUND ON A REAL RUN: this call was not wrapped in Invoke-NativeQuiet,
+# despite that function existing specifically for this exact trap (see its
+# own comment above) -- caddy validate's normal, harmless informational
+# output on stderr got promoted to a terminating error under
+# $ErrorActionPreference = "Stop", silently killing the whole bridge phase
+# with no Write-Fail ever printed. See CHANGELOG.md.
+$caddyValidateOutput = Invoke-NativeQuiet { & $CaddyExe validate --config $CaddyfilePath --adapter caddyfile 2>&1 }
 if ($LASTEXITCODE -ne 0) {
-  Write-Fail "Le Caddyfile genere n'est pas valide (voir la sortie ci-dessus)."
+  Write-Fail "Le Caddyfile genere n'est pas valide :"
+  $caddyValidateOutput | ForEach-Object { Write-Host "    $_" }
   exit 1
 }
 Write-Ok "Caddyfile valide."
