@@ -14,7 +14,22 @@ net session >nul 2>&1
 if %errorLevel% == 0 goto :run
 
 echo Demande d'elevation (fenetre UAC)...
-powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
+rem try/catch + exit 1 explicite dans le catch : sans ca, un refus ou un
+rem echec de la demande UAC (Start-Process -Verb RunAs levant une exception
+rem a l'interieur de cet appel -Command) ne remonte pas forcement un code
+rem de sortie non nul de maniere fiable a cmd.exe -- confirme comme un
+rem risque reel apres avoir trouve le bug -NoExit ci-dessous par la meme
+rem relecture. Sans ce garde-fou, un refus UAC fermerait cette fenetre
+rem sans aucun message, silencieusement, au lieu d'expliquer ce qui s'est
+rem passe.
+powershell -NoProfile -Command "try { Start-Process -FilePath '%~f0' -Verb RunAs -ErrorAction Stop } catch { exit 1 }"
+if errorlevel 1 (
+  echo.
+  echo L'elevation a ete refusee ou a echoue -- ce script a besoin des droits
+  echo administrateur pour fonctionner correctement. Relancez le double-clic
+  echo et acceptez la fenetre UAC.
+  pause
+)
 exit /b
 
 :run

@@ -827,7 +827,13 @@ $portMatch = [regex]::Match($batContent, "(?m)^set COMMANDLINE_ARGS=[^\r\n]*--po
 if ($portMatch.Success -and $portMatch.Groups[1].Value -eq "$SdPort") {
   Write-Ok "--port $SdPort deja configure dans webui-user.bat."
 } elseif ($portMatch.Success) {
-  $batContent = $batContent -replace "--port\s+\d+", "--port $SdPort"
+  # Anchored to the COMMANDLINE_ARGS line specifically (like every other
+  # replace in this file), not a bare "--port\s+\d+" -- confirmed as a real
+  # gap by this review: an unanchored replace would also rewrite an
+  # unrelated "--port 1234" if one ever appeared in this file's own rem
+  # comments (AUTOMATIC1111's template documents several example args this
+  # way), silently corrupting the wrong line.
+  $batContent = $batContent -replace "(?m)(^set COMMANDLINE_ARGS=[^\r\n]*--port\s+)\d+", "`${1}$SdPort"
   Set-Content -Path $WebUiUserBat -Value $batContent -Encoding ASCII
   Write-Ok "--port mis a jour a $SdPort dans webui-user.bat."
 } elseif ($batContent -match "(?m)^set COMMANDLINE_ARGS=([^\r\n]*)") {

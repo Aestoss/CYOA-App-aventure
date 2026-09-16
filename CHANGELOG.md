@@ -5,6 +5,36 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-16 — Relecture complete demandee : deux bugs latents trouves avant qu'ils ne cassent quoi que ce soit
+
+Suite a une demande explicite de ne plus livrer de bug evitable "a chaud" :
+relecture ligne par ligne de tous les scripts touches recemment
+(`Lancer-Fogbound.bat`, `start-fogbound.ps1`, `setup-automatic1111.ps1`,
+`setup-ollama-bridge.ps1`, `install-startup-task.ps1`) avant toute nouvelle
+livraison, plutot que de corriger seulement le fichier qui venait de casser.
+Deux bugs latents trouves et corriges, aucun encore rapporte par un run reel :
+
+- **`Lancer-Fogbound.bat`** : un refus ou un echec de la demande UAC
+  (`Start-Process -Verb RunAs`) fermait la fenetre silencieusement, sans
+  aucun message -- meme categorie de bug que le `-NoExit`/`exit` corrige
+  juste avant. Corrige en enveloppant cet appel dans un `try/catch` avec un
+  `exit 1` explicite dans le `catch`, puis un `if errorlevel 1` cote
+  `cmd.exe` qui explique clairement ce qui s'est passe et attend une touche
+  avant de fermer.
+- **`setup-automatic1111.ps1`** (mise a jour de `--port` dans
+  `webui-user.bat`) : le remplacement `-replace "--port\s+\d+", ...`
+  n'etait pas ancre a la ligne `COMMANDLINE_ARGS`, contrairement a tous les
+  autres remplacements de ce fichier -- un `--port 1234` qui apparaitrait
+  ailleurs (un commentaire `rem` du template, par exemple) aurait ete
+  remplace par erreur au lieu de la bonne ligne. Corrige en ancrant le
+  remplacement a `(^set COMMANDLINE_ARGS=[^\r\n]*--port\s+)\d+` avec
+  `${1}` (et non `$1` nu, qui aurait pu se faire happer par les chiffres du
+  port suivant et etre lu comme un groupe de capture different).
+
+Aucun autre probleme trouve dans les quatre autres scripts a cette
+relecture -- balance des accolades/parentheses et absence de caracteres
+non-ASCII revalidees sur chaque fichier modifie avant ce commit.
+
 ## 2026-09-16 — Lanceur double-clic : la fenetre se fermait instantanement
 
 Rapporte immediatement apres l'ajout du lanceur : la fenetre se lancait
