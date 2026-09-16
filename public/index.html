@@ -93,7 +93,9 @@
     <div class="turn-icon-row">
       <button id="authorModeBtn" class="icon-btn" data-i18n-title="authorModeBtn">🔍</button>
       <button id="editWorldBtn" class="icon-btn" data-i18n-title="editWorldBtn">✏️</button>
+      <button id="purgeImagesBtn" class="icon-btn" data-i18n-title="purgeImagesBtn">🗑️🖼️</button>
     </div>
+    <p id="purgeImagesStatus" class="hint hidden"></p>
     <div id="secretInfoBox" class="secret-info-box hidden"></div>
     <div id="storyImage" class="story-image hidden"><img id="storyImageEl" alt=""></div>
     <div id="trackedItemsPanel" class="tracked-items-panel hidden"></div>
@@ -168,8 +170,25 @@
         <input id="worldTitleInput" type="text">
       </label>
       <div id="worldCoverWrap" class="story-image hidden"><img id="worldCoverImg" alt=""></div>
-      <button id="regenerateCoverBtn" class="text-btn" data-i18n="regenerateCoverBtn"></button>
+      <div class="image-actions-row">
+        <button id="regenerateCoverBtn" class="text-btn" data-i18n="regenerateCoverBtn"></button>
+        <button id="toggleCoverPromptBtn" class="text-btn" data-i18n="editCoverPromptBtn"></button>
+      </div>
       <p id="coverStatus" class="hint"></p>
+      <div id="coverPromptPanel" class="image-prompt-panel hidden">
+        <label><span data-i18n="imagePromptLabel"></span>
+          <textarea id="coverPromptInput" rows="3"></textarea>
+        </label>
+        <div class="image-actions-row">
+          <button id="coverPromptPreviewBtn" class="text-btn" data-i18n="generatePreviewBtn"></button>
+        </div>
+        <div id="coverPromptPreviewWrap" class="story-image hidden"><img id="coverPromptPreviewImg" alt=""></div>
+        <div id="coverPromptValidateActions" class="image-actions-row hidden">
+          <button id="coverPromptAcceptBtn" class="primary-btn" data-i18n="validateImageBtn"></button>
+          <button id="coverPromptDiscardBtn" class="text-btn" data-i18n="discardPreviewBtn"></button>
+        </div>
+        <p id="coverPromptStatus" class="hint"></p>
+      </div>
       <label><span data-i18n="worldDescriptionLabel"></span> <span class="hint-inline" data-i18n="worldDescriptionHint"></span>
         <textarea id="worldDescriptionInput" rows="2"></textarea>
       </label>

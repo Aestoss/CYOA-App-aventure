@@ -5,6 +5,55 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-16 — Couverture/portraits éditables, purge d'images, suggestions non auto-envoyées, vrai bug de mémoire corrigé
+
+- **Prompt d'image ouvrable/modifiable** : cliquer sur l'image de couverture
+  d'un monde ou le portrait d'un personnage (ou le bouton "🔍 Voir/modifier
+  le prompt" à côté) ouvre un panneau montrant le texte envoyé à l'IA pour
+  la générer. Modifiable, puis "Générer un aperçu" — l'ancienne image n'est
+  remplacée que si l'aperçu est explicitement validé ; "Rejeter" l'abandonne
+  sans rien toucher. Le prompt validé est mémorisé et repropose la prochaine
+  fois.
+- **Portrait automatique pour un personnage ajouté à la main** : jusqu'ici
+  seuls les personnages générés par IA (à la création du monde ou via
+  "Générer avec l'IA") recevaient un portrait tout de suite — un personnage
+  ajouté manuellement restait sans image jusqu'à un clic sur "Régénérer le
+  portrait". Génère maintenant son portrait de la même façon, dès l'ajout.
+- **Purge des images de tour** : les images générées pendant les tours sont
+  des data URI base64 stockées telles quelles dans db.json (quelques
+  centaines de Ko à plusieurs Mo chacune) — rien ne les limitait jusqu'ici,
+  au risque de saturer le disque sur une longue partie. Seules les 10 images
+  les plus récentes par sauvegarde sont désormais conservées automatiquement
+  (les plus anciennes sont vidées, le texte du tour reste intact pour la
+  pagination) ; un bouton 🗑️🖼️ dans la vue de jeu permet aussi de tout purger
+  manuellement pour une sauvegarde si besoin.
+- **Suggestions de l'IA : ne déclenchent plus un tour toutes seules** —
+  cliquer sur une suggestion remplit maintenant le champ d'action (modifiable
+  librement) au lieu d'envoyer le tour immédiatement ; l'envoi reste un geste
+  volontaire (Entrée / bouton Envoyer), comme si le texte avait été tapé à la
+  main.
+- **Vrai bug de mémoire trouvé et corrigé** : la compression périodique
+  (`maybeSummarize`) re-résumait TOUTE l'historique depuis le tout début à
+  chaque déclenchement au lieu de ne traiter que les tours nouvellement
+  sortis de la fenêtre récente — confirmé en le rejouant en local (deuxième
+  résumé couvrant les tours 0-15 au lieu de seulement 16-25). Sur une partie
+  longue, ça gonflait le coût de chaque résumé sans limite et empilait des
+  faits de mémoire très redondants, qui pouvaient finir par pousser des faits
+  distincts hors de la fenêtre des 20 faits les plus pertinents. Un nouveau
+  champ `summarizedUpToTurn` sur la sauvegarde marque désormais jusqu'où la
+  compression est vraiment allée ; "reprendre à partir d'ici" (rewind) le
+  recale correctement pour ne pas se fier à un résumé qui vient d'être
+  supprimé.
+- **Piste principale pour les suggestions qui disparaissent parfois en
+  partie longue** (signalé, pas encore confirmé à 100% sans accès à la
+  machine réelle) : aucune limite explicite de contexte (`num_ctx`) ni de
+  longueur de réponse (`max_tokens`) n'était envoyée à Ollama — les
+  suggestions sont la toute dernière chose écrite par le modèle (dans le
+  bloc `===META===` après tout le chapitre), donc les premières perdues si
+  la réponse est tronquée faute de place. Envoie désormais explicitement
+  `num_ctx: 8192` et `max_tokens: 4096`, largement au-dessus de ce qu'un
+  tour Fogbound demande normalement.
+
 ## 2026-09-16 — Relecture complete demandee : deux bugs latents trouves avant qu'ils ne cassent quoi que ce soit
 
 Suite a une demande explicite de ne plus livrer de bug evitable "a chaud" :

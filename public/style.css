@@ -326,6 +326,18 @@ input[type="range"] { width: 100%; margin: 6px 0 4px; accent-color: var(--accent
 }
 .regenerate-warning.hidden { display: none; }
 
+.image-actions-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 6px 0; }
+.image-prompt-panel {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+  margin: 8px 0 14px;
+}
+.image-prompt-panel.hidden { display: none; }
+.image-prompt-panel textarea { width: 100%; }
+.image-prompt-panel .story-image { margin: 10px 0; }
+
 /* The two always-visible fields (player action, optional narrator
    instruction) as one card with a small icon per field, instead of a
    popover that silently repurposed a single shared box -- if both fields

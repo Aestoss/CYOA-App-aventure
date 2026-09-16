@@ -236,6 +236,28 @@ async function streamGemini({ system, user, apiKey, model, onDelta }) {
   return { text, usage };
 }
 
+// Neither num_ctx (context window) nor max_tokens/num_predict (output cap)
+// were ever sent before -- left Ollama on whatever its own defaults are
+// (historically a small context, e.g. 2048-4096 tokens depending on version/
+// model, unless the Modelfile itself overrides it), silently truncating the
+// model's response once the system+user prompt plus however much it had
+// already written filled that window. Fogbound's own AI-suggested actions
+// (suggested_actions) are the LAST thing the narration call writes, in the
+// ===META=== trailer after the whole chapter -- so a truncated response
+// always loses them first, before it loses anything the player would
+// actually notice missing (see splitNarrationResponse's fallback to no
+// suggestions). This is the leading suspect for suggestions "sometimes
+// disappearing" on longer sessions: prompt size grows with the number of
+// memory facts/recent turns accumulated so far, so a save that's been going
+// a while is more likely to be sitting right at whatever the unstated
+// default was. Ollama's OpenAI-compatible endpoint accepts these two as a
+// documented `options` extension alongside the standard fields. 8192 tokens
+// of context and up to 4096 tokens of output are both comfortably above
+// what a single Fogbound turn prompt/chapter ever needs (chapterLength maxes
+// out at 1000 words, well under either figure) while staying realistic for
+// a single consumer GPU to hold alongside a 7-14B model's weights.
+const OLLAMA_GENERATION_OPTIONS = { max_tokens: 4096, options: { num_ctx: 8192 } };
+
 // Ollama exposes an OpenAI-compatible endpoint (/v1/chat/completions) which is
 // far more stable to target than its native API shape — same request/response
 // contract as callOpenAI, just against a local (or tunneled) baseUrl instead
@@ -250,7 +272,8 @@ async function callOllama({ system, user, apiKey, model, baseUrl }) {
       messages: [
         { role: 'system', content: system },
         { role: 'user', content: user }
-      ]
+      ],
+      ...OLLAMA_GENERATION_OPTIONS
     })
   });
   if (!res.ok) await throwApiError('Ollama', res);
@@ -270,7 +293,12 @@ async function streamOllama({ system, user, apiKey, model, baseUrl, onDelta }) {
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json', ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}) },
-    body: JSON.stringify({ model: model || 'llama3.1', messages: [{ role: 'system', content: system }, { role: 'user', content: user }], stream: true })
+    body: JSON.stringify({
+      model: model || 'llama3.1',
+      messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
+      stream: true,
+      ...OLLAMA_GENERATION_OPTIONS
+    })
   });
   if (!res.ok) await throwApiError('Ollama', res);
   let text = '';

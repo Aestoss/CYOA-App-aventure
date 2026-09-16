@@ -12,11 +12,13 @@ const cors = require('cors');
 const path = require('path');
 const db = require('./lib/db');
 const {
-  createWorld, getWorld, updateWorld, aiEditWorld, deleteWorld, regenerateWorldCover,
-  addCharacter, generateCharacterWithAI, updateCharacter, deleteCharacter, regenerateCharacterPortrait,
+  createWorld, getWorld, updateWorld, aiEditWorld, deleteWorld,
+  regenerateWorldCover, previewWorldCover, acceptWorldCover,
+  addCharacter, addCharacterWithPortrait, generateCharacterWithAI, updateCharacter, deleteCharacter,
+  regenerateCharacterPortrait, previewCharacterPortrait, acceptCharacterPortrait,
   addTrackedItem, updateTrackedItem, deleteTrackedItem,
   addNpc, updateNpc, deleteNpc,
-  createSave, getSave, selectCharacter, continueAfterVictory, deleteSave,
+  createSave, getSave, selectCharacter, continueAfterVictory, deleteSave, purgeSaveImages,
   playTurn, playTurnStreaming, rewindToTurn, regenerateTurn, regenerateTurnStreaming, getSettings,
   listAvailableOllamaModels, getOllamaStatus, listAvailableLocalSdModels
 } = require('./lib/gameEngine');
@@ -171,6 +173,30 @@ app.post('/api/worlds/:id/regenerate-cover', async (req, res) => {
   }
 });
 
+// "Open the cover image" flow: preview a (possibly edited) prompt without
+// touching the saved cover, then accept it explicitly to replace the old
+// one. Two routes rather than one so a generated-but-rejected preview never
+// touches the database at all.
+app.post('/api/worlds/:id/cover/preview', async (req, res) => {
+  try {
+    const { prompt } = req.body;
+    const result = await previewWorldCover(req.params.id, prompt);
+    res.json({ ok: true, ...result });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.post('/api/worlds/:id/cover/accept', (req, res) => {
+  try {
+    const { imageUrl, prompt } = req.body;
+    const world = acceptWorldCover(req.params.id, imageUrl, prompt);
+    res.json({ ok: true, world });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
 app.delete('/api/worlds/:id', (req, res) => {
   try {
     deleteWorld(req.params.id);
@@ -182,10 +208,13 @@ app.delete('/api/worlds/:id', (req, res) => {
 
 // ---------- Playable characters (world templates) ----------
 
-app.post('/api/worlds/:id/characters', (req, res) => {
+app.post('/api/worlds/:id/characters', async (req, res) => {
   try {
     const { name, description, skills } = req.body;
-    const character = addCharacter(req.params.id, { name, description, skills });
+    // Generates a portrait right away (best-effort, same as an AI-generated
+    // character) instead of leaving a manually-added one without an image
+    // until someone notices and clicks "Regenerate portrait" by hand.
+    const character = await addCharacterWithPortrait(req.params.id, { name, description, skills });
     res.json({ ok: true, character });
   } catch (e) {
     res.status(400).json({ error: e.message });
@@ -225,6 +254,27 @@ app.delete('/api/worlds/:worldId/characters/:characterId', (req, res) => {
 app.post('/api/worlds/:worldId/characters/:characterId/regenerate-portrait', async (req, res) => {
   try {
     const character = await regenerateCharacterPortrait(req.params.worldId, req.params.characterId);
+    res.json({ ok: true, character });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// Same preview/accept split as the world cover above, for character portraits.
+app.post('/api/worlds/:worldId/characters/:characterId/portrait/preview', async (req, res) => {
+  try {
+    const { prompt } = req.body;
+    const result = await previewCharacterPortrait(req.params.worldId, req.params.characterId, prompt);
+    res.json({ ok: true, ...result });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.post('/api/worlds/:worldId/characters/:characterId/portrait/accept', (req, res) => {
+  try {
+    const { imageUrl, prompt } = req.body;
+    const character = acceptCharacterPortrait(req.params.worldId, req.params.characterId, imageUrl, prompt);
     res.json({ ok: true, character });
   } catch (e) {
     res.status(400).json({ error: e.message });
@@ -365,6 +415,19 @@ app.delete('/api/saves/:id', (req, res) => {
   try {
     deleteSave(req.params.id);
     res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// Manual "purge all turn images now" for a save — the automatic cap (see
+// pruneOldTurnImages in gameEngine.js) already keeps only the last 10, but
+// an author who wants to reclaim space right away shouldn't have to wait
+// for that many more turns to cycle it out.
+app.post('/api/saves/:id/purge-images', (req, res) => {
+  try {
+    const result = purgeSaveImages(req.params.id);
+    res.json(result);
   } catch (e) {
     res.status(400).json({ error: e.message });
   }

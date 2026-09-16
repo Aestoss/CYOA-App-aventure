@@ -33,6 +33,9 @@ const UI = {
     backGeneric: '‹ Retour',
     authorModeBtn: 'Mode auteur (révéler les informations cachées)',
     editWorldBtn: 'Modifier le monde',
+    purgeImagesBtn: 'Purger les images de cette partie',
+    purgeImagesConfirm: 'Supprimer toutes les images déjà générées dans cette partie ? Le texte des tours est conservé, seules les images sont effacées.',
+    purgeImagesStatus: 'Images supprimées.',
     prevPageBtn: 'Tour précédent',
     prevTurnLabel: 'Précédent',
     nextPageBtn: 'Tour suivant',
@@ -91,6 +94,14 @@ const UI = {
     regenerateCoverBtn: "🖼️ Régénérer l'image de couverture",
     regeneratingCoverStatus: 'Génération en cours...',
     coverRegeneratedStatus: 'Image régénérée.',
+    editCoverPromptBtn: '🔍 Voir / modifier le prompt de la couverture',
+    editPortraitPromptBtn: '🔍 Voir / modifier le prompt du portrait',
+    imagePromptLabel: 'Détails envoyés à l\'IA pour générer cette image',
+    generatePreviewBtn: '✨ Générer un aperçu',
+    previewGeneratingStatus: "Génération de l'aperçu...",
+    validateImageBtn: '✅ Valider cette image',
+    discardPreviewBtn: 'Rejeter cet aperçu',
+    imageValidatedStatus: 'Image mise à jour.',
     worldDescriptionLabel: 'Description', worldDescriptionHint: '(affichée dans la liste des mondes, sans effet sur le jeu)',
     worldObjectiveLabel: 'Objectif', worldObjectiveHint: '(affiché au joueur dès le premier tour, optionnel)',
     worldBackgroundLabel: 'Background', worldBackgroundHint: '(texte montré au joueur en popup avant le premier chapitre, identique à chaque nouvelle aventure — vide = pas de popup, ancien chapitre d\'ouverture statique à la place)',
@@ -219,6 +230,9 @@ const UI = {
     backGeneric: '‹ Back',
     authorModeBtn: 'Author mode (reveal hidden information)',
     editWorldBtn: 'Edit the world',
+    purgeImagesBtn: 'Purge this save\'s images',
+    purgeImagesConfirm: 'Delete every image already generated in this save? Turn text is kept — only images are cleared.',
+    purgeImagesStatus: 'Images deleted.',
     prevPageBtn: 'Previous turn',
     prevTurnLabel: 'Previous',
     nextPageBtn: 'Next turn',
@@ -277,6 +291,14 @@ const UI = {
     regenerateCoverBtn: '🖼️ Regenerate cover image',
     regeneratingCoverStatus: 'Generating...',
     coverRegeneratedStatus: 'Image regenerated.',
+    editCoverPromptBtn: '🔍 View / edit cover prompt',
+    editPortraitPromptBtn: '🔍 View / edit portrait prompt',
+    imagePromptLabel: 'Details sent to the AI to generate this image',
+    generatePreviewBtn: '✨ Generate a preview',
+    previewGeneratingStatus: 'Generating preview...',
+    validateImageBtn: '✅ Keep this image',
+    discardPreviewBtn: 'Discard this preview',
+    imageValidatedStatus: 'Image updated.',
     worldDescriptionLabel: 'Description', worldDescriptionHint: "(shown in the world list, doesn't affect gameplay)",
     worldObjectiveLabel: 'Objective', worldObjectiveHint: '(shown to the player from the first turn, optional)',
     worldBackgroundLabel: 'Background', worldBackgroundHint: '(text shown to the player in a popup before the first chapter, same every new adventure — empty = no popup, falls back to the old static opening chapter)',
@@ -710,6 +732,84 @@ function renderWorldCover(world) {
   }
 }
 
+// Mirrors gameEngine.js's defaultCoverPromptText() -- only used to pre-fill
+// the editable textarea before the author has ever set an override; the
+// server is always the actual source of truth for what gets sent to the
+// image provider (see previewWorldCover/generateCoverImage there).
+function defaultCoverPromptText(world) {
+  return `Cover art for "${world.title}": ${world.setting}`;
+}
+
+let coverPreviewImageUrl = null;
+
+function resetCoverPromptPanel(world) {
+  document.getElementById('coverPromptPanel').classList.add('hidden');
+  document.getElementById('coverPromptInput').value = world.coverImagePromptOverride || defaultCoverPromptText(world);
+  document.getElementById('coverPromptPreviewWrap').classList.add('hidden');
+  document.getElementById('coverPromptValidateActions').classList.add('hidden');
+  document.getElementById('coverPromptStatus').textContent = '';
+  coverPreviewImageUrl = null;
+}
+
+document.getElementById('worldCoverImg').onclick = () => {
+  document.getElementById('coverPromptPanel').classList.toggle('hidden');
+};
+document.getElementById('toggleCoverPromptBtn').onclick = () => {
+  document.getElementById('coverPromptPanel').classList.toggle('hidden');
+};
+
+document.getElementById('coverPromptPreviewBtn').onclick = async () => {
+  const btn = document.getElementById('coverPromptPreviewBtn');
+  const status = document.getElementById('coverPromptStatus');
+  const prompt = document.getElementById('coverPromptInput').value.trim();
+  btn.disabled = true;
+  status.textContent = t('previewGeneratingStatus');
+  try {
+    const res = await fetch(`${API}/worlds/${currentWorldId}/cover/preview`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ prompt })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    coverPreviewImageUrl = data.imageUrl;
+    document.getElementById('coverPromptPreviewImg').src = data.imageUrl;
+    document.getElementById('coverPromptPreviewWrap').classList.remove('hidden');
+    document.getElementById('coverPromptValidateActions').classList.remove('hidden');
+    status.textContent = '';
+  } catch (e) {
+    status.textContent = t('errorPrefix') + e.message;
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+document.getElementById('coverPromptAcceptBtn').onclick = async () => {
+  if (!coverPreviewImageUrl) return;
+  const status = document.getElementById('coverPromptStatus');
+  const prompt = document.getElementById('coverPromptInput').value.trim();
+  try {
+    const res = await fetch(`${API}/worlds/${currentWorldId}/cover/accept`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ imageUrl: coverPreviewImageUrl, prompt })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    renderWorldCover(data.world);
+    document.getElementById('worldVersionInfo').textContent = t('worldVersionInfo')(data.world.version);
+    resetCoverPromptPanel(data.world);
+    status.textContent = t('imageValidatedStatus');
+    setTimeout(() => { status.textContent = ''; }, 2500);
+  } catch (e) {
+    status.textContent = t('errorPrefix') + e.message;
+  }
+};
+
+document.getElementById('coverPromptDiscardBtn').onclick = () => {
+  coverPreviewImageUrl = null;
+  document.getElementById('coverPromptPreviewWrap').classList.add('hidden');
+  document.getElementById('coverPromptValidateActions').classList.add('hidden');
+  document.getElementById('coverPromptStatus').textContent = '';
+};
+
 function populateWorldEditor(world, playableCharacters) {
   currentWorldId = world.id;
   currentWorldSkills = world.skills || [];
@@ -719,6 +819,7 @@ function populateWorldEditor(world, playableCharacters) {
   document.getElementById('worldTitleInput').value = world.title || '';
   renderWorldCover(world);
   document.getElementById('coverStatus').textContent = '';
+  resetCoverPromptPanel(world);
   document.getElementById('worldDescriptionInput').value = world.description || '';
   document.getElementById('worldObjectiveInput').value = world.objective || '';
   document.getElementById('worldBackgroundInput').value = world.background || '';
@@ -759,6 +860,7 @@ document.getElementById('regenerateCoverBtn').onclick = async () => {
     if (!res.ok) throw new Error(data.error);
     renderWorldCover(data.world);
     document.getElementById('worldVersionInfo').textContent = t('worldVersionInfo')(data.world.version);
+    resetCoverPromptPanel(data.world);
     status.textContent = t('coverRegeneratedStatus');
   } catch (e) {
     status.textContent = t('errorPrefix') + e.message;
@@ -902,6 +1004,12 @@ function readItemValueInputs(idPrefix) {
   return values;
 }
 
+// Mirrors gameEngine.js's defaultPortraitPromptText() -- see the matching
+// comment on defaultCoverPromptText() above.
+function defaultPortraitPromptText(character) {
+  return `Portrait of ${character.name}: ${character.description}`;
+}
+
 function renderCharacterPortrait(card, character, worldId) {
   const img = card.querySelector('.character-portrait-img');
   if (character.portraitUrl) {
@@ -930,6 +1038,75 @@ function renderCharacterPortrait(card, character, worldId) {
       setTimeout(() => { status.textContent = ''; }, 2500);
     }
   };
+
+  // "Open the portrait" flow: view/edit the prompt, generate a preview,
+  // only replace the real portrait once explicitly validated. Mirrors the
+  // world cover's own flow (see toggleCoverPromptBtn and friends above).
+  const panel = card.querySelector('.portrait-prompt-panel');
+  const promptInput = card.querySelector('.portrait-prompt-input');
+  const previewWrap = card.querySelector('.portrait-prompt-preview-wrap');
+  const previewImg = card.querySelector('.portrait-prompt-preview-img');
+  const validateActions = card.querySelector('.portrait-prompt-validate-actions');
+  const promptStatus = card.querySelector('.portrait-prompt-status');
+  let portraitPreviewImageUrl = null;
+
+  promptInput.value = character.portraitPromptOverride || defaultPortraitPromptText(character);
+  const togglePanel = () => panel.classList.toggle('hidden');
+  img.onclick = togglePanel;
+  card.querySelector('.toggle-portrait-prompt-btn').onclick = togglePanel;
+
+  card.querySelector('.portrait-prompt-preview-btn').onclick = async () => {
+    const previewBtn = card.querySelector('.portrait-prompt-preview-btn');
+    previewBtn.disabled = true;
+    promptStatus.textContent = t('previewGeneratingStatus');
+    try {
+      const res = await fetch(`${API}/worlds/${worldId}/characters/${character.id}/portrait/preview`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt: promptInput.value.trim() })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      portraitPreviewImageUrl = data.imageUrl;
+      previewImg.src = data.imageUrl;
+      previewWrap.classList.remove('hidden');
+      validateActions.classList.remove('hidden');
+      promptStatus.textContent = '';
+    } catch (e) {
+      promptStatus.textContent = t('errorPrefix') + e.message;
+    } finally {
+      previewBtn.disabled = false;
+    }
+  };
+
+  card.querySelector('.portrait-prompt-accept-btn').onclick = async () => {
+    if (!portraitPreviewImageUrl) return;
+    try {
+      const res = await fetch(`${API}/worlds/${worldId}/characters/${character.id}/portrait/accept`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ imageUrl: portraitPreviewImageUrl, prompt: promptInput.value.trim() })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      character.portraitUrl = data.character.portraitUrl;
+      character.portraitPromptOverride = data.character.portraitPromptOverride;
+      img.src = data.character.portraitUrl || '';
+      img.classList.toggle('hidden', !data.character.portraitUrl);
+      previewWrap.classList.add('hidden');
+      validateActions.classList.add('hidden');
+      portraitPreviewImageUrl = null;
+      promptStatus.textContent = t('imageValidatedStatus');
+      setTimeout(() => { promptStatus.textContent = ''; }, 2500);
+    } catch (e) {
+      promptStatus.textContent = t('errorPrefix') + e.message;
+    }
+  };
+
+  card.querySelector('.portrait-prompt-discard-btn').onclick = () => {
+    portraitPreviewImageUrl = null;
+    previewWrap.classList.add('hidden');
+    validateActions.classList.add('hidden');
+    promptStatus.textContent = '';
+  };
 }
 
 function renderCharacterEditList(characters) {
@@ -943,8 +1120,23 @@ function renderCharacterEditList(characters) {
       <div class="portrait-row">
         <img class="character-portrait-img hidden" alt="">
         <button type="button" class="text-btn regen-portrait-btn">${t('regeneratePortraitBtn')}</button>
+        <button type="button" class="text-btn toggle-portrait-prompt-btn">${t('editPortraitPromptBtn')}</button>
       </div>
       <p class="hint portrait-status"></p>
+      <div class="portrait-prompt-panel image-prompt-panel hidden">
+        <label><span>${t('imagePromptLabel')}</span>
+          <textarea class="portrait-prompt-input" rows="2"></textarea>
+        </label>
+        <div class="image-actions-row">
+          <button type="button" class="text-btn portrait-prompt-preview-btn">${t('generatePreviewBtn')}</button>
+        </div>
+        <div class="story-image hidden portrait-prompt-preview-wrap"><img class="portrait-prompt-preview-img" alt=""></div>
+        <div class="image-actions-row hidden portrait-prompt-validate-actions">
+          <button type="button" class="primary-btn portrait-prompt-accept-btn">${t('validateImageBtn')}</button>
+          <button type="button" class="text-btn portrait-prompt-discard-btn">${t('discardPreviewBtn')}</button>
+        </div>
+        <p class="hint portrait-prompt-status"></p>
+      </div>
       <input type="text" id="${idPrefix}-name" value="${escapeHtml(c.name)}">
       <textarea id="${idPrefix}-desc" rows="2">${escapeHtml(c.description || '')}</textarea>
       <div class="skill-inputs">${skillInputsHtml(c.skills, idPrefix)}</div>
@@ -1537,7 +1729,16 @@ function renderSuggestions(actions) {
     const btn = document.createElement('button');
     btn.className = 'suggestion-btn';
     btn.textContent = a;
-    btn.onclick = () => playAction({ actionText: a, instructionText: document.getElementById('instructionInput').value.trim() });
+    // Used to call playAction() directly, submitting the suggestion as a
+    // turn on a single click with no way to tweak it first. Now it only
+    // pre-fills the action field, editable like anything the player types
+    // themselves -- they still send it manually (Entrée / the send button).
+    btn.onclick = () => {
+      const actionEl = document.getElementById('actionInput');
+      actionEl.value = a;
+      resizeTextarea(actionEl);
+      actionEl.focus();
+    };
     wrap.appendChild(btn);
   });
 }
@@ -1827,6 +2028,24 @@ document.getElementById('backBtn').onclick = () => {
 };
 
 document.getElementById('editWorldBtn').onclick = () => openWorldEditor(currentWorldId);
+
+document.getElementById('purgeImagesBtn').onclick = async () => {
+  if (!confirm(t('purgeImagesConfirm'))) return;
+  const status = document.getElementById('purgeImagesStatus');
+  try {
+    const res = await fetch(`${API}/saves/${currentSaveId}/purge-images`, { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    await refreshSave(false);
+    status.textContent = t('purgeImagesStatus');
+    status.classList.remove('hidden');
+  } catch (e) {
+    status.textContent = t('errorPrefix') + e.message;
+    status.classList.remove('hidden');
+  } finally {
+    setTimeout(() => { status.classList.add('hidden'); status.textContent = ''; }, 2500);
+  }
+};
 
 // ---------- Settings ----------
 
