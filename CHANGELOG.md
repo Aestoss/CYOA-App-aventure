@@ -5,6 +5,49 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-16 — Vrai bug trouvé en préparant le 4e modèle : le nom de fichier réel n'était jamais détecté
+
+En choisissant le modèle NSFW final ("MS Flux SFW/NSFW V3", FP16, récupéré
+sur Civitai avec `-FluxedUpUrl`) : relecture du mécanisme de téléchargement
+de `setup-forge.ps1` avant de le considérer fini, comme demandé plus tôt
+dans le projet — deux bugs réels trouvés et corrigés, pas juste un ajustement
+cosmétique :
+
+1. **Le nom de fichier réel n'était jamais récupéré.** Un lien de
+   téléchargement Civitai (`/api/download/models/<id>?token=...`) ne contient
+   aucun nom de fichier dans l'URL elle-même — seule la réponse HTTP le
+   révèle, via l'en-tête `Content-Disposition`. Le correctif écrit pour ça
+   ne se déclenchait en fait jamais : le nom de secours généré à l'avance
+   (`fluxed-up-nsfw.safetensors`) "ressemblait" déjà à un nom de fichier
+   valide, ce qui empêchait la condition censée déclencher la vraie
+   détection de jamais s'activer. Résultat concret : n'importe quel modèle
+   NSFW choisi via `-FluxedUpUrl` aurait été enregistré sous ce nom
+   générique, sans aucune trace du modèle réellement téléchargé.
+2. **Une fois ce premier bug corrigé, un second est apparu** : la
+   vérification "est-ce déjà téléchargé ?" se faisait AVANT de connaître le
+   vrai nom (qui n'apparaît qu'après le téléchargement complet) — donc à
+   chaque relance du script, ce fichier de plusieurs Go aurait semblé
+   "manquant" et aurait été retéléchargé en entier à chaque fois, alors que
+   `start-fogbound.ps1` est justement pensé pour être relancé à chaque
+   session.
+
+**Correctif** : une requête `HEAD` (légère, sans télécharger le corps du
+fichier) résout maintenant le vrai nom via `Content-Disposition` avant même
+de décider ce qu'il faut télécharger — la vérification "déjà présent" et le
+téléchargement utilisent enfin le même nom.
+
+**Nouveau paramètre `-FluxedUpLabel`** : ajoute un suffixe cosmétique au nom
+de fichier final (ex. `-FluxedUpLabel "hq-lent-fp16"` →
+`MSFluxSfwnsfwV3-hq-lent-fp16.safetensors`) — comme le menu déroulant de
+modèles de Fogbound affiche directement le nom de fichier sans autre champ
+de métadonnées, c'est le seul moyen de noter un compromis qualité/vitesse
+directement là où le modèle est choisi dans l'app. Répond à la demande de
+flaguer ce modèle FP16 spécifique comme "haute qualité, lent" (FP16 =
+~23-24 Go de poids bruts, dépasse les 16 Go de VRAM d'une RTX 5080 — tourne
+quand même grâce à la gestion mémoire automatique de Forge (cast en FP8 au
+calcul, déchargement vers la RAM système), mais plus lentement qu'un
+fichier nativement FP8).
+
 ## 2026-09-16 — Migration Automatic1111 → Forge : Flux.1 dev + Chroma, 5 modèles au total
 
 AUTOMATIC1111 ne supporte pas du tout Flux — migration vers Forge

@@ -98,6 +98,16 @@
   Not auto-discovered -- see .NOTES for how to get one. Omit to skip this
   fourth model for now; the other three still install normally.
 
+.PARAMETER FluxedUpLabel
+  Optional short suffix appended to the downloaded NSFW Flux file's name,
+  e.g. "hq-lent-fp16". Purely cosmetic -- Fogbound's model dropdown shows
+  whatever filename sits on disk with no separate metadata field, so this
+  is the only way to flag something about a specific choice (quality,
+  speed, quantization) directly where it gets picked in the app. Example:
+  a filename ending up as "msFluxSfwnsfwV3.safetensors" with
+  -FluxedUpLabel "hq-lent-fp16" is saved as
+  "msFluxSfwnsfwV3-hq-lent-fp16.safetensors".
+
 .PARAMETER ModelUrl
   Optional direct download URL for one more checkpoint beyond the four
   above.
@@ -124,6 +134,7 @@ param(
   [string]$WebUiDir = "",
   [string]$CopyModelsFrom = "",
   [string]$FluxedUpUrl = "",
+  [string]$FluxedUpLabel = "",
   [string]$ModelUrl = "",
   [int]$SdPort = 7860,
   [switch]$NoAutoModel,
@@ -416,6 +427,52 @@ $DefaultModels = @(
   @{ Label = "Flux Safe (Flux.1-dev FP8 all-in-one, ~17.2 Go)"; File = "flux1-dev-fp8-all-in-one.safetensors"; Url = "https://huggingface.co/camenduru/FLUX.1-dev/resolve/main/flux1-dev-fp8-all-in-one.safetensors" }
 )
 
+# Resolves the real filename a URL will download as, when the URL path
+# itself doesn't already end in a recognizable model extension -- exactly
+# what a Civitai download link looks like (an extensionless
+# /api/download/models/<id>?token=... URL, the real name only ever
+# revealed via a Content-Disposition response header). A plain HEAD request
+# reads that same header without pulling the whole multi-GB body first.
+#
+# Confirmed necessary for real, caught during review rather than by a live
+# run: an earlier version of this script only ever resolved that header
+# AFTER already downloading the full file, inside the same loop that checks
+# "is this already downloaded?" -- meaning that check could only ever
+# compare against a guessed placeholder name, never the model's actual
+# name. Since this script is meant to be re-run every session (see
+# start-fogbound.ps1), that placeholder mismatch meant Civitai-style
+# multi-GB downloads would look "missing" and get fetched again from
+# scratch on every single re-run. Resolving the real name up front, before
+# deciding what still needs fetching, is what makes the two consistent.
+function Resolve-DownloadFileName($url, $fallbackName) {
+  $pathName = Split-Path -Leaf ([Uri]$url).LocalPath
+  if ($pathName -and $pathName -match "\.(safetensors|ckpt)$") { return $pathName }
+  try {
+    $headResponse = Invoke-WebRequest -Uri $url -Method Head -UseBasicParsing -TimeoutSec 15
+    $contentDisposition = $headResponse.Headers["Content-Disposition"]
+    $nameMatch = if ($contentDisposition) { [regex]::Match($contentDisposition, 'filename\*?=(?:UTF-8[^A-Za-z0-9]*)?"?([^";]+)"?') } else { $null }
+    if ($nameMatch -and $nameMatch.Success) { return [System.Uri]::UnescapeDataString($nameMatch.Groups[1].Value) }
+  } catch {
+    # HEAD isn't guaranteed supported by every host -- falls through to the
+    # placeholder below, same as if Content-Disposition were simply absent.
+  }
+  return $fallbackName
+}
+
+# Appends an optional cosmetic suffix (-FluxedUpLabel) right before the
+# extension, e.g. "msFluxSfwnsfwV3.safetensors" -> "msFluxSfwnsfwV3-hq-lent-
+# fp16.safetensors" -- Fogbound's model dropdown shows whatever filename is
+# on disk with no separate metadata field, so this is the only way to flag
+# something about a specific choice (quality, speed, quantization) directly
+# where it gets picked in the app.
+function Add-FileNameSuffix($fileName, $suffix) {
+  if (-not $suffix) { return $fileName }
+  $extMatch = [regex]::Match($fileName, '\.(safetensors|ckpt)$')
+  $baseName = if ($extMatch.Success) { $fileName.Substring(0, $extMatch.Index) } else { $fileName }
+  $ext = if ($extMatch.Success) { $extMatch.Value } else { ".safetensors" }
+  return "$baseName-$suffix$ext"
+}
+
 if ($NoAutoModel) {
   if ($existingNames.Count -eq 0) {
     Write-Fail "Aucun modele trouve, et -NoAutoModel est actif."
@@ -427,8 +484,7 @@ if ($NoAutoModel) {
 } else {
   $modelsToFetch = @($DefaultModels | Where-Object { $existingNames -notcontains $_.File })
   if ($FluxedUpUrl) {
-    $fluxedUpName = Split-Path -Leaf ([Uri]$FluxedUpUrl).LocalPath
-    if (-not $fluxedUpName -or $fluxedUpName -notmatch "\.(safetensors|ckpt)$") { $fluxedUpName = "fluxed-up-nsfw.safetensors" }
+    $fluxedUpName = Add-FileNameSuffix (Resolve-DownloadFileName $FluxedUpUrl "fluxed-up-nsfw.safetensors") $FluxedUpLabel
     if ($existingNames -notcontains $fluxedUpName) {
       $modelsToFetch = @($modelsToFetch) + @(@{ Label = "NSFW Flux (-FluxedUpUrl)"; File = $fluxedUpName; Url = $FluxedUpUrl })
     }
@@ -436,8 +492,7 @@ if ($NoAutoModel) {
     Write-Info "Pas de -FluxedUpUrl fourni -- le 4e modele (NSFW) ne sera pas installe cette fois. Voir .NOTES de ce script pour obtenir un lien."
   }
   if ($ModelUrl) {
-    $customName = Split-Path -Leaf ([Uri]$ModelUrl).LocalPath
-    if (-not $customName -or $customName -notmatch "\.(safetensors|ckpt)$") { $customName = "model-personnalise.safetensors" }
+    $customName = Resolve-DownloadFileName $ModelUrl "model-personnalise.safetensors"
     if ($existingNames -notcontains $customName) {
       $modelsToFetch = @($modelsToFetch) + @(@{ Label = "modele personnalise (-ModelUrl)"; File = $customName; Url = $ModelUrl })
     }
@@ -450,27 +505,26 @@ if ($NoAutoModel) {
   foreach ($m in $modelsToFetch) {
     Write-Info "Telechargement de $($m.Label)..."
     Write-Info "Cela peut prendre plusieurs minutes (voire plus d'une heure pour Flux, ~17 Go) selon votre connexion."
-    # Same temp-name-then-promote + size-sanity-check + Content-Disposition
-    # rename as setup-automatic1111.ps1 -- see that script's identical block
-    # for the full reasoning (truncated downloads, Civitai's extensionless
-    # URLs). Doubles here as the actual safety net for a Civitai login-gated
-    # -FluxedUpUrl: a login page saved under a .safetensors name is nowhere
-    # near "> 100 MB", so it gets caught and reported instead of silently
-    # corrupting the model folder.
+    # $m.File is already fully resolved (real Content-Disposition name and
+    # -FluxedUpLabel suffix both applied up front, see Resolve-DownloadFileName/
+    # Add-FileNameSuffix above) -- no rename needed here, unlike an earlier
+    # version of this script that only discovered the real name after
+    # downloading the whole file, which is also what broke the "already
+    # downloaded?" check on every re-run (see that function's own comment).
+    #
+    # Temp-name-then-promote + size-sanity-check still apply, same reasoning
+    # as setup-automatic1111.ps1: a connection drop mid-download leaves a
+    # truncated .part file rather than a corrupt "real" one, and a login
+    # page saved in place of a Civitai-gated file is nowhere near "> 100 MB"
+    # so it gets caught and reported instead of silently breaking the model
+    # folder.
     $finalDest = Join-Path $ModelsDir $m.File
     $tempDest = "$finalDest.part"
     if (Test-Path $tempDest) { Remove-Item $tempDest -Force -ErrorAction SilentlyContinue }
     $prevProgressPreference = $ProgressPreference
     $ProgressPreference = "SilentlyContinue"
     try {
-      $response = Invoke-WebRequest -Uri $m.Url -OutFile $tempDest -UseBasicParsing -PassThru
-
-      if ($m.File -notmatch "\.(safetensors|ckpt)$") {
-        $contentDisposition = $response.Headers["Content-Disposition"]
-        $nameMatch = if ($contentDisposition) { [regex]::Match($contentDisposition, 'filename\*?=(?:UTF-8[^A-Za-z0-9]*)?"?([^";]+)"?') } else { $null }
-        $m.File = if ($nameMatch -and $nameMatch.Success) { [System.Uri]::UnescapeDataString($nameMatch.Groups[1].Value) } else { "$($m.File).safetensors" }
-        $finalDest = Join-Path $ModelsDir $m.File
-      }
+      Invoke-WebRequest -Uri $m.Url -OutFile $tempDest -UseBasicParsing | Out-Null
 
       $downloadedSizeMB = [math]::Round((Get-Item $tempDest).Length / 1MB, 1)
       if ($downloadedSizeMB -lt 100) {
