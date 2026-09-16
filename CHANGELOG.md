@@ -5,6 +5,21 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-16 — Lanceur double-clic : la fenetre se fermait instantanement
+
+Rapporte immediatement apres l'ajout du lanceur : la fenetre se lancait
+puis se coupait toute seule. Cause reelle : `-NoExit` sur la ligne
+`powershell -NoExit -File ...` ne protege que contre une fin de script
+"normale" (qui tombe en fin de fichier) -- `start-fogbound.ps1` appelle
+`exit` explicitement sur chaque chemin (erreurs comme arret normal via
+Ctrl+C), et un `exit` explicite a l'interieur d'un script `-File` ferme
+toute la fenetre PowerShell meme avec `-NoExit`, sous Windows PowerShell.
+Corrige dans `Lancer-Fogbound.bat` en retirant ce `-NoExit` inutile et en
+ajoutant un `pause` cote `cmd.exe` juste apres l'appel -- `cmd.exe` n'est
+pas affecte par le code de sortie du processus PowerShell qu'il a lance,
+donc la fenetre reste desormais ouverte de maniere fiable quelle que soit
+la façon dont le script s'est termine.
+
 ## 2026-09-16 — Generation d'image confirmee fonctionnelle + lanceur double-clic
 
 Root cause du "CUDA error: no kernel image" confirmee : un processus
