@@ -192,8 +192,14 @@ function Get-WebUiProcessIds {
   param([string]$Dir, [int]$Port)
   $pidsFound = New-Object System.Collections.Generic.HashSet[int]
   if ($Dir) {
+    # BUG FOUND ON A REAL RUN (setup-forge-chroma.ps1's identical copy of
+    # this function): without excluding $PID, this can match the CURRENT
+    # process's own command line when -WebUiDir is passed explicitly (its
+    # literal text is part of this very process's CommandLine as seen by
+    # WMI) -- Stop-WebUiProcessIds would then kill the script running RIGHT
+    # NOW, silently. See CHANGELOG.md.
     Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-      Where-Object { $_.CommandLine -and ($_.CommandLine -like "*$Dir*") } |
+      Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -and ($_.CommandLine -like "*$Dir*") } |
       ForEach-Object { [void]$pidsFound.Add($_.ProcessId) }
   }
   try {
@@ -803,43 +809,84 @@ if ($logCleanupError) {
 }
 
 if (-not (Test-Path $WebUiStdinPath)) { New-Item -ItemType File -Path $WebUiStdinPath -Force | Out-Null }
-try {
-  $webuiProcess = Start-Process -FilePath $WebUiUserBat -WorkingDirectory $ResolvedWebUiDir `
-    -WindowStyle Hidden -PassThru `
-    -RedirectStandardOutput $WebUiLogPath -RedirectStandardError $WebUiErrLogPath -RedirectStandardInput $WebUiStdinPath
-} catch {
-  Write-Fail "Impossible de demarrer Forge -- $($_.Exception.Message)"
-  if ($_.Exception.Message -match "used by another process|being used") {
-    Write-Info "Un processus tient encore $WebUiLogPath ou $WebUiErrLogPath ouvert -- fermez-le puis relancez."
-  }
-  exit 1
-}
 
-Write-Info "Processus demarre (PID $($webuiProcess.Id)). Journal : $WebUiLogPath"
-Write-Info "Cela peut prendre 10 a 15 minutes la toute premiere fois (telechargement de PyTorch et des dependances)."
+# BUG FOUND ON A REAL RUN: Forge's own dependency bootstrap (inside webui.py,
+# on first launch) can end up with a numpy/scikit-image ABI mismatch --
+# "numpy.dtype size changed, may indicate binary incompatibility" crashing
+# in skimage's compiled geometry.pyx. Real, documented, still open upstream
+# as of this writing (lllyasviel/stable-diffusion-webui-forge issue #2969 --
+# no maintainer-confirmed fix in that thread). Not something this script's
+# own CLIP/setuptools pre-install step touches, since scikit-image itself
+# is installed later, by webui.py's own bootstrap, not by us. One automatic
+# retry: force-reinstall scikit-image against whatever numpy ended up
+# resolved, then relaunch once. If that doesn't clear it either, this is
+# reported honestly as an unresolved upstream issue rather than retried
+# forever.
+$numpySkimageFixAttempted = $false
 
-$maxTries = 180  # 180 x 5s = 15 minutes
-$tries = 0
-$ready = $false
-while ($tries -lt $maxTries) {
-  Start-Sleep -Seconds 5
-  $tries++
+for ($launchAttempt = 1; $launchAttempt -le 2; $launchAttempt++) {
   try {
-    Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$SdPort/sdapi/v1/sd-models" -TimeoutSec 3 | Out-Null
-    $ready = $true
-    break
-  } catch {}
-  if ($webuiProcess.HasExited) {
-    Write-Fail "Le processus s'est arrete de lui-meme (code $($webuiProcess.ExitCode)). Regardez $WebUiErrLogPath pour le detail."
+    $webuiProcess = Start-Process -FilePath $WebUiUserBat -WorkingDirectory $ResolvedWebUiDir `
+      -WindowStyle Hidden -PassThru `
+      -RedirectStandardOutput $WebUiLogPath -RedirectStandardError $WebUiErrLogPath -RedirectStandardInput $WebUiStdinPath
+  } catch {
+    Write-Fail "Impossible de demarrer Forge -- $($_.Exception.Message)"
+    if ($_.Exception.Message -match "used by another process|being used") {
+      Write-Info "Un processus tient encore $WebUiLogPath ou $WebUiErrLogPath ouvert -- fermez-le puis relancez."
+    }
     exit 1
   }
-  if ($tries % 12 -eq 0) {
-    Write-Info "... toujours en attente ($($tries * 5)s ecoulees) -- consultez $WebUiLogPath si ca semble bloque"
-  }
-}
 
-if (-not $ready) {
-  Write-Fail "L'API ne repond toujours pas apres 15 minutes. Regardez $WebUiLogPath et $WebUiErrLogPath -- le processus (PID $($webuiProcess.Id)) reste lance, il continuera peut-etre de son cote."
+  Write-Info "Processus demarre (PID $($webuiProcess.Id)). Journal : $WebUiLogPath"
+  Write-Info "Cela peut prendre 10 a 15 minutes la toute premiere fois (telechargement de PyTorch et des dependances)."
+
+  $maxTries = 180  # 180 x 5s = 15 minutes
+  $tries = 0
+  $ready = $false
+  $processDiedEarly = $false
+  while ($tries -lt $maxTries) {
+    Start-Sleep -Seconds 5
+    $tries++
+    try {
+      Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$SdPort/sdapi/v1/sd-models" -TimeoutSec 3 | Out-Null
+      $ready = $true
+      break
+    } catch {}
+    if ($webuiProcess.HasExited) {
+      $processDiedEarly = $true
+      break
+    }
+    if ($tries % 12 -eq 0) {
+      Write-Info "... toujours en attente ($($tries * 5)s ecoulees) -- consultez $WebUiLogPath si ca semble bloque"
+    }
+  }
+
+  if ($ready) { break }
+
+  $errLogText = if (Test-Path $WebUiErrLogPath) { Get-Content $WebUiErrLogPath -Raw } else { "" }
+  $isNumpySkimageAbiError = $errLogText -match "numpy\.dtype size changed" -or $errLogText -match "may indicate binary incompatibility"
+
+  if ($isNumpySkimageAbiError -and -not $numpySkimageFixAttempted -and (Test-Path $VenvPython)) {
+    $numpySkimageFixAttempted = $true
+    Write-Fail "Plantage numpy/scikit-image detecte (incompatibilite binaire connue, encore ouverte en amont -- voir https://github.com/lllyasviel/stable-diffusion-webui-forge/issues/2969)."
+    Write-Info "Tentative de correctif automatique : reinstallation forcee de scikit-image contre le numpy actuellement resolu..."
+    $skimageFixOutput = Invoke-NativeQuiet { & $VenvPython -m pip install --force-reinstall --no-cache-dir scikit-image 2>&1 }
+    if ($LASTEXITCODE -eq 0) {
+      Write-Ok "scikit-image reinstalle -- nouvelle tentative de lancement."
+    } else {
+      Write-Fail "La reinstallation de scikit-image a echoue aussi -- nouvelle tentative de lancement quand meme, sans grand espoir. Detail :"
+      $skimageFixOutput | Select-Object -Last 15 | ForEach-Object { Write-Host "    $_" }
+    }
+    if (-not $webuiProcess.HasExited) { Stop-Process -Id $webuiProcess.Id -Force -ErrorAction SilentlyContinue }
+    Start-Sleep -Milliseconds 500
+    continue
+  }
+
+  if ($processDiedEarly) {
+    Write-Fail "Le processus s'est arrete de lui-meme (code $($webuiProcess.ExitCode)). Regardez $WebUiErrLogPath pour le detail."
+  } else {
+    Write-Fail "L'API ne repond toujours pas apres 15 minutes. Regardez $WebUiLogPath et $WebUiErrLogPath -- le processus (PID $($webuiProcess.Id)) reste lance, il continuera peut-etre de son cote."
+  }
   exit 1
 }
 

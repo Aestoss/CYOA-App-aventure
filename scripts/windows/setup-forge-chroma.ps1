@@ -136,8 +136,16 @@ function Get-WebUiProcessIds {
   param([string]$Dir, [int]$Port)
   $pidsFound = New-Object System.Collections.Generic.HashSet[int]
   if ($Dir) {
+    # BUG FOUND ON A REAL RUN: without excluding $PID, this can match the
+    # CURRENT process's own command line when -WebUiDir is passed explicitly
+    # (its literal text is part of this very process's CommandLine as seen
+    # by WMI) -- Stop-WebUiProcessIds would then kill the script running
+    # RIGHT NOW, silently (Stop-Process -Force gives no chance to log
+    # anything after that point). Confirmed as the exact cause of a run that
+    # died without any error message right after "Arret d'un processus
+    # Forge-Chroma" -- see CHANGELOG.md.
     Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-      Where-Object { $_.CommandLine -and ($_.CommandLine -like "*$Dir*") } |
+      Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -and ($_.CommandLine -like "*$Dir*") } |
       ForEach-Object { [void]$pidsFound.Add($_.ProcessId) }
   }
   try {

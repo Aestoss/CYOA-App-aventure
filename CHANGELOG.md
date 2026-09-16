@@ -5,6 +5,43 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-16 — Deux vrais bugs trouvés lors de la suite du premier run réel
+
+Toujours sur le même run réel (voir entrée précédente) : une fois le
+correctif `webui-user.bat` récupéré, deux nouveaux bugs réels sont apparus,
+tous deux corrigés :
+
+1. **Auto-destruction silencieuse du script au lancement de Chroma.**
+   `Get-WebUiProcessIds`/`Stop-WebUiProcesses` (trois copies quasi
+   identiques : `setup-forge.ps1`, `setup-forge-chroma.ps1`,
+   `start-fogbound.ps1`) retrouvent les processus d'une execution
+   precedente en cherchant, via WMI, quel processus a le dossier
+   d'installation dans sa ligne de commande. Aucune des trois copies
+   n'excluait son PROPRE PID de cette recherche. Des que `-WebUiDir` ou
+   `-ChromaWebUiDir` est passe explicitement (ce qui a ete le cas ici,
+   pour reutiliser un clone chromaforge deja prepare avec les modeles en
+   liens physiques), ce chemin apparait litteralement dans la ligne de
+   commande du processus PowerShell EN COURS D'EXECUTION -- qui se
+   retrouve donc dans sa propre liste de "processus a arreter", et
+   `Stop-Process -Force` le tue instantanement, sans la moindre trace
+   dans les journaux (le processus meurt avant d'avoir pu ecrire quoi que
+   ce soit). Symptome observe : le journal s'arretait net juste apres
+   "Arret d'un processus Forge-Chroma (PID ...)", sans aucune erreur,
+   fenetre fermee. **Correctif** : `$_.ProcessId -ne $PID` ajoute aux
+   trois copies.
+2. **Plantage numpy/scikit-image au premier lancement reel de Forge**
+   (instance principale) : `ValueError: numpy.dtype size changed, may
+   indicate binary incompatibility` dans le module compile
+   `skimage._shared.geometry`, pendant le propre bootstrap de dependances
+   de `webui.py` (pas quelque chose que ce script installe lui-meme).
+   Bug reel et documente, encore ouvert en amont sans correctif confirme
+   par un mainteneur (lllyasviel/stable-diffusion-webui-forge issue
+   #2969). **Correctif ajoute** : si ce message precis apparait dans le
+   journal d'erreur apres un echec de lancement, tentative automatique
+   unique de reinstallation forcee de `scikit-image` dans le venv puis
+   relance -- si ca echoue encore, l'echec est remonte honnetement comme
+   un probleme non resolu en amont plutot que d'etre retente indefiniment.
+
 ## 2026-09-16 — Vrai bug trouvé lors du premier run réel : chromaforge ne fournit pas webui-user.bat
 
 Premier lancement réel sur la machine cible (via une session Claude Code

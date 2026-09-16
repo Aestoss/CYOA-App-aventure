@@ -219,8 +219,14 @@ function Stop-WebUiProcesses($dir, $port) {
   $pidsToStop = New-Object System.Collections.Generic.HashSet[int]
 
   if ($dir) {
+    # BUG FOUND ON A REAL RUN: without excluding $PID, this can match the
+    # CURRENT process's own command line when -WebUiDir/-ChromaWebUiDir is
+    # passed explicitly (its literal text is part of this very process's
+    # CommandLine as seen by WMI) -- this would then kill the script
+    # running RIGHT NOW, silently, well before it reaches Phase 2/3. See
+    # CHANGELOG.md.
     Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-      Where-Object { $_.CommandLine -and ($_.CommandLine -like "*$dir*") } |
+      Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -and ($_.CommandLine -like "*$dir*") } |
       ForEach-Object { [void]$pidsToStop.Add($_.ProcessId) }
   }
   try {
