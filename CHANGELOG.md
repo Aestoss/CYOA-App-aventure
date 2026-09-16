@@ -5,6 +5,39 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-16 — Cause reelle du 403 trouvee : la protection anti-DNS-rebinding d'Ollama, pas Cloudflare ni Tailscale
+
+Root cause confirmee, apres des semaines a soupconner tour a tour Cloudflare
+(heuristique WAF) puis un antivirus/DLP local sur ce PC : **aucun des deux**.
+Un `curl.exe -v` fait pendant que le pont restait actif (voir l'entree
+precedente) a montre l'en-tete `Via: 1.1 Caddy` sur la reponse 403. Verifie
+directement dans le source de Caddy (`modules/caddyhttp/reverseproxy/reverseproxy.go`) :
+cet en-tete n'est ajoute QUE par la directive `reverse_proxy`, jamais par un
+`respond` statique -- la preuve que la requete avait bien traverse notre
+Caddy et atteint le service derriere, et que ce service avait lui-meme
+repondu 403.
+
+Verifie ensuite dans le source d'Ollama (`server/routes.go`,
+`allowedHostsMiddleware`/`allowedHost`) : Ollama refuse par defaut (403, corps
+vide) toute requete dont l'en-tete `Host` n'est pas `localhost`, une IP
+loopback/privee, ou le nom de la machine -- une protection anti-DNS-rebinding
+qui existe depuis longtemps et n'a jamais ete declenchee tant qu'Ollama
+n'etait joint qu'en local. Des qu'on passe par un tunnel public (Cloudflare
+hier, Tailscale aujourd'hui), l'en-tete `Host` de la requete devient le nom
+public du tunnel -- exactement ce qu'Ollama refuse. Meme mecanisme, exactement
+le meme symptome (sans jeton = 401, avec jeton = 403) sur deux infrastructures
+de tunnel totalement differentes : la cause a toujours ete Ollama lui-meme,
+jamais Cloudflare ni un logiciel de securite local.
+
+Correctif dans `setup-ollama-bridge.ps1` : chacune des trois directives
+`reverse_proxy` du Caddyfile recoit desormais `header_up Host localhost`,
+qui reecrit l'en-tete Host envoye a l'upstream sans toucher a la
+configuration d'Ollama (qui reste strictement local, aussi securise
+qu'avant). Le message de diagnostic sur un 403 post-tunnel distingue
+maintenant ce cas confirme (en-tete Via presente -> Ollama/Caddy ont
+repondu, pas un blocage exterieur) de l'hypothese generique
+antivirus/DLP, desormais reléguée en repli si l'en-tete Via est absente.
+
 ## 2026-09-16 — 403 "avec jeton" via Tailscale Funnel : meme symptome qu'avec Cloudflare, diagnostic etendu
 
 Run reel : le tunnel Tailscale Funnel s'ouvre desormais correctement

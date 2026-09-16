@@ -566,10 +566,33 @@ $caddyfileContent = @"
 	# "reverse_proxy". Without this route{} block, the unconditional fallback
 	# respond below would run FIRST on every request and always return 401,
 	# even with a correct token (reverse_proxy would never get a chance to run).
+	#
+	# header_up Host localhost on every upstream: by default reverse_proxy
+	# passes through the original inbound Host header (the public tunnel
+	# hostname) unchanged. Ollama's own server has a built-in DNS-rebinding
+	# protection (server/routes.go, allowedHostsMiddleware/allowedHost --
+	# verified directly against the ollama/ollama source) that answers 403
+	# to any request whose Host header isn't localhost/loopback/the machine's
+	# own hostname -- it doesn't know or care about Caddy's own bearer-token
+	# check in front of it, it just sees a public hostname and refuses on
+	# principle. This is what silently turned "sans jeton = 401, avec jeton =
+	# 403" into a months-long red herring across two unrelated tunnel
+	# providers (Cloudflare, then Tailscale) -- confirmed by curl -v showing
+	# a "Via: 1.1 Caddy" header on the 403 response, which Caddy only ever
+	# adds on a reverse_proxy response (never on its own "respond" fallback),
+	# proving the request really did reach Ollama and Ollama itself answered
+	# 403. Rewriting just the Host header sent upstream avoids touching
+	# Ollama's own listen address (still 127.0.0.1-only, unchanged).
 	route {
-		reverse_proxy @authorizedStatus 127.0.0.1:$WatcherPort
-		reverse_proxy @authorizedSd 127.0.0.1:$SdPort
-		reverse_proxy @authorizedOllama 127.0.0.1:$OllamaPort
+		reverse_proxy @authorizedStatus 127.0.0.1:$WatcherPort {
+			header_up Host localhost
+		}
+		reverse_proxy @authorizedSd 127.0.0.1:$SdPort {
+			header_up Host localhost
+		}
+		reverse_proxy @authorizedOllama 127.0.0.1:$OllamaPort {
+			header_up Host localhost
+		}
 
 		respond "Unauthorized" 401
 	}
@@ -824,14 +847,21 @@ try {
   Write-Info "l'un ni l'autre (ex : 403), la reponse vient forcement d'ailleurs avant meme d'atteindre Caddy."
   if ($statusCode -eq 403) {
     Write-Info ""
-    Write-Info "Piste la plus probable pour un 403 precisement sur la requete AVEC le jeton (la requete"
-    Write-Info "SANS jeton, elle, vient de passer normalement) : quelque chose entre ce PC et Tailscale"
-    Write-Info "inspecte le trafic HTTPS sortant et reagit specifiquement a l'en-tete 'Authorization:"
-    Write-Info "Bearer' -- antivirus/pare-feu tiers avec protection web, ou un logiciel de prevention de"
-    Write-Info "fuite de donnees (DLP). Ce PC a deja produit exactement ce meme symptome (sans jeton = OK,"
-    Write-Info "avec jeton = 403) avec un tunnel Cloudflare totalement different avant de passer a"
-    Write-Info "Tailscale -- un point commun aussi net sur deux infrastructures sans rapport pointe"
-    Write-Info "davantage vers ce PC que vers l'une ou l'autre."
+    if ($errDetail.Server -and $errDetail.Server -match "Caddy" -or ($_.Exception.Response -and $_.Exception.Response.Headers -and ($_.Exception.Response.Headers["Via"] -match "Caddy"))) {
+      Write-Info "L'en-tete 'Via: ... Caddy' confirme que la requete a bien traverse ce Caddy et atteint"
+      Write-Info "l'un des serveurs derriere (Ollama/AUTOMATIC1111/surveillant) -- ce n'est donc ni"
+      Write-Info "Tailscale, ni un blocage reseau externe : ce serveur lui-meme a repondu 403. Ollama a sa"
+      Write-Info "propre protection anti-DNS-rebinding qui refuse toute requete dont l'en-tete Host n'est"
+      Write-Info "pas 'localhost'/loopback -- si cette version du script est a jour, le Caddyfile force deja"
+      Write-Info "'header_up Host localhost' sur les trois routes ; si vous voyez quand meme ce 403,"
+      Write-Info "supprimez $CaddyfilePath et relancez pour regenerer un Caddyfile a jour."
+    } else {
+      Write-Info "Piste possible pour un 403 precisement sur la requete AVEC le jeton (la requete SANS"
+      Write-Info "jeton, elle, vient de passer normalement) : quelque chose entre ce PC et Tailscale"
+      Write-Info "inspecte le trafic HTTPS sortant et reagit specifiquement a l'en-tete 'Authorization:"
+      Write-Info "Bearer' -- antivirus/pare-feu tiers avec protection web, ou un logiciel de prevention de"
+      Write-Info "fuite de donnees (DLP)."
+    }
     Write-Info ""
     Write-Info "Le pont reste actif (Caddy + tunnel) pour que vous puissiez diagnostiquer EN DIRECT,"
     Write-Info "au lieu de devoir tout relancer a chaque test :"
@@ -839,7 +869,7 @@ try {
     Write-Info "     `$secret = (Get-Content `"$ConfigPath`" | ConvertFrom-Json).secret"
     Write-Info "     curl.exe -v -H `"Authorization: Bearer `$secret`" -H `"Content-Type: application/json`" ``"
     Write-Info "       -d '{\`"model\`":\`"__probe__\`",\`"messages\`":[{\`"role\`":\`"user\`",\`"content\`":\`"ping\`"}]}' $TunnelUrl/v1/chat/completions"
-    Write-Info "   (le corps et l'en-tete 'Server' de la reponse peuvent identifier qui repond a la place de Caddy)"
+    Write-Info "   (le corps et l'en-tete 'Server'/'Via' de la reponse peuvent identifier qui a repondu)"
     Write-Info " - Depuis un AUTRE appareil sur un AUTRE reseau (telephone en 4G/5G, pas le wifi de la"
     Write-Info "   maison) : si un test equivalent passe depuis cet appareil, la cause est locale a ce PC."
     Write-Info ""
