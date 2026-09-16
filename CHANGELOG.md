@@ -5,6 +5,36 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-16 — Un seul script pour tout arreter/verifier/relancer (start-fogbound.ps1)
+
+Demande explicite apres plusieurs allers-retours entre `setup-automatic1111.ps1`
+et `setup-ollama-bridge.ps1` lances separement et dans le bon ordre a la
+main : un point d'entree unique. Nouveau `start-fogbound.ps1`, qui ne
+réimplémente rien des deux scripts existants (tous leurs correctifs --
+CLIP/setuptools, miroir Stability-AI, verification reelle du GPU Blackwell,
+Tailscale Funnel, reecriture du Host vers Ollama, nettoyage de processus
+avec sondage -- s'appliquent donc ici sans rien dupliquer) :
+
+1. **Arret propre** : cherche tout ce qui tourne deja d'une execution
+   precedente (Caddy/surveillant via les PID suivis dans `config.json`,
+   AUTOMATIC1111 par correspondance de repertoire, une fenetre de l'un des
+   deux scripts restee ouverte ailleurs) et l'arrete, ou confirme un depart
+   propre. Ollama et Tailscale ne sont volontairement pas coupes ici -- ce
+   sont des services partages, pas quelque chose que ce script possede ;
+   ils sont juste verifies/demarres si besoin par la suite.
+2. **AUTOMATIC1111** (optionnel via `-SkipAutomatic1111`, jamais bloquant) :
+   appelle `setup-automatic1111.ps1` tel quel.
+3. **Pont Ollama <-> Fogbound** (etape finale, garde la fenetre ouverte) :
+   appelle `setup-ollama-bridge.ps1` tel quel ; un `finally` arrete aussi
+   AUTOMATIC1111 quand ce pont s'arrete (Ctrl+C), pour un cycle complet
+   demarrage/arret en un seul geste.
+
+Ajoute aussi un mode `-Diagnose` (verifie Ollama, AUTOMATIC1111 et delegue
+au `-Diagnose` deja existant de `setup-ollama-bridge.ps1`) sans rien
+arreter ni installer. `install-startup-task.ps1` pointe desormais vers ce
+script au lieu du seul pont, pour que le demarrage automatique a l'ouverture
+de session couvre bien toute la pile, pas seulement Ollama.
+
 ## 2026-09-16 — Cause reelle de l'absence d'images en jeu : PyTorch sans noyaux Blackwell, pas un bug applicatif
 
 Symptome remonte par l'utilisateur : un tour se joue normalement (texte,

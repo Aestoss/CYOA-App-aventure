@@ -58,9 +58,12 @@
     5080/Blackwell system) -- every fix in this script's history was made
     against an actual failure log from that machine, not guessed in
     advance. Still, if you hit something new, please report it back.
-  - Leaves the WebUI running in this console window (Ctrl+C stops it, same
-    as running webui-user.bat directly) -- it's a separate long-running
-    process from the Ollama bridge, not something this script backgrounds.
+  - Launches the WebUI as a hidden, detached background process (not
+    attached to this console) and returns once its API answers -- this
+    script does NOT stay running or block on it, unlike setup-ollama-bridge.ps1
+    (which keeps running in the foreground until Ctrl+C). AUTOMATIC1111
+    keeps running after this script exits; see start-fogbound.ps1 for a
+    single entry point that starts (and cleanly stops) both together.
   - Known limitation: an existing install with a custom checkpoints folder
     (a --ckpt-dir argument in COMMANDLINE_ARGS, or a setting in config.json)
     isn't auto-detected -- models are always downloaded/placed under this

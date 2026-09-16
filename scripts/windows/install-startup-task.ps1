@@ -1,12 +1,13 @@
 <#
 .SYNOPSIS
-  Registers a Windows Scheduled Task so setup-ollama-bridge.ps1 starts
-  automatically at logon and restarts itself if it ever crashes.
+  Registers a Windows Scheduled Task so start-fogbound.ps1 (AUTOMATIC1111 +
+  Ollama + the Tailscale Funnel bridge, all together) starts automatically
+  at logon and restarts itself if it ever crashes.
 
 .DESCRIPTION
-  Run this ONCE (as the user who will be logged in when you want the bridge
-  running -- not as a different admin account). After that, the bridge
-  starts on its own every time you log into Windows, with no console
+  Run this ONCE (as the user who will be logged in when you want everything
+  running -- not as a different admin account). After that, the whole
+  stack starts on its own every time you log into Windows, with no console
   window popping up, and Windows itself relaunches it if it crashes while
   the PC stays on (see .NOTES for what this can't do).
 
@@ -18,10 +19,10 @@
 .PARAMETER TaskName
   Name of the Scheduled Task. Defaults to "FogboundOllamaBridge".
 
-.PARAMETER BridgeArgs
-  Extra arguments forwarded to setup-ollama-bridge.ps1, e.g.
-  "-Model qwen3:14b" or "-NoWatcher". Defaults to none (script's own
-  defaults apply).
+.PARAMETER ScriptArgs
+  Extra arguments forwarded to start-fogbound.ps1, e.g.
+  "-Model qwen3:14b" or "-SkipAutomatic1111". Defaults to none (that
+  script's own defaults apply).
 
 .NOTES
   - Run this from a normal (not necessarily Administrator) PowerShell
@@ -37,24 +38,24 @@
 
 .EXAMPLE
   .\install-startup-task.ps1
-  .\install-startup-task.ps1 -BridgeArgs "-Model llama3.1:8b"
+  .\install-startup-task.ps1 -ScriptArgs "-Model llama3.1:8b"
 #>
 
 [CmdletBinding()]
 param(
   [string]$TaskName = "FogboundOllamaBridge",
-  [string]$BridgeArgs = ""
+  [string]$ScriptArgs = ""
 )
 
 $ErrorActionPreference = "Stop"
 
-$bridgeScript = Join-Path $PSScriptRoot "setup-ollama-bridge.ps1"
-if (-not (Test-Path $bridgeScript)) {
-  Write-Host "ECHEC : setup-ollama-bridge.ps1 introuvable a cote de ce script ($PSScriptRoot)." -ForegroundColor Red
+$mainScript = Join-Path $PSScriptRoot "start-fogbound.ps1"
+if (-not (Test-Path $mainScript)) {
+  Write-Host "ECHEC : start-fogbound.ps1 introuvable a cote de ce script ($PSScriptRoot)." -ForegroundColor Red
   exit 1
 }
 
-$argumentLine = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$bridgeScript`" $BridgeArgs".Trim()
+$argumentLine = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$mainScript`" $ScriptArgs".Trim()
 
 $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $argumentLine
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
