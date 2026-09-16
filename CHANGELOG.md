@@ -38,6 +38,12 @@ maintenant ce cas confirme (en-tete Via presente -> Ollama/Caddy ont
 repondu, pas un blocage exterieur) de l'hypothese generique
 antivirus/DLP, desormais reléguée en repli si l'en-tete Via est absente.
 
+**Confirme par un run reel complet** : tunnel Tailscale stable, "sans
+jeton" rejete (401), "avec jeton" via l'URL publique -> reponse reelle
+d'Ollama recue ('OK'), `/bridge/status` joignable via le tunnel, reglages
+Fogbound mis a jour et confirmes automatiquement. Le pont Ollama <->
+Fogbound via Tailscale Funnel est operationnel de bout en bout.
+
 ## 2026-09-16 — 403 "avec jeton" via Tailscale Funnel : meme symptome qu'avec Cloudflare, diagnostic etendu
 
 Run reel : le tunnel Tailscale Funnel s'ouvre desormais correctement
