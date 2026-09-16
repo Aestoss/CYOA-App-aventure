@@ -191,6 +191,9 @@ const UI = {
     providerLocalSd: 'IA locale (Stable Diffusion)',
     localImageBaseUrlLabel: 'Adresse du serveur Stable Diffusion', localImageBaseUrlHint: '(AUTOMATIC1111 lancé avec --api ; même principe que pour Ollama — voir plus haut)',
     keyLocalSdLabel: 'Clé API IA locale (images)', keyLocalSdHint: '(généralement inutile en local)',
+    imageModelPresetLabel: 'Modèle d\'image détecté', imageModelPresetHint: '(checkpoints trouvés sur AUTOMATIC1111 — utilisé par défaut pour toutes les images)',
+    localsdRefreshBtn: '🔄 Actualiser',
+    imageModelLabel: 'Modèle d\'image', imageModelHint: '(optionnel, sinon le checkpoint déjà chargé dans AUTOMATIC1111)',
     keyAlreadySaved: '•••••••• (déjà enregistrée)',
     costsHeading: '💰 Coûts',
     costsHint: "Estimation approximative — les tarifs des fournisseurs changent, et OpenRouter n'a pas de tarif fixe (jetons seulement).",
@@ -374,6 +377,9 @@ const UI = {
     providerLocalSd: 'Local AI (Stable Diffusion)',
     localImageBaseUrlLabel: 'Stable Diffusion server address', localImageBaseUrlHint: '(AUTOMATIC1111 run with --api; same idea as Ollama above)',
     keyLocalSdLabel: 'Local AI (images) API key', keyLocalSdHint: '(usually unnecessary locally)',
+    imageModelPresetLabel: 'Detected image model', imageModelPresetHint: '(checkpoints found on AUTOMATIC1111 — used by default for every image)',
+    localsdRefreshBtn: '🔄 Refresh',
+    imageModelLabel: 'Image model', imageModelHint: '(optional, otherwise whatever checkpoint AUTOMATIC1111 already has loaded)',
     keyAlreadySaved: '•••••••• (already saved)',
     costsHeading: '💰 Costs',
     costsHint: "Rough estimate — provider pricing changes, and OpenRouter has no fixed rate (tokens only).",
@@ -1957,17 +1963,21 @@ document.getElementById('ollamaRefreshBtn').onclick = () => {
 setInterval(pollOllamaStatus, 12000);
 pollOllamaStatus();
 
-// ---------- Local Stable Diffusion model detection (per-world "Image model" preset) ----------
+// ---------- Local Stable Diffusion model detection ----------
 //
-// Same pattern as the Ollama text-model preset: fetched on demand (when the
-// World editor opens, see populateWorldEditor) rather than polled, since
-// it's only relevant while that panel is visible. Silently falls back to
-// manual typing if the bridge isn't reachable.
+// Feeds two selects from the same detected list: the global default in
+// Settings (#imageModelPreset -> #imageModel, settings.imageModel) and the
+// per-world override in the World editor (#worldImageModelPreset ->
+// #worldImageModelInput, world.imageModel — wins over the global default
+// when set, see gameEngine.js). Fetched on demand (Settings/World editor
+// opening) rather than polled, since it's only relevant while one of those
+// panels is visible. Silently falls back to manual typing if the bridge
+// isn't reachable.
 
 let localSdModels = [];
 
-function renderWorldImageModelPresets() {
-  const select = document.getElementById('worldImageModelPreset');
+function renderImageModelPresetSelect(selectId) {
+  const select = document.getElementById(selectId);
   const customLabel = select.options[0]; // "(custom / manual)" — always kept as the first option
   select.innerHTML = '';
   select.appendChild(customLabel);
@@ -1984,6 +1994,11 @@ function renderWorldImageModelPresets() {
   });
 }
 
+function renderAllImageModelPresets() {
+  renderImageModelPresetSelect('worldImageModelPreset');
+  renderImageModelPresetSelect('imageModelPreset');
+}
+
 async function refreshLocalSdModels() {
   try {
     const { models } = await fetch(`${API}/localsd/models`).then(r => r.json());
@@ -1991,13 +2006,20 @@ async function refreshLocalSdModels() {
   } catch (e) {
     localSdModels = [];
   }
-  renderWorldImageModelPresets();
+  renderAllImageModelPresets();
 }
 
 document.getElementById('worldImageModelPreset').onchange = () => {
   const presetValue = document.getElementById('worldImageModelPreset').value;
   if (presetValue) document.getElementById('worldImageModelInput').value = presetValue;
 };
+
+document.getElementById('imageModelPreset').onchange = () => {
+  const presetValue = document.getElementById('imageModelPreset').value;
+  if (presetValue) document.getElementById('imageModel').value = presetValue;
+};
+
+document.getElementById('localsdRefreshBtn').onclick = () => refreshLocalSdModels();
 
 async function loadSettings() {
   const s = await fetch(`${API}/settings`).then(r => r.json());
@@ -2014,6 +2036,8 @@ async function loadSettings() {
   document.getElementById('imageProvider').value = s.imageProvider;
   document.getElementById('imagesEnabled').checked = s.imagesEnabled;
   document.getElementById('localImageBaseUrl').value = s.localImageBaseUrl || '';
+  document.getElementById('imageModel').value = s.imageModel || '';
+  refreshLocalSdModels();
   ['anthropic', 'openai', 'openrouter', 'gemini', 'ollama', 'stability', 'replicate', 'localsd'].forEach(p => {
     const field = document.getElementById(`key-${p}`);
     field.placeholder = s.apiKeys[p] ? t('keyAlreadySaved') : field.placeholder;
@@ -2035,6 +2059,7 @@ document.getElementById('saveSettingsBtn').onclick = async () => {
     language: document.getElementById('responseLanguage').value,
     chapterLength: Number(document.getElementById('chapterLengthSlider').value),
     imageProvider: document.getElementById('imageProvider').value,
+    imageModel: document.getElementById('imageModel').value.trim(),
     imagesEnabled: document.getElementById('imagesEnabled').checked,
     localImageBaseUrl: document.getElementById('localImageBaseUrl').value.trim(),
     apiKeys

@@ -363,6 +363,15 @@
       <label class="key-field"><span data-i18n="keyReplicateLabel"></span> <input id="key-replicate" type="password" placeholder="r8_..."></label>
       <label class="key-field"><span data-i18n="localImageBaseUrlLabel"></span> <span class="hint-inline" data-i18n="localImageBaseUrlHint"></span><input id="localImageBaseUrl" type="text" placeholder="http://localhost:7860"></label>
       <label class="key-field"><span data-i18n="keyLocalSdLabel"></span> <span class="hint-inline" data-i18n="keyLocalSdHint"></span><input id="key-localsd" type="password" placeholder="(optionnel)"></label>
+      <label><span data-i18n="imageModelPresetLabel"></span> <span class="hint-inline" data-i18n="imageModelPresetHint"></span>
+        <select id="imageModelPreset">
+          <option value="" data-i18n="modelPresetCustom"></option>
+        </select>
+        <button type="button" id="localsdRefreshBtn" class="text-btn small-btn" data-i18n="localsdRefreshBtn"></button>
+      </label>
+      <label><span data-i18n="imageModelLabel"></span> <span class="hint-inline" data-i18n="imageModelHint"></span>
+        <input id="imageModel" type="text" placeholder="ex : realvisxlV50_v50LightningBakedvae.safetensors">
+      </label>
     </div>
 
     <button id="saveSettingsBtn" class="primary-btn" data-i18n="saveBtn"></button>

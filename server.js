@@ -524,7 +524,7 @@ app.post('/api/settings', (req, res) => {
   const current = db.get('settings').value();
   const {
     textProvider, textModel, ollamaBaseUrl, fallbackProvider, fallbackModel,
-    language, chapterLength, imageProvider, imagesEnabled, localImageBaseUrl, apiKeys
+    language, chapterLength, imageProvider, imageModel, imagesEnabled, localImageBaseUrl, apiKeys
   } = req.body;
   const next = {
     textProvider: textProvider ?? current.textProvider,
@@ -540,6 +540,7 @@ app.post('/api/settings', (req, res) => {
       ? Math.min(1000, Math.max(100, Math.round(Number(chapterLength) / 100) * 100))
       : current.chapterLength,
     imageProvider: imageProvider ?? current.imageProvider,
+    imageModel: imageModel !== undefined ? (imageModel || null) : current.imageModel,
     imagesEnabled: typeof imagesEnabled === 'boolean' ? imagesEnabled : current.imagesEnabled,
     localImageBaseUrl: localImageBaseUrl ?? current.localImageBaseUrl,
     apiKeys: { ...current.apiKeys, ...(apiKeys || {}) }
