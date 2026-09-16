@@ -5,6 +5,43 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-16 — Correctif Tailscale Funnel : syntaxe CLI obsolete + diagnostic muet
+
+Premier run réel de la version Tailscale : le diagnostic (`-Diagnose`)
+passait tout au vert, mais l'exécution complète échouait sur
+`'tailscale funnel' a echoue (code 1)`, sans aucun détail affiché — le
+script redirigeait `2>&1` puis jetait la sortie avec `Out-Null`, donc le
+vrai message d'erreur de Tailscale n'était jamais montré.
+
+Plutôt que de deviner un deuxième correctif, clonage en lecture seule du
+dépôt source `tailscale/tailscale` pour lire directement le code du CLI
+(`cmd/tailscale/cli/funnel.go`, `serve_v2.go`, `ipn/serve.go`) et confirmer
+la cause exacte :
+- La syntaxe utilisée, `tailscale funnel 443 on` (positionnelle,
+  `<serve-port> {on|off}`), correspond à une implémentation encore présente
+  dans le dépôt mais **plus branchée** par le CLI actuel (commentaire du
+  code source lui-même : "previously used to serve legacy
+  newFunnelCommand... TODO: cleanup"). Le CLI actif fusionne désormais
+  `serve` et `funnel` en une seule commande avec des flags
+  (`tailscale funnel --bg --https=<port> <cible>`), ce qui explique
+  l'échec immédiat (erreur d'usage) sur la syntaxe positionnelle.
+- Le diagnostic Funnel (`Test-FunnelPrerequisites`) ne vérifiait en réalité
+  rien du tout côté capacités du compte : il analysait le texte de
+  `tailscale funnel status --json`, qui ne fait que refléter la config de
+  routage déjà en place (vide avant le premier succès), jamais si le nœud a
+  réellement les droits `https`/`funnel`. D'où le "OK" affiché alors que la
+  cause réelle restait inconnue. Remplacé par une lecture directe de
+  `tailscale status --json` -> `Self.CapMap`/`Self.Capabilities`, exactement
+  le signal que `ipn.NodeCanFunnel` verifie en interne côté Tailscale.
+
+Corrections dans `setup-ollama-bridge.ps1` :
+- Un seul appel `tailscale funnel --bg --https=443 http://127.0.0.1:8787`
+  remplace les deux anciens appels (`serve` puis `funnel ... on`).
+- En cas d'échec, le message d'erreur réel de Tailscale est maintenant
+  capturé et affiché ligne par ligne, au lieu d'être jeté.
+- `Test-FunnelPrerequisites` vérifie désormais les vraies capacités du
+  nœud (`https`, `funnel`) au lieu d'un texte d'erreur supposé.
+
 ## 2026-09-16 — Migration du tunnel public : Cloudflare quick tunnel → Tailscale Funnel
 
 Le tunnel Cloudflare anonyme (`*.trycloudflare.com`) utilisé jusqu'ici

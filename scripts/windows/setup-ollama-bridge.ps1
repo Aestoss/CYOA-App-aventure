@@ -44,7 +44,7 @@
     4. Starts ollama-watcher.ps1 (a separate script next to this one), which
        polls nvidia-smi and shows a tray icon (green/orange) so you can see
        locally when the GPU is busy enough that a game might stutter.
-    5. Points Tailscale Funnel at Caddy (tailscale serve + tailscale funnel)
+    5. Points Tailscale Funnel at Caddy (a single 'tailscale funnel' call)
        and reads back the resulting stable public hostname via
        'tailscale funnel status --json' (no log-scraping involved -- unlike
        the old cloudflared approach, this is a structured, documented API).
@@ -309,18 +309,32 @@ function Test-TailscaleState {
 }
 
 # Checks the two admin-console-side prerequisites (HTTPS certs, Funnel node
-# attribute) the only way possible from the CLI: by actually trying the
-# commands and reading the specific, documented error text Tailscale itself
-# prints when either is missing, rather than guessing from indirect signals.
+# attribute) by reading this node's own capability list from
+# 'tailscale status --json', the same signal Tailscale's own CLI checks
+# internally via ipn.NodeCanFunnel (node.HasCap("https") and
+# node.HasCap("funnel")) -- verified directly against the tailscale/tailscale
+# source, since 'tailscale funnel status --json' alone (an earlier version
+# of this check) only reports the current serve config, not whether this
+# node is actually allowed to use Funnel at all -- it can look empty/fine
+# even when neither prerequisite is met yet.
 # Returns $null if everything looks fine, or a human-readable explanation.
 function Test-FunnelPrerequisites {
   param([string]$TsExe)
-  $probe = Invoke-NativeQuiet { & $TsExe funnel status --json 2>&1 }
-  $probeText = ($probe | Out-String)
-  if ($probeText -match "HTTPS is not enabled" -or $probeText -match "enable HTTPS") {
+  $status = Get-TailscaleStatusJson $TsExe
+  if (-not $status -or -not $status.Self) {
+    return "Impossible de lire les capacites de cette machine (tailscale status --json a echoue)."
+  }
+  $capNames = New-Object System.Collections.Generic.HashSet[string]
+  if ($status.Self.CapMap) {
+    foreach ($name in $status.Self.CapMap.PSObject.Properties.Name) { [void]$capNames.Add($name) }
+  }
+  if ($status.Self.Capabilities) {
+    foreach ($name in $status.Self.Capabilities) { [void]$capNames.Add($name) }
+  }
+  if (-not $capNames.Contains("https")) {
     return "Les certificats HTTPS ne sont pas actives pour votre tailnet (voir GUIDE-TAILSCALE.md, etape 'Activer HTTPS Certificates')."
   }
-  if ($probeText -match "funnel" -and $probeText -match "(not allowed|attribute|ACL|access)") {
+  if (-not $capNames.Contains("funnel")) {
     return "Ce compte n'a pas la permission Funnel activee dans la politique ACL du tailnet (voir GUIDE-TAILSCALE.md, etape 'Autoriser Funnel')."
   }
   return $null
@@ -663,21 +677,20 @@ try {
 
 Write-Step "Configuration du tunnel public stable (Tailscale Funnel)"
 
-# 'serve' declares the internal routing (public port -> local port); 'funnel'
-# switches that same route from tailnet-only to public-internet-reachable.
-# Both are idempotent -- safe to re-run every time this script starts.
-Invoke-NativeQuiet { & $TsExe serve --bg --https=$FunnelPort "http://127.0.0.1:$ProxyPort" 2>&1 } | Out-Null
-if ($LASTEXITCODE -ne 0) {
-  Write-Fail "'tailscale serve' a echoue (code $LASTEXITCODE)."
-  Write-Info "Relancez avec : .\setup-ollama-bridge.ps1 -Diagnose  pour un rapport detaille."
-  Stop-Bridge
-  exit 1
-}
-
-Invoke-NativeQuiet { & $TsExe funnel $FunnelPort on 2>&1 } | Out-Null
+# A single 'tailscale funnel' call both configures the routing (public port
+# -> local Caddy port) AND turns on public reachability for it -- current
+# Tailscale versions merged what used to be a two-step 'serve' then
+# 'funnel <port> on' dance into one command (confirmed against the
+# tailscale/tailscale source: funnel's positional "<port> {on|off}" form is
+# dead code no longer wired up by the CLI -- using it, as an earlier version
+# of this script did, fails immediately with a usage error). --bg keeps it
+# running in the background after this command returns, so it survives
+# Ctrl+C on this script (see .NOTES). Idempotent -- safe to re-run.
+$funnelOutput = Invoke-NativeQuiet { & $TsExe funnel --bg "--https=$FunnelPort" "http://127.0.0.1:$ProxyPort" 2>&1 }
 if ($LASTEXITCODE -ne 0) {
   Write-Fail "'tailscale funnel' a echoue (code $LASTEXITCODE)."
-  Write-Info "Cause la plus frequente : la permission Funnel n'est pas activee pour ce compte (voir GUIDE-TAILSCALE.md)."
+  Write-Info "Message exact de Tailscale :"
+  foreach ($line in $funnelOutput) { Write-Info "  $line" }
   Write-Info "Relancez avec : .\setup-ollama-bridge.ps1 -Diagnose  pour un rapport detaille."
   Stop-Bridge
   exit 1
