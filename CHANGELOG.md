@@ -5,6 +5,31 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-16 — CLIP resolu, nouveau blocage : depot Stability-AI disparu
+
+CLIP s'installe desormais avec succes (confirme par le journal de
+l'utilisateur : "OK: CLIP installe avec succes.") -- la chaine de
+correctifs setuptools/wheel/pkg_resources est bel et bien terminee.
+Nouveau blocage juste apres, sur un tout autre depot : AUTOMATIC1111
+essaie de cloner `https://github.com/Stability-AI/stablediffusion.git`
+et echoue avec "Repository not found" (code 128).
+
+Verifie avant de corriger : ce depot officiel a ete retire/rendu prive
+courant decembre 2025, confirme par plusieurs tickets reels ouverts sur
+le depot GitHub d'AUTOMATIC1111 a cette periode (#17204, #17205, #17213,
+#17216, #17218...), pas une supposition. La branche `dev` d'AUTOMATIC1111
+contourne deja ce probleme en pointant vers un miroir communautaire
+(`w-e-w/stablediffusion.git`) -- verifie que ce miroir contient bien le
+commit exact attendu (`cf1d67a6...`, meme auteur et contenu que
+l'original) avant de s'y fier. Egalement verifie que les autres depots
+Stability-AI clones par ce webui (`generative-models` pour SDXL) ne sont
+pas affectes -- seul `stablediffusion` a ete retire.
+
+Corrige simplement en definissant la variable d'environnement
+`STABLE_DIFFUSION_REPO`, deja lue par le `launch_utils.py` de cette
+installation (meme mecanisme que `CLIP_PACKAGE`) -- pas besoin de cloner
+quoi que ce soit soi-meme ni de modifier le code d'AUTOMATIC1111.
+
 ## 2026-09-16 — Correctif CLIP, round suivant : il manquait "wheel"
 
 Bonne nouvelle confirmee par le nouveau `clip-preinstall.log` demande a

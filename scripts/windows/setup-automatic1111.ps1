@@ -29,18 +29,23 @@
        NoobAI-XL v1.1 (SDXL/anime/illustration, uncensored, ~7.1 GB) and
        RealVisXL V5.0 (photorealistic, uncensored, ~6.9 GB). -ModelUrl adds
        one further custom model on top of those two.
-    4. Detects an RTX 50xx (Blackwell) GPU and, if found, overrides this
+    4. Redirects AUTOMATIC1111's own Stable Diffusion dependency clone away
+       from the official Stability-AI repo (taken down/made private in
+       Dec 2025) to a working community mirror, via the same environment
+       variable override AUTOMATIC1111 already reads for this -- see the
+       comment above that step for the full story.
+    5. Detects an RTX 50xx (Blackwell) GPU and, if found, overrides this
        webui's default (outdated) PyTorch install command so it actually
        runs on that hardware instead of crashing on the first generation --
        see the comment above that step for why this is needed.
-    5. Pre-installs CLIP into the venv with a pinned setuptools version,
+    6. Pre-installs CLIP into the venv with a pinned setuptools version,
        working around a real, current (Sept 2026) compatibility break
        between setuptools 82+ and CLIP's legacy setup.py -- see the comment
        above that step for the full story and why the obvious PIP_CONSTRAINT
        fix doesn't actually work.
-    6. Edits webui-user.bat to add the --api flag if it isn't already there
+    7. Edits webui-user.bat to add the --api flag if it isn't already there
        (idempotent -- running this script again never adds it twice).
-    7. Launches webui-user.bat and waits for its API to actually answer --
+    8. Launches webui-user.bat and waits for its API to actually answer --
        the very first launch installs several GB of dependencies (PyTorch
        etc.) and can take 10-15 minutes, so this polls patiently instead of
        declaring success too early.
@@ -49,11 +54,10 @@
   - Run from a normal PowerShell window: if execution policy blocks the
     script, run instead:
       powershell -ExecutionPolicy Bypass -File .\setup-automatic1111.ps1
-  - This script has not been run on a real Windows machine by the assistant
-    that wrote it (no such access exists in that environment) -- it was
-    built from AUTOMATIC1111's documented install steps and verified winget
-    package IDs, but please report back anything that errors so it can be
-    fixed.
+  - Iterated against a real Windows machine over several rounds (an RTX
+    5080/Blackwell system) -- every fix in this script's history was made
+    against an actual failure log from that machine, not guessed in
+    advance. Still, if you hit something new, please report it back.
   - Leaves the WebUI running in this console window (Ctrl+C stops it, same
     as running webui-user.bat directly) -- it's a separate long-running
     process from the Ollama bridge, not something this script backgrounds.
@@ -429,7 +433,36 @@ if ($existingNames.Count -eq 0) {
 }
 
 # ---------------------------------------------------------------------------
-# 4. RTX 50xx (Blackwell) needs a newer PyTorch than this webui pins by
+# 4. Stability-AI/stablediffusion (one of AUTOMATIC1111's own hardcoded
+#    dependency repos, cloned into repositories\stable-diffusion-stability-ai
+#    on first launch) was taken down/made private in Dec 2025 -- confirmed
+#    via multiple real AUTOMATIC1111 GitHub issues (#17204, #17205, #17213,
+#    #17216, #17218...) from that exact time, not assumed, and confirmed
+#    against a real failure log from this exact install: "remote:
+#    Repository not found. fatal: repository
+#    'https://github.com/Stability-AI/stablediffusion.git/' not found".
+#    AUTOMATIC1111's own dev branch already works around this by pointing
+#    at a community fork (w-e-w/stablediffusion.git) that mirrors the same
+#    commit history -- verified this fork actually contains the exact
+#    commit this webui checks out (cf1d67a6..., same author/content as the
+#    original) before relying on it, not just that the repo exists.
+#    launch_utils.py already reads this URL from a STABLE_DIFFUSION_REPO
+#    environment variable if set (the same override mechanism used for
+#    CLIP_PACKAGE), so this only needs setting that variable -- no need to
+#    pre-clone anything ourselves or patch AUTOMATIC1111's own code.
+#    Other Stability-AI-owned dependency repos this webui clones
+#    (generative-models for SDXL) were checked and are NOT affected --
+#    only this one specific repo was found taken down, so only this one is
+#    redirected.
+# ---------------------------------------------------------------------------
+
+Write-Step "Correctif : depot Stable Diffusion officiel indisponible"
+
+$env:STABLE_DIFFUSION_REPO = "https://github.com/w-e-w/stablediffusion.git"
+Write-Ok "STABLE_DIFFUSION_REPO redirige vers un miroir fonctionnel (le depot officiel Stability-AI a ete retire)."
+
+# ---------------------------------------------------------------------------
+# 5. RTX 50xx (Blackwell) needs a newer PyTorch than this webui pins by
 #    default. AUTOMATIC1111's launch_utils.py still hardcodes torch==2.1.2
 #    (CUDA 12.1), which has no compiled kernels for the 50-series' sm_120
 #    architecture -- confirmed by real user reports, not assumed -- and
@@ -475,7 +508,7 @@ if (Test-BlackwellGpu) {
 }
 
 # ---------------------------------------------------------------------------
-# 5. Pre-install CLIP into the venv myself, working around a real,
+# 6. Pre-install CLIP into the venv myself, working around a real,
 #    reproduced-twice failure: setuptools 82.0 (Feb 2026) deleted
 #    pkg_resources entirely, and OpenAI's CLIP package -- an unpinned
 #    git-based dependency this webui installs into every fresh venv --
@@ -611,7 +644,7 @@ if (Test-Path $VenvPython) {
 }
 
 # ---------------------------------------------------------------------------
-# 6. Make sure --api is enabled (idempotent: never adds it twice)
+# 7. Make sure --api is enabled (idempotent: never adds it twice)
 # ---------------------------------------------------------------------------
 
 Write-Step "Activation du flag --api"
@@ -670,7 +703,7 @@ if ($SkipLaunch) {
 }
 
 # ---------------------------------------------------------------------------
-# 7. Launch and wait for the API to actually answer -- the first run
+# 8. Launch and wait for the API to actually answer -- the first run
 #    installs several GB of dependencies, so this is patient on purpose.
 # ---------------------------------------------------------------------------
 
