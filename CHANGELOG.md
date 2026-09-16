@@ -5,6 +5,24 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-16 — Correctif CLIP, round suivant : il manquait "wheel"
+
+Bonne nouvelle confirmee par le nouveau `clip-preinstall.log` demande a
+l'utilisateur : le correctif `pkg_resources` (setuptools==69.5.1) a
+fonctionne cette fois -- l'erreur a change, passant de
+`ModuleNotFoundError: No module named 'pkg_resources'` a un simple
+`DeprecationWarning` (pas un echec) suivi d'une toute nouvelle erreur :
+`error: invalid command 'bdist_wheel'`.
+
+Verifie avant de corriger : cette erreur precise correspond exactement au
+cas bien documente ou `--no-build-isolation` (necessaire pour eviter le
+bug setuptools) a aussi pour effet de sauter l'environnement de build
+isole normal de pip -- qui aurait sinon fourni automatiquement le paquet
+`wheel` (et sa commande setuptools `bdist_wheel`). Sans `wheel` deja
+present dans ce venv, la construction de CLIP echoue avec exactement ce
+message. Corrige en installant `wheel` en meme temps que
+`setuptools==69.5.1`, avant la tentative d'installation de CLIP.
+
 ## 2026-09-15 — Revue independante : 6 bugs reels corriges, 1 fausse alerte
 
 Suite a la demande de faire relire le script par une instance Claude

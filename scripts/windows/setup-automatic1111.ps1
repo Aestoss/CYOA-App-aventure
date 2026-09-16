@@ -555,9 +555,19 @@ if (Test-Path $VenvPython) {
     Write-Ok "CLIP est deja installe dans le venv."
   } else {
     Write-Info "Fixation de setuptools a une version compatible (69.5.1) dans le venv..."
-    $setuptoolsOutput = Invoke-NativeQuiet { & $VenvPython -m pip install "setuptools==69.5.1" 2>&1 }
+    # wheel too, not just setuptools -- confirmed as a real, distinct
+    # second failure once the pkg_resources one was actually fixed:
+    # --no-build-isolation skips pip's normal isolated build environment,
+    # which is what would otherwise provide "wheel" (and its bdist_wheel
+    # setuptools command) automatically. Without it already present in
+    # this venv, CLIP's build fails with "error: invalid command
+    # 'bdist_wheel'" -- a different, well-documented error, not a sign the
+    # setuptools pin itself failed (confirmed: it was actually a
+    # DeprecationWarning about pkg_resources this time, not the
+    # ModuleNotFoundError from before -- the original fix did work).
+    $setuptoolsOutput = Invoke-NativeQuiet { & $VenvPython -m pip install "setuptools==69.5.1" wheel 2>&1 }
     if ($LASTEXITCODE -ne 0) {
-      Write-Fail "Impossible de fixer setuptools==69.5.1 -- la suite de cette etape va probablement aussi echouer. Detail :"
+      Write-Fail "Impossible de fixer setuptools==69.5.1/wheel -- la suite de cette etape va probablement aussi echouer. Detail :"
       Write-ClipInstallLog $setuptoolsOutput
       $setuptoolsOutput | Select-Object -Last 15 | ForEach-Object { Write-Host "    $_" }
       Write-Info "Journal complet : $ClipInstallLogPath"
