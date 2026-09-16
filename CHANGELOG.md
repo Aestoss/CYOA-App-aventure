@@ -5,6 +5,25 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-16 — Generation d'image confirmee fonctionnelle + lanceur double-clic
+
+Root cause du "CUDA error: no kernel image" confirmee : un processus
+AUTOMATIC1111 elevé (lancé un jour depuis une fenetre PowerShell
+administrateur) tournait en arriere-plan depuis un bon moment, invisible
+et impossible a arreter depuis une session normale (`Stop-Process` y
+echouait avec "Acces refuse", pas juste une ligne de commande vide comme
+dans l'entree precedente) -- confirmant, avec une derniere preuve directe,
+l'ecart de privileges deja diagnostique. Une fois ce process arrete depuis
+une fenetre elevee, la generation d'image fonctionne.
+
+Nouveau `Lancer-Fogbound.bat` : lanceur double-clic pour
+`start-fogbound.ps1`, qui s'auto-eleve en administrateur (demande UAC) au
+lieu de se lancer en mode normal -- tire directement la lecon de la
+session de diagnostic ci-dessus : un script elevé peut toujours gerer
+n'importe quel processus (eleve ou non) qu'un lancement precedent a pu
+creer, dans un sens ou dans l'autre, ce qu'un script non-eleve ne peut
+jamais garantir.
+
 ## 2026-09-16 — Vrai bug trouve : la detection de processus ne voit pas tout, pas le torch
 
 Session de diagnostic en direct sur la machine reelle apres un echec
