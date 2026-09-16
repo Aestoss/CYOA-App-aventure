@@ -5,6 +5,34 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-16 — La verification PyTorch/Blackwell passait alors que l'install restait cassee
+
+Meme erreur CUDA reproduite en jeu (confirmee par les logs Railway) apres
+un run de `start-fogbound.ps1` qui avait pourtant rapporte "OK: PyTorch
+fonctionne correctement". Cause reelle : le test utilise jusqu'ici
+(`torch.zeros(1) + 1`) est l'operation CUDA la plus simple possible -- trop
+simple pour detecter une reinstallation partielle. AUTOMATIC1111 tourne en
+continu depuis le debut de cette session ; la toute premiere reinstallation
+de torch a tres probablement eu lieu pendant que ce processus tenait encore
+les .dll de torch ouverts, empechant Windows de tous les remplacer malgre
+`--force-reinstall` -- resultat : un melange de fichiers anciens/nouveaux,
+sur lequel l'addition triviale passait quand meme, mais pas les vraies
+convolutions utilisees par la generation d'image.
+
+Deux correctifs dans `setup-automatic1111.ps1` :
+- Le test verifie desormais une vraie convolution en demi-precision
+  (`torch.nn.functional.conv2d`) suivie de `torch.cuda.synchronize()` --
+  necessaire car torch lui-meme documente que les erreurs CUDA peuvent
+  n'apparaitre qu'a un appel ulterieur, pas forcement celui qui les a
+  causees.
+- Avant toute reinstallation de torch, un processus AUTOMATIC1111 deja actif
+  pour cette meme installation est desormais arrete (et son arret reellement
+  attendu) en premier -- pour qu'une reinstallation ne puisse plus jamais
+  se disputer les memes fichiers avec un processus vivant. La reinstallation
+  ajoute aussi `--no-cache-dir` pour garantir un telechargement neuf plutot
+  que de reutiliser un wheel mis en cache lors d'une tentative precedente
+  partiellement ratee.
+
 ## 2026-09-16 — Nettoyage des anciens journaux AUTOMATIC1111 : non bloquant desormais
 
 Meme apres le renforcement precedent (sondage de la fin reelle du processus

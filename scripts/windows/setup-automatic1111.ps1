@@ -660,18 +660,41 @@ if (Test-Path $VenvPython) {
 #     is available for execution on the device" -- exactly this scenario.
 #     Rather than guess from version strings (fragile -- cu128 wheels could
 #     themselves someday drop sm_120, or a future architecture could need a
-#     newer index), this actually runs a trivial GPU op and looks for that
-#     exact failure signature, then force-reinstalls only if it reproduces.
+#     newer index), this actually runs a GPU op and looks for that exact
+#     failure signature, then force-reinstalls only if it reproduces.
+#
+#     A first version of this check used torch.zeros(1)+1 -- confirmed too
+#     weak for real: it kept reporting success on a venv whose actual image
+#     generation still failed with the identical CUDA error afterwards, run
+#     after run. Root cause traced to timing: AUTOMATIC1111 has typically
+#     been running continuously across this whole session (confirmed by
+#     "server responds on port 7860" showing up on essentially every run),
+#     so the FIRST time this script's reinstall ran, that live process very
+#     likely still had torch's own .dll files loaded/locked -- Windows can't
+#     overwrite a loaded DLL out from under a running process, so pip's
+#     --force-reinstall silently kept some of the old, non-Blackwell files
+#     in place while replacing others. zeros()+1 resolves to one of the
+#     simplest possible kernels and kept passing on that inconsistent mix;
+#     Stable Diffusion's real convolution/attention kernels did not. Two
+#     fixes together: (a) stop any already-running instance of THIS install
+#     before touching its venv at all, so a reinstall can never again race a
+#     live process for the same files; (b) verify with an actual
+#     convolution in half precision -- much closer to what Stable Diffusion
+#     itself runs -- plus torch.cuda.synchronize(), since CUDA errors can be
+#     reported asynchronously on a LATER call rather than the one that
+#     actually caused them (torch's own error message says so directly).
 # ---------------------------------------------------------------------------
 
 if ($IsBlackwellGpu -and (Test-Path $VenvPython)) {
   Write-Step "Verification que le PyTorch installe fonctionne reellement sur ce GPU Blackwell"
 
-  $torchCheckOutput = Invoke-NativeQuiet { & $VenvPython -c "import torch; x = torch.zeros(1, device='cuda'); print((x + 1).item())" 2>&1 }
-  $torchCheckOk = ($LASTEXITCODE -eq 0) -and ($torchCheckOutput -join "`n") -match "1\.0"
+  $torchCheckScript = "import torch; import torch.nn.functional as F; x = torch.randn(1, 3, 8, 8, device='cuda', dtype=torch.float16); w = torch.randn(4, 3, 3, 3, device='cuda', dtype=torch.float16); y = F.conv2d(x, w, padding=1); torch.cuda.synchronize(); print('CONV_OK', float(y.sum().item()))"
+
+  $torchCheckOutput = Invoke-NativeQuiet { & $VenvPython -c $torchCheckScript 2>&1 }
+  $torchCheckOk = ($LASTEXITCODE -eq 0) -and (($torchCheckOutput -join "`n") -match "CONV_OK")
 
   if ($torchCheckOk) {
-    Write-Ok "PyTorch fonctionne correctement sur ce GPU (test CUDA reel reussi)."
+    Write-Ok "PyTorch fonctionne correctement sur ce GPU (convolution CUDA reelle reussie)."
   } else {
     $torchCheckText = $torchCheckOutput -join "`n"
     if ($torchCheckText -match "no kernel image is available") {
@@ -680,17 +703,40 @@ if ($IsBlackwellGpu -and (Test-Path $VenvPython)) {
       Write-Fail "Le test PyTorch/CUDA a echoue pour une raison differente -- reinstallation quand meme tentee au cas ou. Detail :"
       $torchCheckOutput | Select-Object -Last 10 | ForEach-Object { Write-Host "    $_" }
     }
+
+    # Stop any live process from THIS install before touching its venv --
+    # otherwise a reinstall can silently leave a locked-file mix behind
+    # exactly as described above, passing a weak check while real
+    # generation keeps failing.
+    $preReinstallProcesses = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+      Where-Object { $_.CommandLine -and ($_.CommandLine -like "*$ResolvedWebUiDir*") }
+    if ($preReinstallProcesses) {
+      Write-Info "AUTOMATIC1111 tourne encore -- arret avant de toucher a son venv (sinon la reinstallation peut echouer partiellement en silence sur des fichiers verrouilles)."
+      foreach ($p in $preReinstallProcesses) { Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue }
+      $waited = 0
+      while ($waited -lt 10) {
+        $stillRunning = $preReinstallProcesses | Where-Object { Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue }
+        if (-not $stillRunning) { break }
+        Start-Sleep -Milliseconds 500
+        $waited += 0.5
+      }
+      Start-Sleep -Milliseconds 500
+    }
+
     Write-Info "Reinstallation de torch/torchvision/torchaudio depuis l'index cu128 (peut prendre plusieurs minutes, gros telechargement)..."
+    # --no-cache-dir too: guarantees a genuinely fresh download/extract
+    # instead of possibly reusing a wheel pip cached during an earlier,
+    # partially-failed attempt.
     $torchReinstallOutput = Invoke-NativeQuiet {
-      & $VenvPython -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128 --force-reinstall 2>&1
+      & $VenvPython -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128 --force-reinstall --no-cache-dir 2>&1
     }
     if ($LASTEXITCODE -ne 0) {
       Write-Fail "La reinstallation de torch a echoue. Dernieres lignes :"
       $torchReinstallOutput | Select-Object -Last 15 | ForEach-Object { Write-Host "    $_" }
     } else {
-      $recheckOutput = Invoke-NativeQuiet { & $VenvPython -c "import torch; x = torch.zeros(1, device='cuda'); print((x + 1).item())" 2>&1 }
-      if ($LASTEXITCODE -eq 0 -and (($recheckOutput -join "`n") -match "1\.0")) {
-        Write-Ok "PyTorch reinstalle (cu128) et verifie fonctionnel sur ce GPU."
+      $recheckOutput = Invoke-NativeQuiet { & $VenvPython -c $torchCheckScript 2>&1 }
+      if ($LASTEXITCODE -eq 0 -and (($recheckOutput -join "`n") -match "CONV_OK")) {
+        Write-Ok "PyTorch reinstalle (cu128) et verifie fonctionnel sur ce GPU (convolution CUDA reelle)."
       } else {
         Write-Fail "PyTorch reinstalle mais le test CUDA echoue encore -- signalez ceci, ce n'est plus le cas connu couvert par ce script."
         ($recheckOutput | Select-Object -Last 10) | ForEach-Object { Write-Host "    $_" }
