@@ -785,14 +785,38 @@ if ($leftoverProcesses) {
     Write-Info "Processus d'une execution precedente encore actif (PID $($p.ProcessId)) -- arret avant de relancer."
     Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
   }
-  Start-Sleep -Seconds 2
+  # Stop-Process returning doesn't guarantee the process (and its open file
+  # handles, e.g. these same log files) has actually finished exiting yet --
+  # confirmed a real gap by an actual "used by another process" failure right
+  # after this used to be a flat 2-second sleep. Poll until each PID is
+  # really gone instead of hoping a fixed delay was long enough.
+  $waited = 0
+  while ($waited -lt 10) {
+    $stillRunning = $leftoverProcesses | Where-Object { Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue }
+    if (-not $stillRunning) { break }
+    Start-Sleep -Milliseconds 500
+    $waited += 0.5
+  }
+  Start-Sleep -Milliseconds 500
 }
 
-try {
-  if (Test-Path $WebUiLogPath) { Remove-Item $WebUiLogPath -Force -ErrorAction Stop }
-  if (Test-Path $WebUiErrLogPath) { Remove-Item $WebUiErrLogPath -Force -ErrorAction Stop }
-} catch {
-  Write-Fail "Impossible de supprimer les anciens journaux ($($_.Exception.Message)) -- un processus les a probablement encore ouverts. Fermez-le (verifiez le Gestionnaire des taches pour un python.exe ou cmd.exe lance depuis $ResolvedWebUiDir) puis relancez ce script."
+# Even after the process is confirmed gone, Windows can hold the file handle
+# open for a brief moment longer (antivirus scan, delayed handle release) --
+# retried a few times instead of failing on the very first attempt.
+$logCleanupError = $null
+for ($tryNum = 1; $tryNum -le 4; $tryNum++) {
+  try {
+    if (Test-Path $WebUiLogPath) { Remove-Item $WebUiLogPath -Force -ErrorAction Stop }
+    if (Test-Path $WebUiErrLogPath) { Remove-Item $WebUiErrLogPath -Force -ErrorAction Stop }
+    $logCleanupError = $null
+    break
+  } catch {
+    $logCleanupError = $_
+    Start-Sleep -Milliseconds 750
+  }
+}
+if ($logCleanupError) {
+  Write-Fail "Impossible de supprimer les anciens journaux ($($logCleanupError.Exception.Message)) -- un processus les a probablement encore ouverts. Fermez-le (verifiez le Gestionnaire des taches pour un python.exe ou cmd.exe lance depuis $ResolvedWebUiDir) puis relancez ce script."
   exit 1
 }
 
