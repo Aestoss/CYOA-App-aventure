@@ -488,7 +488,8 @@ function Test-BlackwellGpu {
 $WebUiUserBat = Join-Path $ResolvedWebUiDir "webui-user.bat"
 $batContent = Get-Content $WebUiUserBat -Raw
 
-if (Test-BlackwellGpu) {
+$IsBlackwellGpu = Test-BlackwellGpu
+if ($IsBlackwellGpu) {
   Write-Info "GPU RTX 50xx (Blackwell) detecte -- le PyTorch installe par defaut par ce webui n'a pas de noyaux compiles pour cette architecture et plante a la premiere generation d'image."
   $torchLine = "set TORCH_COMMAND=pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128"
   if ($batContent -match "(?m)^set TORCH_COMMAND=[^\r\n]*cu128") {
@@ -641,6 +642,58 @@ if (Test-Path $VenvPython) {
   }
 } else {
   Write-Info "Venv introuvable meme apres tentative de creation -- ce correctif sera tente par le webui lui-meme au lancement."
+}
+
+# ---------------------------------------------------------------------------
+# 6b. Verify the ALREADY-INSTALLED torch (if any) actually has Blackwell
+#     kernels -- confirmed as a real, distinct gap from Step 5 above: on an
+#     existing venv from before this script's cu128 fix existed (or from any
+#     other install path), webui-user.bat's TORCH_COMMAND is only ever
+#     consulted by AUTOMATIC1111 itself when it thinks torch isn't installed
+#     yet -- it never re-checks or upgrades an already-importable torch, so
+#     Step 5's edit silently does nothing for that case. Confirmed for real
+#     on a live install: server started fine, --api responded fine, and the
+#     first actual image generation failed with "CUDA error: no kernel image
+#     is available for execution on the device" -- exactly this scenario.
+#     Rather than guess from version strings (fragile -- cu128 wheels could
+#     themselves someday drop sm_120, or a future architecture could need a
+#     newer index), this actually runs a trivial GPU op and looks for that
+#     exact failure signature, then force-reinstalls only if it reproduces.
+# ---------------------------------------------------------------------------
+
+if ($IsBlackwellGpu -and (Test-Path $VenvPython)) {
+  Write-Step "Verification que le PyTorch installe fonctionne reellement sur ce GPU Blackwell"
+
+  $torchCheckOutput = Invoke-NativeQuiet { & $VenvPython -c "import torch; x = torch.zeros(1, device='cuda'); print((x + 1).item())" 2>&1 }
+  $torchCheckOk = ($LASTEXITCODE -eq 0) -and ($torchCheckOutput -join "`n") -match "1\.0"
+
+  if ($torchCheckOk) {
+    Write-Ok "PyTorch fonctionne correctement sur ce GPU (test CUDA reel reussi)."
+  } else {
+    $torchCheckText = $torchCheckOutput -join "`n"
+    if ($torchCheckText -match "no kernel image is available") {
+      Write-Fail "Confirme : le PyTorch deja installe dans ce venv n'a pas de noyaux compiles pour ce GPU (meme erreur qu'a la premiere generation d'image reelle)."
+    } else {
+      Write-Fail "Le test PyTorch/CUDA a echoue pour une raison differente -- reinstallation quand meme tentee au cas ou. Detail :"
+      $torchCheckOutput | Select-Object -Last 10 | ForEach-Object { Write-Host "    $_" }
+    }
+    Write-Info "Reinstallation de torch/torchvision/torchaudio depuis l'index cu128 (peut prendre plusieurs minutes, gros telechargement)..."
+    $torchReinstallOutput = Invoke-NativeQuiet {
+      & $VenvPython -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128 --force-reinstall 2>&1
+    }
+    if ($LASTEXITCODE -ne 0) {
+      Write-Fail "La reinstallation de torch a echoue. Dernieres lignes :"
+      $torchReinstallOutput | Select-Object -Last 15 | ForEach-Object { Write-Host "    $_" }
+    } else {
+      $recheckOutput = Invoke-NativeQuiet { & $VenvPython -c "import torch; x = torch.zeros(1, device='cuda'); print((x + 1).item())" 2>&1 }
+      if ($LASTEXITCODE -eq 0 -and (($recheckOutput -join "`n") -match "1\.0")) {
+        Write-Ok "PyTorch reinstalle (cu128) et verifie fonctionnel sur ce GPU."
+      } else {
+        Write-Fail "PyTorch reinstalle mais le test CUDA echoue encore -- signalez ceci, ce n'est plus le cas connu couvert par ce script."
+        ($recheckOutput | Select-Object -Last 10) | ForEach-Object { Write-Host "    $_" }
+      }
+    }
+  }
 }
 
 # ---------------------------------------------------------------------------

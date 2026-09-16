@@ -5,6 +5,41 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-16 — Cause reelle de l'absence d'images en jeu : PyTorch sans noyaux Blackwell, pas un bug applicatif
+
+Symptome remonte par l'utilisateur : un tour se joue normalement (texte,
+objets suivis, actions) mais aucune image n'apparait, alors que la
+generation d'images est activee et un modele reel est configure (dropdown
+de detection automatique ajoute plus tot aujourd'hui). Premiere cause
+trouvee et corrigee : `generateTurnImage` avalait silencieusement toute
+erreur (`imageUrl = null`, rien journalise) -- corrige pour logger la vraie
+erreur (voir entree precedente). Une fois deploye et un tour rejoue, le
+vrai message est apparu dans les logs Railway :
+
+    Local Stable Diffusion API error 500: {"errors":"CUDA error: no kernel
+    image is available for execution on the device..."}
+
+Root cause confirmee : `setup-automatic1111.ps1` detecte deja les GPU RTX
+50xx (Blackwell) et redirige `TORCH_COMMAND` vers les roues cu128
+compatibles dans `webui-user.bat` -- mais AUTOMATIC1111 ne consulte
+`TORCH_COMMAND` que s'il juge torch pas encore installe. Sur un venv deja
+existant (installe avant ce correctif, ou par tout autre chemin), le
+serveur demarre et repond normalement a `--api` -- seule la toute premiere
+generation reelle declenche l'erreur, bien apres la fin de l'installation.
+
+Correctif dans `setup-automatic1111.ps1` : nouvelle etape (juste apres la
+pre-installation de CLIP, une fois le venv connu) qui exécute reellement
+une operation GPU triviale (`torch.zeros(1, device='cuda')` puis une
+addition) au lieu de deviner depuis des numeros de version -- fragile,
+un futur GPU pourrait avoir besoin d'un autre index cu1xx. Si ce test
+echoue (avec ou sans le message exact "no kernel image"), force une
+reinstallation de torch/torchvision/torchaudio depuis l'index cu128 avec
+`--force-reinstall`, puis revérifie. S'applique aussi bien a un venv deja
+casse qu'a un tout premier install (torch pas encore installe a ce stade
+du script) -- dans les deux cas, le venv se retrouve avec un torch reellement
+verifie fonctionnel avant meme le premier lancement du webui, au lieu de
+compter sur le mecanisme lazy de webui-user.bat.
+
 ## 2026-09-16 — Cause reelle du 403 trouvee : la protection anti-DNS-rebinding d'Ollama, pas Cloudflare ni Tailscale
 
 Root cause confirmee, apres des semaines a soupconner tour a tour Cloudflare
