@@ -5,6 +5,73 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-16 — Migration Automatic1111 → Forge : Flux.1 dev + Chroma, 5 modèles au total
+
+AUTOMATIC1111 ne supporte pas du tout Flux — migration vers Forge
+(`lllyasviel/stable-diffusion-webui-forge`, un fork qui garde exactement la
+même API `/sdapi/v1/*` et le même flag `--api`) pour ajouter Flux.1 dev
+("Safe") et une version NSFW d'un fine-tune Flux (ex. Fluxed Up), en plus
+des deux modèles SDXL déjà en place (NoobAI-XL, RealVisXL) — 4 modèles sur
+la même instance, sélectionnés exactement comme aujourd'hui via
+`override_settings.sd_model_checkpoint`, sans aucun changement pour
+`providers/imageProviders.js` sur ce point.
+
+**Chroma (5e modèle, sur une instance dédiée séparée)** — recherche faite
+avant d'écrire une ligne de code : Forge n'a **aucun support natif de
+Chroma** (demandes de fonctionnalité toujours ouvertes sur son dépôt
+GitHub), et Chroma a besoin de 3 fichiers choisis ensemble (checkpoint +
+VAE + encodeur texte T5) au lieu d'un seul fichier de checkpoint comme
+Flux/SDXL. Plutôt que de risquer la stabilité des 4 modèles qui marchent
+déjà de façon confirmée en les faisant tourner sur un fork tiers moins
+mature, Chroma tourne sur une **deuxième instance Forge dédiée**
+(`chromaforge`, fork spécifique à Chroma), son propre port (7862), sa
+propre route Caddy (`/sdapi-chroma/*`) — si quoi que ce soit ne va pas avec
+ce fork, ça n'affecte que Chroma, jamais les 4 autres modèles.
+
+**Nouveaux fichiers** :
+- `scripts/windows/setup-forge.ps1` — remplace `setup-automatic1111.ps1`
+  (laissé en place, non supprimé) : installe Forge, télécharge NoobAI-XL +
+  RealVisXL + Flux.1-dev-fp8-all-in-one automatiquement ; Fluxed Up demande
+  une URL fournie à la main (`-FluxedUpUrl`) puisque Civitai exige un
+  compte connecté pour tout fichier marqué contenu mature (rien à scripter
+  ici, même logique que la connexion Tailscale) ; mêmes correctifs
+  Blackwell/CLIP que l'ancien script, gardés par précaution même si non
+  reconfirmés spécifiquement contre le code de Forge (voir les .NOTES du
+  script).
+- `scripts/windows/setup-forge-chroma.ps1` — installe l'instance Chroma
+  dédiée. Point d'honnêteté explicite : le README de ce fork ne documente
+  **aucune utilisation de l'API REST**, seulement l'interface web — le
+  script vérifie donc réellement une génération via `/sdapi/v1/txt2img` à
+  la fin au lieu de supposer que ça marche, et dit clairement si ça
+  fonctionne ou non plutôt que de déclarer un succès non vérifié.
+- `providers/imageProviders.js` — nouvelle valeur spéciale `'__chroma__'`
+  pour `imageModel` : route vers `/sdapi-chroma/*` sans `override_settings`
+  (l'instance Chroma ne sert jamais qu'un seul modèle, rien à basculer),
+  au lieu de `/sdapi/*` avec le checkpoint choisi pour tout le reste.
+  Testé en local avec un faux serveur Forge : classification correcte de
+  chaque catégorie (Fluxed Up bien classé "mature", pas "photoréaliste"
+  malgré le mot "flux" dans son nom), et un tour complet de bout en bout
+  confirmé route bien vers `/sdapi-chroma/v1/txt2img` quand `imageModel`
+  vaut `__chroma__`.
+- Résolution de génération passée de 512×512 à 1024×1024 — 512 est la
+  résolution native de SD1.5, pas de SDXL ni de Flux/Chroma (tous entraînés
+  autour de 1024×1024) : un problème de qualité déjà présent avec NoobAI-XL/
+  RealVisXL, pas seulement une nouveauté de cette migration.
+- `start-fogbound.ps1` étendu pour orchestrer les DEUX instances Forge (plus
+  Ollama/le pont) : phases renommées 1 à 4, arrêt propre des deux au
+  démarrage et à la fin, `-SkipForge`/`-SkipChroma` pour n'en garder qu'une.
+- `setup-ollama-bridge.ps1` : nouvelle route Caddy `/sdapi-chroma/*` avec
+  réécriture de chemin vers `/sdapi/*` avant de transmettre à l'instance
+  Chroma (bug trouvé et corrigé en écrivant ce Caddyfile : un simple retrait
+  du préfixe aurait transmis `/v1/txt2img` au lieu de `/sdapi/v1/txt2img`).
+
+Tout validé avant ce commit : scan ASCII + vérificateur d'équilibre
+d'accolades/parenthèses (adapté pour comprendre les here-strings `@"..."@`
+du Caddyfile, une vraie lacune de l'outil trouvée au passage) sur chaque
+script PowerShell modifié, `node --check`/`node -c` sur chaque fichier JS,
+et un vrai test de bout en bout (serveur Fogbound + faux serveur Forge)
+plutôt qu'une simple relecture.
+
 ## 2026-09-16 — Couverture/portraits éditables, purge d'images, suggestions non auto-envoyées, vrai bug de mémoire corrigé
 
 - **Prompt d'image ouvrable/modifiable** : cliquer sur l'image de couverture

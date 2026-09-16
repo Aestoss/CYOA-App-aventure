@@ -21,7 +21,7 @@
 
 .PARAMETER ScriptArgs
   Extra arguments forwarded to start-fogbound.ps1, e.g.
-  "-Model qwen3:14b" or "-SkipAutomatic1111". Defaults to none (that
+  "-Model qwen3:14b" or "-SkipChroma". Defaults to none (that
   script's own defaults apply).
 
 .NOTES

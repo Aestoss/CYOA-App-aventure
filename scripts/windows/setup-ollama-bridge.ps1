@@ -37,10 +37,12 @@
        cannot be silently auto-installed/auto-logged-in by this script).
     3. Generates (once) or reuses a secret bearer token, writes a Caddyfile
        that only forwards requests carrying that token, and starts Caddy.
-       Three routes share the one token: Ollama itself, the GPU watcher's
-       /bridge/status, and /sdapi/* for a local Stable Diffusion instance
-       (AUTOMATIC1111, run separately with --api -- NOT installed by this
-       script, see .NOTES) if you're using one for local image generation.
+       Four routes share the one token: Ollama itself, the GPU watcher's
+       /bridge/status, /sdapi/* for the main local Forge instance (NoobAI-XL,
+       RealVisXL, Flux Safe, NSFW Flux -- run separately, see setup-forge.ps1),
+       and /sdapi-chroma/* for a second, dedicated Forge-fork instance
+       running Chroma (see setup-forge-chroma.ps1) -- neither is installed by
+       this script, see .NOTES.
     4. Starts ollama-watcher.ps1 (a separate script next to this one), which
        polls nvidia-smi and shows a tray icon (green/orange) so you can see
        locally when the GPU is busy enough that a game might stutter.
@@ -96,17 +98,17 @@
     does not log you out or disable Funnel -- only Caddy and the watcher are
     stopped on exit, so Fogbound keeps reaching the (now Ollama-less) proxy
     port with a connection-refused instead of a stale/misleading answer.
-  - Local image generation (AUTOMATIC1111 / Stable Diffusion WebUI) is NOT
-    installed by this script -- unlike Ollama, it's a much heavier,
-    less standardized install (Python environment, multi-GB model
-    checkpoints to download yourself). See setup-automatic1111.ps1 next to
-    this script for an automated install (detects an existing copy or
-    clones one, finds or fetches a checkpoint, enables --api, launches it
-    and waits for it to be ready) -- or install it by hand and start it
-    with the --api flag (off by default), e.g.: webui-user.bat --api
-    This script only adds the authenticated proxy route for it -- if it
-    isn't running, that route just fails until you start it; everything
-    else (Ollama, text generation) works regardless.
+  - Local image generation (Forge / Stable Diffusion WebUI) is NOT installed
+    by this script -- unlike Ollama, it's a much heavier, less standardized
+    install (Python environment, multi-GB model checkpoints to download
+    yourself). See setup-forge.ps1 (main instance: NoobAI-XL, RealVisXL,
+    Flux Safe, NSFW Flux) and setup-forge-chroma.ps1 (separate, dedicated
+    Chroma instance) next to this script for automated installs -- or
+    install either by hand and start it with the --api flag (off by
+    default), e.g.: webui-user.bat --api
+    This script only adds the authenticated proxy routes for them -- if one
+    isn't running, its route just fails until you start it; everything else
+    (Ollama, text generation, the other image instance) works regardless.
   - If you used the old Cloudflare-based version of this script before, run
     cleanup-unused-tunnel-tools.ps1 next to this one to remove the
     now-unused cloudflared binary and its log files.
@@ -124,9 +126,15 @@
   card like the RTX 5080 -- see TODO.md/CHANGELOG.md for the reasoning).
 
 .PARAMETER SdPort
-  Local port your Stable Diffusion WebUI (AUTOMATIC1111) API listens on, if
-  you use one. Defaults to 7860 (AUTOMATIC1111's own default). The proxy
-  route is added either way; harmless and unused if you don't run one.
+  Local port your main Forge instance's API listens on (NoobAI-XL,
+  RealVisXL, Flux Safe, and your NSFW Flux fine-tune -- see setup-forge.ps1).
+  Defaults to 7860. The proxy route is added either way; harmless and
+  unused if you don't run one.
+
+.PARAMETER ChromaPort
+  Local port the dedicated Chroma instance's API listens on (see
+  setup-forge-chroma.ps1). Defaults to 7862. Same as -SdPort: the proxy
+  route is added either way, harmless and unused if you don't run one.
 
 .PARAMETER SkipFogboundUpdate
   If set, does everything except push settings to Fogbound automatically --
@@ -152,6 +160,7 @@ param(
   [string]$FogboundUrl = "https://fogbound-production.up.railway.app",
   [string]$Model = "qwen3:14b",
   [int]$SdPort = 7860,
+  [int]$ChromaPort = 7862,
   [switch]$SkipFogboundUpdate,
   [switch]$NoWatcher,
   [switch]$Diagnose
@@ -541,10 +550,13 @@ if (-not $cfg.secret) {
 }
 $Secret = $cfg.secret
 
-# Two routes behind the same bearer token: /bridge/status* goes to the GPU
-# watcher (ollama-watcher.ps1, a separate lightweight process -- see below)
-# so Fogbound can tell "offline" from "busy" from "available"; everything
-# else goes to Ollama itself, unchanged from before.
+# Four routes behind the same bearer token: /bridge/status* goes to the GPU
+# watcher (ollama-watcher.ps1, a separate lightweight process -- see below);
+# /sdapi-chroma/* goes to the dedicated Chroma instance (setup-forge-
+# chroma.ps1, its own process/port -- see that script for why Chroma isn't
+# just a 5th checkpoint on the main Forge instance); /sdapi/* goes to the
+# main Forge instance (setup-forge.ps1: NoobAI-XL, RealVisXL, Flux Safe,
+# NSFW Flux); everything else goes to Ollama itself, unchanged from before.
 $caddyfileContent = @"
 :$ProxyPort {
 	@authorizedStatus {
@@ -555,10 +567,15 @@ $caddyfileContent = @"
 		header Authorization "Bearer $Secret"
 		path /sdapi/*
 	}
+	@authorizedChroma {
+		header Authorization "Bearer $Secret"
+		path /sdapi-chroma/*
+	}
 	@authorizedOllama {
 		header Authorization "Bearer $Secret"
 		not path /bridge/status*
 		not path /sdapi/*
+		not path /sdapi-chroma/*
 	}
 
 	# Caddy sorts directives of different kinds by its own fixed priority list,
@@ -584,10 +601,24 @@ $caddyfileContent = @"
 	# 403. Rewriting just the Host header sent upstream avoids touching
 	# Ollama's own listen address (still 127.0.0.1-only, unchanged).
 	route {
+		# The public path is /sdapi-chroma/* (distinct from /sdapi/* so Caddy
+		# can tell the two Forge instances apart), but the Chroma instance
+		# itself is just another Forge fork answering on its own native
+		# /sdapi/* -- rewriting the prefix (not stripping it down to nothing)
+		# is what makes the forwarded request match what it actually expects.
+		# Confirmed as a real gap while writing this: a plain strip_prefix
+		# here would have forwarded "/v1/txt2img" upstream instead of
+		# "/sdapi/v1/txt2img", a 404 that would have looked like a broken
+		# Chroma install rather than a proxy misconfiguration.
+		uri @authorizedChroma replace /sdapi-chroma /sdapi
+
 		reverse_proxy @authorizedStatus 127.0.0.1:$WatcherPort {
 			header_up Host localhost
 		}
 		reverse_proxy @authorizedSd 127.0.0.1:$SdPort {
+			header_up Host localhost
+		}
+		reverse_proxy @authorizedChroma 127.0.0.1:$ChromaPort {
 			header_up Host localhost
 		}
 		reverse_proxy @authorizedOllama 127.0.0.1:$OllamaPort {
@@ -722,10 +753,28 @@ $sdDetected = $false
 try {
   Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$SdPort/" -TimeoutSec 3 | Out-Null
   $sdDetected = $true
-  Write-Ok "Un serveur repond sur le port $SdPort (probablement AUTOMATIC1111)."
+  Write-Ok "Un serveur repond sur le port $SdPort (probablement Forge -- NoobAI-XL/RealVisXL/Flux Safe/NSFW)."
 } catch {
   Write-Host "    Rien ne repond sur le port $SdPort pour l'instant -- normal si vous n'utilisez pas encore la generation d'image locale."
-  Write-Host "    Pour l'activer : lancez AUTOMATIC1111 avec le flag --api, puis relancez ce script."
+  Write-Host "    Pour l'activer : lancez setup-forge.ps1, puis relancez ce script."
+}
+
+Write-Step "Verification de la route image Chroma (/sdapi-chroma -- optionnelle)"
+
+$chromaStatusNoAuth = Get-HttpStatus "http://127.0.0.1:$ProxyPort/sdapi-chroma/v1/txt2img" @{}
+if ($chromaStatusNoAuth -eq 401) {
+  Write-Ok "Route /sdapi-chroma correctement protegee (401 sans jeton)."
+} else {
+  Write-Fail "Route /sdapi-chroma : reponse $chromaStatusNoAuth au lieu de 401 -- verifiez le Caddyfile."
+}
+$chromaDetected = $false
+try {
+  Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$ChromaPort/" -TimeoutSec 3 | Out-Null
+  $chromaDetected = $true
+  Write-Ok "Un serveur repond sur le port $ChromaPort (l'instance Chroma dediee)."
+} catch {
+  Write-Host "    Rien ne repond sur le port $ChromaPort pour l'instant -- normal si vous n'utilisez pas Chroma."
+  Write-Host "    Pour l'activer : lancez setup-forge-chroma.ps1, puis relancez ce script."
 }
 
 # ---------------------------------------------------------------------------
@@ -849,7 +898,7 @@ try {
     Write-Info ""
     if ($errDetail.Server -and $errDetail.Server -match "Caddy" -or ($_.Exception.Response -and $_.Exception.Response.Headers -and ($_.Exception.Response.Headers["Via"] -match "Caddy"))) {
       Write-Info "L'en-tete 'Via: ... Caddy' confirme que la requete a bien traverse ce Caddy et atteint"
-      Write-Info "l'un des serveurs derriere (Ollama/AUTOMATIC1111/surveillant) -- ce n'est donc ni"
+      Write-Info "l'un des serveurs derriere (Ollama/Forge/Forge-Chroma/surveillant) -- ce n'est donc ni"
       Write-Info "Tailscale, ni un blocage reseau externe : ce serveur lui-meme a repondu 403. Ollama a sa"
       Write-Info "propre protection anti-DNS-rebinding qui refuse toute requete dont l'en-tete Host n'est"
       Write-Info "pas 'localhost'/loopback -- si cette version du script est a jour, le Caddyfile force deja"
@@ -941,7 +990,8 @@ Write-Host " Modele utilise  : $Model"
 Write-Host " Fogbound        : $FogboundUrl"
 Write-Host ""
 Write-Host " Surveillant GPU  : $(if ($NoWatcher) { 'desactive (-NoWatcher)' } else { 'actif (icone dans la barre des taches)' })"
-Write-Host " Image locale (/sdapi) : route $(if ($sdStatusNoAuth -eq 401) { 'prete' } else { 'a verifier' }) sur le port $SdPort -- $(if ($sdDetected) { 'un serveur y repond' } else { 'rien detecte, lancez AUTOMATIC1111 --api si besoin' })"
+Write-Host " Image locale (/sdapi) : route $(if ($sdStatusNoAuth -eq 401) { 'prete' } else { 'a verifier' }) sur le port $SdPort -- $(if ($sdDetected) { 'un serveur y repond' } else { 'rien detecte, lancez setup-forge.ps1 si besoin' })"
+Write-Host " Image Chroma (/sdapi-chroma) : route $(if ($chromaStatusNoAuth -eq 401) { 'prete' } else { 'a verifier' }) sur le port $ChromaPort -- $(if ($chromaDetected) { 'un serveur y repond' } else { 'rien detecte, lancez setup-forge-chroma.ps1 si besoin' })"
 Write-Host ""
 Write-Host " Derniere etape (manuelle) : ouvrez Fogbound -> Reglages, mettez"
 Write-Host " Fournisseur = 'Ollama (local)' et Modele = '$Model' pour le texte ;"
