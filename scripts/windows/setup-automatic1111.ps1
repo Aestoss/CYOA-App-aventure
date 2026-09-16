@@ -171,6 +171,54 @@ function Invoke-NativeQuiet {
   try { & $ScriptBlock } finally { $ErrorActionPreference = $prevErrorActionPreference }
 }
 
+# Finds this install's running process(es) two ways and combines them.
+# Confirmed for real on a live machine: Get-CimInstance's CommandLine can
+# come back EMPTY for a perfectly real, running process -- Windows/WMI can
+# silently withhold it when this script's own process doesn't have enough
+# privilege relative to the target (e.g. one of the two was ever launched
+# from an elevated window and the other wasn't). When that happens, the
+# directory-based match below finds nothing even though the process is
+# very much alive -- confirmed directly against a real "port already in
+# use" failure right after this reported nothing to stop. Port-based
+# lookup (Get-NetTCPConnection) is the fix: it finds whatever process is
+# actually LISTENING on this port via the network stack, not WMI's process
+# table, so it doesn't depend on being able to read that process's command
+# line at all. Both signals are combined -- the directory match still
+# catches a process before it's even bound to the port yet.
+function Get-A1111ProcessIds {
+  param([string]$Dir, [int]$Port)
+  $pidsFound = New-Object System.Collections.Generic.HashSet[int]
+  if ($Dir) {
+    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+      Where-Object { $_.CommandLine -and ($_.CommandLine -like "*$Dir*") } |
+      ForEach-Object { [void]$pidsFound.Add($_.ProcessId) }
+  }
+  try {
+    Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue |
+      ForEach-Object { [void]$pidsFound.Add([int]$_.OwningProcess) }
+  } catch {}
+  return @($pidsFound)
+}
+
+function Stop-A1111ProcessIds {
+  param([int[]]$ProcessIds)
+  if (-not $ProcessIds -or $ProcessIds.Count -eq 0) { return $false }
+  foreach ($procId in $ProcessIds) {
+    if (Get-Process -Id $procId -ErrorAction SilentlyContinue) {
+      Write-Info "Arret d'un processus AUTOMATIC1111 (PID $procId)..."
+      Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
+    }
+  }
+  $waited = 0
+  while ($waited -lt 10) {
+    $stillRunning = $ProcessIds | Where-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue }
+    if (-not $stillRunning) { break }
+    Start-Sleep -Milliseconds 500
+    $waited += 0.5
+  }
+  return $true
+}
+
 function Get-A1111Config {
   if (Test-Path $ConfigPath) {
     try { return Get-Content $ConfigPath -Raw | ConvertFrom-Json } catch {}
@@ -708,18 +756,10 @@ if ($IsBlackwellGpu -and (Test-Path $VenvPython)) {
     # otherwise a reinstall can silently leave a locked-file mix behind
     # exactly as described above, passing a weak check while real
     # generation keeps failing.
-    $preReinstallProcesses = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-      Where-Object { $_.CommandLine -and ($_.CommandLine -like "*$ResolvedWebUiDir*") }
-    if ($preReinstallProcesses) {
+    $preReinstallPids = Get-A1111ProcessIds -Dir $ResolvedWebUiDir -Port $SdPort
+    if ($preReinstallPids.Count -gt 0) {
       Write-Info "AUTOMATIC1111 tourne encore -- arret avant de toucher a son venv (sinon la reinstallation peut echouer partiellement en silence sur des fichiers verrouilles)."
-      foreach ($p in $preReinstallProcesses) { Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue }
-      $waited = 0
-      while ($waited -lt 10) {
-        $stillRunning = $preReinstallProcesses | Where-Object { Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue }
-        if (-not $stillRunning) { break }
-        Start-Sleep -Milliseconds 500
-        $waited += 0.5
-      }
+      Stop-A1111ProcessIds -ProcessIds $preReinstallPids | Out-Null
       Start-Sleep -Milliseconds 500
     }
 
@@ -822,30 +862,15 @@ Write-Step "Lancement d'AUTOMATIC1111 (premier lancement = installation des depe
 # cmd.exe runs python.exe as a child, and Stop-Process on a parent does NOT
 # terminate its children on Windows -- the actual log-file handle is held
 # by that orphaned python.exe, which would survive untouched. So instead of
-# trusting one stored PID, this matches on command line (Win32_Process, not
-# Get-Process, since only WMI/CIM exposes CommandLine) against this
-# install's own path -- catching cmd.exe (whose command line is the .bat's
-# path) and python.exe (whose command line is launch.py under this same
-# folder) together, parent-child relationship or not.
-$leftoverProcesses = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-  Where-Object { $_.CommandLine -and ($_.CommandLine -like "*$ResolvedWebUiDir*") }
-if ($leftoverProcesses) {
-  foreach ($p in $leftoverProcesses) {
-    Write-Info "Processus d'une execution precedente encore actif (PID $($p.ProcessId)) -- arret avant de relancer."
-    Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
-  }
-  # Stop-Process returning doesn't guarantee the process (and its open file
-  # handles, e.g. these same log files) has actually finished exiting yet --
-  # confirmed a real gap by an actual "used by another process" failure right
-  # after this used to be a flat 2-second sleep. Poll until each PID is
-  # really gone instead of hoping a fixed delay was long enough.
-  $waited = 0
-  while ($waited -lt 10) {
-    $stillRunning = $leftoverProcesses | Where-Object { Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue }
-    if (-not $stillRunning) { break }
-    Start-Sleep -Milliseconds 500
-    $waited += 0.5
-  }
+# trusting one stored PID, this uses Get-A1111ProcessIds (command-line match
+# AND a port-7860 listener lookup combined -- see that function's own
+# comment: confirmed for real that Get-CimInstance's CommandLine can come
+# back empty for a genuinely running process, which silently defeated the
+# command-line-only version of this check before).
+$leftoverPids = Get-A1111ProcessIds -Dir $ResolvedWebUiDir -Port $SdPort
+if ($leftoverPids.Count -gt 0) {
+  Write-Info "Processus d'une execution precedente encore actif -- arret avant de relancer."
+  Stop-A1111ProcessIds -ProcessIds $leftoverPids | Out-Null
   Start-Sleep -Milliseconds 500
 }
 

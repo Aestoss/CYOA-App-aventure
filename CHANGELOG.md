@@ -5,6 +5,48 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-16 — Vrai bug trouve : la detection de processus ne voit pas tout, pas le torch
+
+Session de diagnostic en direct sur la machine reelle apres un echec
+persistant en jeu malgre un torch verifie fonctionnel. Ecarte
+methodiquement, avec preuve a chaque etape :
+- Le dtype du checkpoint (fp32/fp16/bf16 testes individuellement, tous OK ;
+  seul float8_e4m3fn echoue, avec une erreur differente et non liee).
+- Le chemin meta-device -> cuda utilise par le chargement du checkpoint
+  (reproduit isolement, fonctionne).
+- Des processus GPU zombies accumules (hypothese avancee puis retiree :
+  `nvidia-smi` ne montrait aucun processus Python actif au moment du test,
+  preuve directe du contraire -- notee ici pour ne pas la reproposer).
+- Le build PyTorch lui-meme : `torch.cuda.get_arch_list()` confirme
+  `sm_120` (Blackwell) present dans les noyaux compiles -- le venv est
+  reellement correct.
+
+Ce qui EST confirme reel : `Get-CimInstance Win32_Process` peut renvoyer un
+`CommandLine` totalement VIDE pour un processus pourtant bien actif
+(observe directement : 3 PID reels listes, tous avec CommandLine vide) --
+tres probablement un ecart de privilege/niveau d'integrite entre la
+session qui interroge et le processus cible. Comme tout le nettoyage de
+`start-fogbound.ps1` et `setup-automatic1111.ps1` reposait uniquement sur
+cette correspondance de ligne de commande, il ratait silencieusement ces
+processus -- confirme par des conflits de port 7860 systematiques a
+chaque relancement, alors meme que le script rapportait "rien n'etait
+actif".
+
+Correctif dans les deux scripts : une deuxieme methode de detection,
+independante des privileges WMI, cherchant directement quel processus
+ecoute reellement sur le port d'AUTOMATIC1111 (`Get-NetTCPConnection
+-LocalPort $SdPort -State Listen`). Les deux signaux (ligne de commande +
+port) sont combines. `setup-automatic1111.ps1` factorise ça dans
+`Get-A1111ProcessIds`/`Stop-A1111ProcessIds`, reutilisees a la fois avant
+la reinstallation de torch et avant le lancement ; `start-fogbound.ps1`
+applique le meme principe dans `Stop-A1111Processes`.
+
+Cause du symptome original (CUDA "no kernel image") toujours pas
+definitivement identifiee, mais desormais fortement soupconnee d'etre liee
+a des lancements qui se chevauchaient reellement (confirme par des conflits
+de port systematiques), plutot qu'a un probleme de torch -- a confirmer par
+un test avec une seule instance desormais garantie propre.
+
 ## 2026-09-16 — La verification PyTorch/Blackwell passait alors que l'install restait cassee
 
 Meme erreur CUDA reproduite en jeu (confirmee par les logs Railway) apres

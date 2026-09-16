@@ -172,18 +172,44 @@ function Get-KnownWebUiDir {
   return $null
 }
 
+# Confirmed for real on a live machine: Get-CimInstance's CommandLine can
+# come back EMPTY for a perfectly real, running process -- Windows/WMI can
+# silently withhold it when this script's own process doesn't have enough
+# privilege relative to the target (e.g. one of the two was ever launched
+# from an elevated window and the other wasn't). When that happens, the
+# CommandLine-based match below finds nothing even though the process is
+# very much alive -- confirmed directly: Get-CimInstance listed real
+# python.exe/cmd.exe PIDs with a blank CommandLine, so "*$dir*" could never
+# match them, and this function kept reporting nothing to stop. Port-based
+# lookup (Get-NetTCPConnection) is the fix: it finds whatever process is
+# actually LISTENING on AUTOMATIC1111's port via the network stack, not
+# WMI's process table, so it doesn't depend on being able to read that
+# process's command line at all. Both signals are combined -- CommandLine
+# still catches a process before it's even bound to the port yet.
 function Stop-A1111Processes($dir) {
-  if (-not $dir) { return $false }
-  $procs = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-    Where-Object { $_.CommandLine -and ($_.CommandLine -like "*$dir*") }
-  if (-not $procs) { return $false }
-  foreach ($p in $procs) {
-    Write-Info "Arret d'AUTOMATIC1111 (PID $($p.ProcessId))..."
-    Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
+  $pidsToStop = New-Object System.Collections.Generic.HashSet[int]
+
+  if ($dir) {
+    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+      Where-Object { $_.CommandLine -and ($_.CommandLine -like "*$dir*") } |
+      ForEach-Object { [void]$pidsToStop.Add($_.ProcessId) }
+  }
+  try {
+    Get-NetTCPConnection -LocalPort $SdPort -State Listen -ErrorAction SilentlyContinue |
+      ForEach-Object { [void]$pidsToStop.Add([int]$_.OwningProcess) }
+  } catch {}
+
+  if ($pidsToStop.Count -eq 0) { return $false }
+
+  foreach ($procId in $pidsToStop) {
+    if (Get-Process -Id $procId -ErrorAction SilentlyContinue) {
+      Write-Info "Arret d'AUTOMATIC1111 (PID $procId)..."
+      Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
+    }
   }
   $waited = 0
   while ($waited -lt 10) {
-    $stillRunning = $procs | Where-Object { Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue }
+    $stillRunning = $pidsToStop | Where-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue }
     if (-not $stillRunning) { break }
     Start-Sleep -Milliseconds 500
     $waited += 0.5
