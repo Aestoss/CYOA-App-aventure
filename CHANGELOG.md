@@ -5,6 +5,48 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-16 — Diagnostic du 403 via tunnel : cote Cloudflare, pas nous
+
+`setup-automatic1111.ps1` fonctionne enfin de bout en bout (AUTOMATIC1111
+repond avec `--api` actif) -- toute la serie de correctifs setuptools/
+wheel/CLIP/depot Stability-AI a porte ses fruits. Reste un probleme
+distinct, deja repere plus tot : dans `setup-ollama-bridge.ps1`, "sans
+jeton" via le tunnel public est correctement rejete (401), mais "avec
+jeton" via ce meme tunnel echoue en 403 -- alors qu'aucune de ces deux
+requetes ne pose probleme en local.
+
+Diagnostic fait a partir du code plutot que suppose : le Caddyfile genere
+par ce script ne peut litteralement repondre que 401 (`respond
+"Unauthorized" 401`) ou transmettre la requete a Ollama -- il n'y a nulle
+part un "403" possible dans cette configuration. Un 403 recu malgre tout
+ne peut donc pas venir de ce script ; ca vient forcement d'ailleurs dans
+la chaine, entre le tunnel Cloudflare et notre propre pile. Cause la plus
+probable (403 est une reponse connue et documentee des heuristiques anti-
+bot/WAF de Cloudflare, y compris sur les tunnels *.trycloudflare.com
+anonymes) : le User-Agent par defaut de PowerShell, tres reconnaissable
+comme trafic automatise, combine a un en-tete `Authorization` -- un motif
+qui ressemble a de l'abus d'identifiants/API aux yeux de ce genre
+d'heuristique.
+
+Deux changements :
+- **Ajout d'une verification manquante** : ce script testait "sans jeton"
+  en local avant d'ouvrir le tunnel, mais jamais "avec jeton" en local --
+  il sautait direct au test via le tunnel public. Corrige : un test local
+  "avec jeton" existe maintenant, ce qui isole immediatement si un futur
+  probleme similaire vient de Caddy lui-meme (visible des ce test local)
+  ou specifiquement du tunnel/Cloudflare (seulement le test via tunnel
+  echoue).
+- **Toutes les requetes de validation** (locales et via tunnel) envoient
+  desormais un User-Agent de navigateur normal au lieu de celui, tres
+  distinctif, de PowerShell -- pour eviter de se faire filtrer par ce
+  genre d'heuristique cote Cloudflare. Message d'erreur enrichi si un 403
+  survient quand meme, expliquant que ca ne peut pas venir de ce script et
+  suggerant de relancer pour un nouveau sous-domaine de tunnel.
+
+Corrige au passage un caractere accentue isole trouve en auditant ce
+fichier (une ligne d'affichage cosmetique, sans impact fonctionnel, mais
+contraire a la convention ASCII-only deja etablie pour ces scripts).
+
 ## 2026-09-16 — CLIP resolu, nouveau blocage : depot Stability-AI disparu
 
 CLIP s'installe desormais avec succes (confirme par le journal de

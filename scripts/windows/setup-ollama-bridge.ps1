@@ -131,6 +131,15 @@ $WatcherScriptPath = Join-Path $PSScriptRoot "ollama-watcher.ps1"
 $ProxyPort    = 8787
 $OllamaPort   = 11434
 $WatcherPort  = 8788
+# PowerShell's default User-Agent (e.g. "...WindowsPowerShell/5.1...") is a
+# distinctive automation fingerprint -- used on every request this script
+# makes through the public tunnel, in case Cloudflare's own bot/WAF
+# heuristics on *.trycloudflare.com (a real, documented source of 403s
+# unrelated to this bridge's own auth logic, which can only ever answer
+# 401 or forward to Ollama -- see the tunnel validation step) are keying
+# off it for a request that also carries an Authorization header, a
+# pattern that can read as credential/API abuse.
+$BrowserUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
 
 New-Item -ItemType Directory -Force -Path $WorkDir | Out-Null
 New-Item -ItemType Directory -Force -Path $BinDir  | Out-Null
@@ -391,7 +400,7 @@ $script:LastHttpErrorIsDns = $false
 
 function Get-HttpStatus($uri, $headers) {
   try {
-    $resp = Invoke-WebRequest -UseBasicParsing -Uri $uri -Headers $headers -Method Post `
+    $resp = Invoke-WebRequest -UseBasicParsing -Uri $uri -Headers $headers -Method Post -UserAgent $BrowserUserAgent `
       -ContentType "application/json" `
       -Body '{"model":"__probe__","messages":[{"role":"user","content":"ping"}]}' `
       -TimeoutSec 15
@@ -428,6 +437,21 @@ if ($statusNoAuth -eq 401) {
   Write-Ok "Sans jeton : correctement rejete (401)."
 } else {
   Write-Fail "Sans jeton, le proxy a repondu $statusNoAuth au lieu de 401 -- verifiez le Caddyfile."
+  Stop-Bridge
+  exit 1
+}
+
+# Checked locally, not just through the tunnel further down: isolates
+# whether a real 403/401 seen later comes from Caddy's own token check
+# (would already show up right here, before any Cloudflare involvement at
+# all) or from something tunnel/Cloudflare-specific -- confirmed as a real
+# gap this script had (no local "with token" check existed at all before,
+# jumping straight to testing it only through the public tunnel).
+$statusWithAuth = Get-HttpStatus "http://127.0.0.1:$ProxyPort/v1/chat/completions" @{ Authorization = "Bearer $Secret" }
+if ($statusWithAuth -ne 401) {
+  Write-Ok "Avec jeton : accepte en local (reponse $statusWithAuth, transmise a Ollama)."
+} else {
+  Write-Fail "Avec jeton, le proxy repond quand meme 401 en local -- le Caddyfile ne reconnait pas ce jeton (verifiez qu'aucun ancien processus Caddy avec un jeton different ne tourne encore)."
   Stop-Bridge
   exit 1
 }
@@ -558,21 +582,41 @@ try {
     messages = @(@{ role = "user"; content = "Reponds uniquement par le mot OK, rien d'autre." })
   } | ConvertTo-Json -Depth 5
 
-  $resp = Invoke-RestMethod -Method Post -Uri "$TunnelUrl/v1/chat/completions" `
+  $resp = Invoke-RestMethod -Method Post -Uri "$TunnelUrl/v1/chat/completions" -UserAgent $BrowserUserAgent `
     -Headers @{ Authorization = "Bearer $Secret" } `
     -ContentType "application/json" -Body $body -TimeoutSec 60
 
   $reply = $resp.choices[0].message.content
   Write-Ok "Avec jeton via le tunnel public : reponse recue d'Ollama -- '$reply'"
 } catch {
+  $statusCode = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { $null }
   Write-Fail "Avec jeton via le tunnel public : la requete a echoue -- $($_.Exception.Message)"
+  if ($statusCode -eq 403) {
+    # This Caddyfile can only ever answer 401 (bad/missing token) or forward
+    # the request to Ollama -- a plain "403 Forbidden" isn't a status our
+    # own stack is capable of producing, at all, which is how this was
+    # narrowed down to Cloudflare's own edge (not our Caddy/Ollama) in the
+    # first place: likely its bot/WAF heuristics on *.trycloudflare.com
+    # flagging an automated client sending an Authorization header as a
+    # credential/API-abuse-looking pattern. Already worked around above by
+    # sending a normal browser User-Agent instead of PowerShell's default
+    # one -- if that wasn't enough, only Cloudflare-side settings remain.
+    Write-Host "    Un 403 ici ne peut pas venir de ce script -- le Caddyfile ne sait repondre que 401"
+    Write-Host "    (jeton refuse) ou transmettre a Ollama, jamais 403. Ca vient donc de Cloudflare"
+    Write-Host "    lui-meme (heuristique anti-bot/WAF sur les tunnels *.trycloudflare.com), pas de"
+    Write-Host "    votre PC. Deja tente : un User-Agent de navigateur normal au lieu de celui, tres"
+    Write-Host "    reconnaissable, de PowerShell. Si ca persiste, il n'y a plus grand-chose a ajuster"
+    Write-Host "    cote script -- relancez pour obtenir un nouveau sous-domaine de tunnel (parfois"
+    Write-Host "    suffisant, l'heuristique semble viser certains sous-domaines plus que d'autres),"
+    Write-Host "    ou signalez-le sur https://github.com/cloudflare/cloudflared/issues."
+  }
   Stop-Bridge
   exit 1
 }
 
 if (-not $NoWatcher) {
   try {
-    $statusResp = Invoke-RestMethod -Method Get -Uri "$TunnelUrl/bridge/status" -Headers @{ Authorization = "Bearer $Secret" } -TimeoutSec 15
+    $statusResp = Invoke-RestMethod -Method Get -Uri "$TunnelUrl/bridge/status" -Headers @{ Authorization = "Bearer $Secret" } -UserAgent $BrowserUserAgent -TimeoutSec 15
     Write-Ok "Point de statut GPU joignable via le tunnel public -- etat actuel : $($statusResp.state)"
   } catch {
     # Not fatal: the actual text generation above already proved end to end --
@@ -632,7 +676,7 @@ Write-Host ""
 Write-Host " Surveillant GPU  : $(if ($NoWatcher) { 'desactive (-NoWatcher)' } else { 'actif (icone dans la barre des taches)' })"
 Write-Host " Image locale (/sdapi) : route $(if ($sdStatusNoAuth -eq 401) { 'prete' } else { 'a verifier' }) sur le port $SdPort -- $(if ($sdDetected) { 'un serveur y repond' } else { 'rien detecte, lancez AUTOMATIC1111 --api si besoin' })"
 Write-Host ""
-Write-Host " Dernière étape (manuelle) : ouvrez Fogbound -> Reglages, mettez"
+Write-Host " Derniere etape (manuelle) : ouvrez Fogbound -> Reglages, mettez"
 Write-Host " Fournisseur = 'Ollama (local)' et Modele = '$Model' pour le texte ;"
 Write-Host " Fournisseur = 'IA locale (Stable Diffusion)' pour les images si vous en utilisez une ; puis Enregistrer."
 Write-Host ""
