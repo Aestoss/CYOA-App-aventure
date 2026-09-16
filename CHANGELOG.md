@@ -5,6 +5,31 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-16 — Le 403 persiste malgre le User-Agent : diagnostic renforce
+
+Confirme par un run reel : changer le User-Agent n'a pas suffi, le 403
+"avec jeton via le tunnel public" persiste a l'identique. L'hypothese du
+User-Agent seul etait donc incomplete.
+
+Plutot que de retenter un autre correctif au hasard, ajout d'un
+diagnostic en un seul run (juste avant l'arret du pont sur cet echec, donc
+sans avoir a relancer et recuperer une nouvelle URL de tunnel a la main) :
+deux requetes via `curl.exe` (client HTTP totalement different de
+PowerShell/.NET) vers la meme URL de tunnel --
+- une avec exactement le meme en-tete `Authorization: Bearer`, pour voir
+  si un client different se heurte au meme mur (isole si le probleme est
+  specifique a la pile HTTP de PowerShell/.NET ou non) ;
+- une avec le meme jeton mais sous un nom d'en-tete non standard, pour
+  tester si c'est precisement le motif "Authorization: Bearer" qui
+  declenche un blocage cote Cloudflare (un 401 est attendu de notre propre
+  Caddy sur cette deuxieme requete puisqu'il ne reconnait que
+  "Authorization" -- seul un 403 sur celle-la serait revelateur).
+
+Objectif : sortir du diagnostic devine (User-Agent) pour un diagnostic
+base sur une preuve concrete avant de decider si un changement plus lourd
+(renommer l'en-tete d'authentification utilise par toute l'application,
+pas seulement ce script) est justifie.
+
 ## 2026-09-16 — Diagnostic du 403 via tunnel : cote Cloudflare, pas nous
 
 `setup-automatic1111.ps1` fonctionne enfin de bout en bout (AUTOMATIC1111

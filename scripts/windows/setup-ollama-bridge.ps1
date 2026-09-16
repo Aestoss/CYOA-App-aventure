@@ -609,6 +609,40 @@ try {
     Write-Host "    cote script -- relancez pour obtenir un nouveau sous-domaine de tunnel (parfois"
     Write-Host "    suffisant, l'heuristique semble viser certains sous-domaines plus que d'autres),"
     Write-Host "    ou signalez-le sur https://github.com/cloudflare/cloudflared/issues."
+
+    # One-shot diagnostic using a completely different HTTP client (curl.exe,
+    # built into Windows 10 1803+) before the tunnel gets torn down below --
+    # isolates two things at once instead of guessing another round-trip:
+    # (a) is this specific to PowerShell/.NET's HTTP stack, or does a
+    # totally different client hit the same wall (curl with the identical
+    # Authorization header); (b) is it the "Authorization: Bearer" pattern
+    # itself being targeted (a well-known WAF/bot-heuristic signature) --
+    # tested by sending the same secret under a different, non-standard
+    # header name instead. That second call is expected to get 401 from our
+    # OWN Caddy (which only recognizes "Authorization"), not from
+    # Cloudflare -- what matters is only whether it also gets 403 before
+    # even reaching Caddy.
+    try {
+      $curlPath = (Get-Command curl.exe -ErrorAction SilentlyContinue).Source
+      if ($curlPath) {
+        Write-Host ""
+        Write-Host "    Diagnostic supplementaire (client HTTP different de PowerShell) :"
+        $tempOut = Join-Path $env:TEMP "fogbound-curl-diag.txt"
+
+        $curlStatusAuth = & $curlPath -s -o $tempOut -w "%{http_code}" -X POST -H "Authorization: Bearer $Secret" -H "Content-Type: application/json" -d $body "$TunnelUrl/v1/chat/completions"
+        Write-Host "       curl.exe avec 'Authorization: Bearer $Secret' : code $curlStatusAuth"
+
+        $curlStatusCustom = & $curlPath -s -o $tempOut -w "%{http_code}" -X POST -H "X-Fogbound-Token: $Secret" -H "Content-Type: application/json" -d $body "$TunnelUrl/v1/chat/completions"
+        Write-Host "       curl.exe avec un en-tete non standard (meme jeton, nom different) : code $curlStatusCustom"
+        Write-Host "       (401 attendu pour ce dernier -- notre Caddy ne reconnait que 'Authorization' --"
+        Write-Host "       seul un 403 ici serait interessant : ca voudrait dire que ce n'est pas specifique"
+        Write-Host "       au nom/format de l'en-tete.)"
+
+        Remove-Item $tempOut -Force -ErrorAction SilentlyContinue
+      }
+    } catch {
+      Write-Host "    (diagnostic curl.exe indisponible : $($_.Exception.Message))"
+    }
   }
   Stop-Bridge
   exit 1
