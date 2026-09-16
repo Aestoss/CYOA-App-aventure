@@ -5,6 +5,32 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-16 — 403 "avec jeton" via Tailscale Funnel : meme symptome qu'avec Cloudflare, diagnostic etendu
+
+Run reel : le tunnel Tailscale Funnel s'ouvre desormais correctement
+(`https://<machine>.tailxxxxx.ts.net`), "sans jeton" est bien rejete (401),
+mais "avec jeton" echoue en 403 -- exactement le meme symptome deja observe
+avec l'ancien tunnel Cloudflare (voir plus bas), sur une infrastructure
+totalement différente. Ni Caddy ni Tailscale (verifie dans leurs sources
+respectives -- Caddy ne sait repondre que 401 ou transmettre, et rien dans
+`ipn/ipnlocal/serve.go` ne renvoie 403 sur ce chemin) ne peuvent produire ce
+403 : la reponse vient forcement d'ailleurs, avant meme d'atteindre l'un ou
+l'autre. Deux infrastructures sans rapport produisant le meme symptome sur
+la meme requete (present uniquement quand l'en-tete `Authorization: Bearer`
+est envoye) pointe plus probablement vers ce PC lui-meme (logiciel de
+securite avec inspection HTTPS/DLP) que vers Cloudflare ou Tailscale.
+
+Plutot que de deviner un correctif supplementaire, `setup-ollama-bridge.ps1`
+capture et affiche desormais le VRAI corps de la reponse et l'en-tete
+`Server` de tout echec post-tunnel (nouvelle fonction
+`Get-HttpErrorDetail`, geree pour Windows PowerShell 5.1 comme pour
+PowerShell 7+) -- jusqu'ici seul le message d'exception generique de
+PowerShell etait affiche, jamais le contenu reel de la reponse qui
+identifierait qui a repondu a la place de Caddy. Sur un 403 specifiquement,
+le script suggere maintenant deux verifications concretes : desactiver
+temporairement la protection web de l'antivirus, ou tester depuis un autre
+appareil sur un autre reseau pour isoler si le blocage est local a ce PC.
+
 ## 2026-09-16 — Correctif Tailscale Funnel : syntaxe CLI obsolete + diagnostic muet
 
 Premier run réel de la version Tailscale : le diagnostic (`-Diagnose`)

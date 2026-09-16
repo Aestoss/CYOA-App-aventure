@@ -614,6 +614,38 @@ if ($NoWatcher) {
 
 $script:LastHttpError = $null
 
+# Reads the actual response body + Server header from a failed request, when
+# available -- the status code alone can't tell apart a real Caddy/Ollama
+# answer from one injected by something else entirely (a security product's
+# HTTPS/DLP inspection, a corporate/ISP proxy) before the request ever
+# reaches Tailscale or Caddy. Handles both Windows PowerShell 5.1
+# (System.Net.WebException, body only readable via GetResponseStream()) and
+# PowerShell 7+ (Invoke-RestMethod already populates $_.ErrorDetails.Message).
+function Get-HttpErrorDetail($errorRecord) {
+  $bodyText = $null
+  $serverHeader = $null
+  try {
+    if ($errorRecord.ErrorDetails -and $errorRecord.ErrorDetails.Message) {
+      $bodyText = $errorRecord.ErrorDetails.Message
+    }
+  } catch {}
+  $webResponse = $errorRecord.Exception.Response
+  if ($webResponse) {
+    try { $serverHeader = $webResponse.Headers["Server"] } catch {}
+    if (-not $bodyText) {
+      try {
+        $stream = $webResponse.GetResponseStream()
+        $reader = New-Object System.IO.StreamReader($stream)
+        $bodyText = $reader.ReadToEnd()
+        $reader.Close()
+      } catch {}
+    }
+  }
+  return [pscustomobject]@{ Body = $bodyText; Server = $serverHeader }
+}
+
+$script:LastHttpErrorDetail = $null
+
 function Get-HttpStatus($uri, $headers) {
   try {
     $resp = Invoke-WebRequest -UseBasicParsing -Uri $uri -Headers $headers -Method Post `
@@ -621,9 +653,11 @@ function Get-HttpStatus($uri, $headers) {
       -Body '{"model":"__probe__","messages":[{"role":"user","content":"ping"}]}' `
       -TimeoutSec 15
     $script:LastHttpError = $null
+    $script:LastHttpErrorDetail = $null
     return [int]$resp.StatusCode
   } catch {
     $script:LastHttpError = $_.Exception.Message
+    $script:LastHttpErrorDetail = Get-HttpErrorDetail $_
     if ($_.Exception.Response) { return [int]$_.Exception.Response.StatusCode }
     return -1
   }
@@ -778,9 +812,31 @@ try {
   $reply = $resp.choices[0].message.content
   Write-Ok "Avec jeton via le tunnel public : reponse recue d'Ollama -- '$reply'"
 } catch {
+  $statusCode = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { $null }
+  $errDetail = Get-HttpErrorDetail $_
   Write-Fail "Avec jeton via le tunnel public : la requete a echoue -- $($_.Exception.Message)"
+  if ($errDetail.Server) { Write-Info "En-tete 'Server' de la reponse recue : $($errDetail.Server)" }
+  if ($errDetail.Body) {
+    Write-Info "Corps de la reponse recue (peut reveler qui a repondu a la place de Caddy) :"
+    Write-Host "    $($errDetail.Body)"
+  }
   Write-Info "Ce Caddyfile ne sait repondre que 401 (jeton refuse) ou transmettre a Ollama -- si ce n'est ni"
-  Write-Info "l'un ni l'autre, le probleme est probablement reseau/Tailscale plutot que ce script."
+  Write-Info "l'un ni l'autre (ex : 403), la reponse vient forcement d'ailleurs avant meme d'atteindre Caddy."
+  if ($statusCode -eq 403) {
+    Write-Info ""
+    Write-Info "Piste la plus probable pour un 403 precisement sur la requete AVEC le jeton (la requete"
+    Write-Info "SANS jeton, elle, vient de passer normalement) : un logiciel de securite sur CE PC --"
+    Write-Info "antivirus avec 'protection web'/inspection HTTPS, ou un outil de prevention de fuite de"
+    Write-Info "donnees (DLP) -- qui intercepte les requetes sortantes contenant un en-tete"
+    Write-Info "'Authorization: Bearer' avant meme qu'elles n'atteignent Tailscale. Ce PC a deja produit"
+    Write-Info "exactement ce meme symptome (sans jeton = OK, avec jeton = 403) avec un tunnel Cloudflare"
+    Write-Info "totalement different avant de passer a Tailscale -- un point commun aussi net sur deux"
+    Write-Info "infrastructures sans rapport pointe davantage vers ce PC que vers l'une ou l'autre."
+    Write-Info "Pour verifier : desactivez temporairement la protection web de votre antivirus, puis"
+    Write-Info "relancez ce script. Pour isoler la cause sans rien desactiver : depuis un AUTRE appareil"
+    Write-Info "sur un AUTRE reseau (telephone en 4G/5G, pas le wifi de la maison), ouvrez"
+    Write-Info "$TunnelUrl/v1/chat/completions -- si ca ne bloque que depuis ce PC, la cause est locale."
+  }
   Write-Info "Verifiez avec : .\setup-ollama-bridge.ps1 -Diagnose"
   Stop-Bridge
   exit 1
