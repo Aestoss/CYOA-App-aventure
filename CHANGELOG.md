@@ -5,6 +5,26 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-16 — Nettoyage des anciens journaux AUTOMATIC1111 : non bloquant desormais
+
+Meme apres le renforcement precedent (sondage de la fin reelle du processus
++ 4 tentatives), un run reel via `start-fogbound.ps1` a echoue au meme
+endroit -- alors qu'aucun processus laisse par une execution precedente
+n'avait meme ete detecte cette fois (donc rien a attendre). Preuve que ce
+n'est pas (ou plus seulement) un processus AUTOMATIC1111 orphelin qui tient
+ces journaux ouverts, mais autre chose (antivirus, visionneuse de journal,
+synchronisation cloud sur ce dossier...) que ce script ne peut ni
+identifier ni fermer de force.
+
+Comme le contenu de l'ancien journal n'est jamais qu'un confort de lecture
+apres coup (la boucle d'attente de disponibilite interroge l'API HTTP
+directement, jamais le contenu du fichier), bloquer tout le run pour ca
+n'avait pas de sens : l'echec de suppression est maintenant un simple
+avertissement (tentatives portees a 6 x 1s), et le script continue vers le
+lancement reel. Le lancement lui-meme (`Start-Process` avec les journaux en
+sortie) est desormais protege par un try/catch avec un message clair et une
+liste de causes plus large a verifier si, cette fois, ca echoue vraiment.
+
 ## 2026-09-16 — Un seul script pour tout arreter/verifier/relancer (start-fogbound.ps1)
 
 Demande explicite apres plusieurs allers-retours entre `setup-automatic1111.ps1`

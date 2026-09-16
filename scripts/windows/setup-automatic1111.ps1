@@ -807,7 +807,7 @@ if ($leftoverProcesses) {
 # open for a brief moment longer (antivirus scan, delayed handle release) --
 # retried a few times instead of failing on the very first attempt.
 $logCleanupError = $null
-for ($tryNum = 1; $tryNum -le 4; $tryNum++) {
+for ($tryNum = 1; $tryNum -le 6; $tryNum++) {
   try {
     if (Test-Path $WebUiLogPath) { Remove-Item $WebUiLogPath -Force -ErrorAction Stop }
     if (Test-Path $WebUiErrLogPath) { Remove-Item $WebUiErrLogPath -Force -ErrorAction Stop }
@@ -815,12 +815,20 @@ for ($tryNum = 1; $tryNum -le 4; $tryNum++) {
     break
   } catch {
     $logCleanupError = $_
-    Start-Sleep -Milliseconds 750
+    Start-Sleep -Milliseconds 1000
   }
 }
 if ($logCleanupError) {
-  Write-Fail "Impossible de supprimer les anciens journaux ($($logCleanupError.Exception.Message)) -- un processus les a probablement encore ouverts. Fermez-le (verifiez le Gestionnaire des taches pour un python.exe ou cmd.exe lance depuis $ResolvedWebUiDir) puis relancez ce script."
-  exit 1
+  # Not fatal: confirmed for real that no matching leftover process was even
+  # found (nothing to wait out) yet the delete still failed both here and in
+  # a completely separate run -- something other than a leftover
+  # AUTOMATIC1111 process is holding these files (antivirus, a log viewer,
+  # cloud-sync on this folder...), not something this script can identify or
+  # force closed. The old content is only ever a convenience for reading
+  # after a failure, never something the launch/readiness logic below
+  # depends on -- so this only warns and moves on to the actual launch,
+  # instead of blocking the whole run over stale log text.
+  Write-Fail "Impossible de supprimer les anciens journaux ($($logCleanupError.Exception.Message)) -- poursuite quand meme (l'ancien contenu restera visible en tete de $WebUiLogPath / $WebUiErrLogPath si le lancement echoue plus bas)."
 }
 
 # Two separate log files, not one shared by both streams: Start-Process
@@ -844,9 +852,19 @@ if ($logCleanupError) {
 # empty file gives the same immediate-EOF result pause needs, without
 # depending on that device-name resolution quirk.
 if (-not (Test-Path $WebUiStdinPath)) { New-Item -ItemType File -Path $WebUiStdinPath -Force | Out-Null }
-$webuiProcess = Start-Process -FilePath $WebUiUserBat -WorkingDirectory $ResolvedWebUiDir `
-  -WindowStyle Hidden -PassThru `
-  -RedirectStandardOutput $WebUiLogPath -RedirectStandardError $WebUiErrLogPath -RedirectStandardInput $WebUiStdinPath
+try {
+  $webuiProcess = Start-Process -FilePath $WebUiUserBat -WorkingDirectory $ResolvedWebUiDir `
+    -WindowStyle Hidden -PassThru `
+    -RedirectStandardOutput $WebUiLogPath -RedirectStandardError $WebUiErrLogPath -RedirectStandardInput $WebUiStdinPath
+} catch {
+  Write-Fail "Impossible de demarrer AUTOMATIC1111 -- $($_.Exception.Message)"
+  if ($_.Exception.Message -match "used by another process|being used") {
+    Write-Info "Un processus tient encore $WebUiLogPath ou $WebUiErrLogPath ouvert -- fermez-le (Gestionnaire des taches :"
+    Write-Info "cherchez un python.exe/cmd.exe lance depuis $ResolvedWebUiDir, mais aussi un editeur de texte,"
+    Write-Info "un outil de sauvegarde/synchronisation, ou un antivirus qui l'inspecterait) puis relancez."
+  }
+  exit 1
+}
 
 Write-Info "Processus demarre (PID $($webuiProcess.Id)). Journal : $WebUiLogPath"
 Write-Info "Cela peut prendre 10 a 15 minutes la toute premiere fois (telechargement de PyTorch et des dependances)."
