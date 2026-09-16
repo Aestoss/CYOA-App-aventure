@@ -229,33 +229,56 @@ $cfg = Get-ChromaConfig
 $ResolvedWebUiDir = $null
 
 if ($WebUiDir) {
-  if (-not (Test-Path (Join-Path $WebUiDir "webui-user.bat"))) {
-    Write-Fail "Le dossier indique avec -WebUiDir ($WebUiDir) ne contient pas de webui-user.bat -- verifiez le chemin."
+  if (-not (Test-Path (Join-Path $WebUiDir "webui.bat"))) {
+    Write-Fail "Le dossier indique avec -WebUiDir ($WebUiDir) ne contient pas de webui.bat -- verifiez le chemin."
     exit 1
   }
   $ResolvedWebUiDir = $WebUiDir
   Write-Ok "Utilisation du dossier indique : $ResolvedWebUiDir"
-} elseif ($cfg.webuiDir -and (Test-Path (Join-Path $cfg.webuiDir "webui-user.bat"))) {
+} elseif ($cfg.webuiDir -and (Test-Path (Join-Path $cfg.webuiDir "webui.bat"))) {
   $ResolvedWebUiDir = $cfg.webuiDir
   Write-Ok "Installation deja connue d'une execution precedente : $ResolvedWebUiDir"
 } else {
-  Write-Info "Aucune installation connue -- clonage d'une nouvelle copie de chromaforge."
   $cloneTarget = Join-Path $DefaultCloneParent "chromaforge"
   if (Test-Path $cloneTarget) {
-    Write-Fail "$cloneTarget existe deja mais ne contient pas de webui-user.bat valide -- renommez ou supprimez ce dossier, puis relancez ce script."
-    exit 1
+    if (-not (Test-Path (Join-Path $cloneTarget "webui.bat"))) {
+      Write-Fail "$cloneTarget existe deja mais ne contient pas de webui.bat valide -- renommez ou supprimez ce dossier, puis relancez ce script."
+      exit 1
+    }
+    $ResolvedWebUiDir = $cloneTarget
+    Write-Ok "Installation existante (non enregistree) trouvee : $ResolvedWebUiDir"
+  } else {
+    Write-Info "Aucune installation connue -- clonage d'une nouvelle copie de chromaforge."
+    Invoke-NativeQuiet { & git clone --depth 1 https://github.com/maybleMyers/chromaforge.git $cloneTarget }
+    if ($LASTEXITCODE -ne 0) {
+      Write-Fail "Le clonage a echoue (voir le detail ci-dessus). Verifiez votre connexion internet et relancez ce script."
+      exit 1
+    }
+    $ResolvedWebUiDir = $cloneTarget
+    Write-Ok "Clone dans $ResolvedWebUiDir."
   }
-  Invoke-NativeQuiet { & git clone --depth 1 https://github.com/maybleMyers/chromaforge.git $cloneTarget }
-  if ($LASTEXITCODE -ne 0) {
-    Write-Fail "Le clonage a echoue (voir le detail ci-dessus). Verifiez votre connexion internet et relancez ce script."
-    exit 1
-  }
-  $ResolvedWebUiDir = $cloneTarget
-  Write-Ok "Clone dans $ResolvedWebUiDir."
 }
 
 $cfg.webuiDir = $ResolvedWebUiDir
 Save-ChromaConfig $cfg
+
+# BUG FOUND ON A REAL RUN (not caught before shipping): chromaforge's repo
+# does not ship webui-user.bat -- only webui.bat, webui-user.sh,
+# webui-macos-env.sh, webui.sh. This script launches webui-user.bat
+# directly further down (Start-Process -FilePath $WebUiUserBat), and the
+# GPU/--api/--port steps right after this all read/write that same file,
+# so it must actually exist as a real file, not just be something
+# webui.bat is free to source if present. Confirmed on a fresh clone of
+# this exact fork by the assistant actually running this script on a real
+# machine. Create it from the same template AUTOMATIC1111/Forge ship by
+# default (which itself does nothing but forward into webui.bat) if it's
+# missing, instead of letting the next Get-Content on it fail outright.
+$WebUiUserBat = Join-Path $ResolvedWebUiDir "webui-user.bat"
+if (-not (Test-Path $WebUiUserBat)) {
+  $defaultWebUiUserBat = "@echo off`r`n`r`nset PYTHON=`r`nset GIT=`r`nset VENV_DIR=`r`nset COMMANDLINE_ARGS=`r`n`r`ncall webui.bat`r`n"
+  Set-Content -Path $WebUiUserBat -Value $defaultWebUiUserBat -Encoding ASCII -NoNewline
+  Write-Ok "webui-user.bat absent de ce fork -- cree avec le modele standard AUTOMATIC1111/Forge."
+}
 
 # ---------------------------------------------------------------------------
 # 3. Download the three required files -- exact folder names quoted
@@ -342,7 +365,6 @@ function Test-BlackwellGpu {
   }
 }
 
-$WebUiUserBat = Join-Path $ResolvedWebUiDir "webui-user.bat"
 $batContent = Get-Content $WebUiUserBat -Raw
 
 $IsBlackwellGpu = Test-BlackwellGpu

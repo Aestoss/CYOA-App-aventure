@@ -5,6 +5,37 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-16 — Vrai bug trouvé lors du premier run réel : chromaforge ne fournit pas webui-user.bat
+
+Premier lancement réel sur la machine cible (via une session Claude Code
+distincte avec accès PC, agissant comme exécutant pendant que cette session
+garde la main sur le code) : `setup-forge-chroma.ps1` plantait juste après
+le clonage de `maybleMyers/chromaforge`, avant tout téléchargement de
+modèle. Cause confirmée en clonant le dépôt et en listant son contenu : ce
+fork ne fournit **pas** `webui-user.bat` (seulement `webui.bat`,
+`webui-user.sh`, `webui-macos-env.sh`, `webui.sh`) — contrairement à
+AUTOMATIC1111 et à la plupart de ses forks. Le script, lui, suppose ce
+fichier présent dès la résolution du dossier d'installation (`Get-Content`
+sur un chemin inexistant → erreur bloquante) et le lance ensuite
+directement via `Start-Process -FilePath $WebUiUserBat` — donc le fichier
+doit réellement exister sur disque, pas juste être une chose que
+`webui.bat` pourrait sourcer s'il existait.
+
+Le même défaut existait sur les trois branches de résolution (`-WebUiDir`
+explicite, config mise en cache d'un run précédent, clone frais) : toutes
+utilisaient la présence de `webui-user.bat` comme critère de "dossier
+d'installation valide", alors que même un clone frais et sain de ce fork
+précis ne l'a jamais.
+
+**Correctif** : le critère de validité devient la présence de `webui.bat`
+(fichier que ce fork fournit réellement), et le script crée
+`webui-user.bat` lui-même — avec le même modèle minimal qu'AUTOMATIC1111
+distribue par défaut (`set PYTHON=` / `set GIT=` / `set VENV_DIR=` /
+`set COMMANDLINE_ARGS=` puis `call webui.bat`) — s'il est absent, plutôt que
+de supposer sa présence. N'affecte que l'instance Chroma dédiée ;
+`setup-forge.ps1` (AUTOMATIC1111/Forge classique) n'a jamais eu ce problème
+car ce fichier fait partie de sa distribution standard.
+
 ## 2026-09-16 — Vrai bug trouvé en préparant le 4e modèle : le nom de fichier réel n'était jamais détecté
 
 En choisissant le modèle NSFW final ("MS Flux SFW/NSFW V3", FP16, récupéré
