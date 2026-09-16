@@ -5,6 +5,63 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-16 — Migration du tunnel public : Cloudflare quick tunnel → Tailscale Funnel
+
+Le tunnel Cloudflare anonyme (`*.trycloudflare.com`) utilisé jusqu'ici
+s'est révélé structurellement peu fiable : diagnostiqué précédemment comme
+un 403 émis par l'edge Cloudflare lui-même (pas par notre Caddy/Ollama, qui
+ne savent répondre que 401 ou transmettre la requête), reproductible à
+l'identique sans aucun changement de code dans l'intervalle (confirmé via
+`git log`), et documenté par Cloudflare comme n'offrant aucune garantie de
+disponibilité — ce type de tunnel n'a ni nom d'hôte fixe ni SLA, par
+conception. Plutôt que de continuer à chasser un problème côté
+infrastructure Cloudflare sur lequel ce projet n'a aucune prise, bascule
+vers **Tailscale Funnel** : gratuit sur le plan Personal, nom d'hôte stable
+(`https://<machine>.<tailnet>.ts.net`, ne change plus d'une exécution à
+l'autre), HTTPS géré automatiquement par Tailscale, sans achat de nom de
+domaine (contrairement à un tunnel Cloudflare *nommé*, qui en nécessite un
+réellement rattaché à un compte Cloudflare — vérifié après une première
+affirmation erronée en sens inverse). Alternatives explorées et écartées :
+ngrok (nom fixe mais quotas de bande passante/requêtes gênants pour de la
+génération d'image), Pinggy (sessions limitées à 60 min), Playit.gg
+(orienté gaming), Zrok (moins éprouvé pour cet usage).
+
+Trois livrables :
+- **`setup-ollama-bridge.ps1`** réécrit : la section 4 (téléchargement de
+  `cloudflared.exe`, lancement avec flux redirigés vers des fichiers de
+  log, extraction de l'URL par expression régulière sur ces logs) est
+  entièrement remplacée par une vérification en amont de l'état Tailscale
+  (installé, connecté, MagicDNS actif, certificats HTTPS activés,
+  permission Funnel accordée dans la politique ACL — chacun détecté et
+  signalé séparément plutôt qu'une erreur générique) puis par
+  `tailscale serve` + `tailscale funnel 443 on`, avec lecture de l'URL
+  publique via `tailscale funnel status --json` (une API structurée
+  documentée, plus fiable que le grattage de logs). Ajout d'un switch
+  `-Diagnose` qui n'exécute que ces vérifications Tailscale (sans toucher à
+  Ollama/Caddy/au tunnel) pour un diagnostic rapide en cas de souci, avant
+  ou après le premier lancement complet. Caddy, Ollama, le jeton secret, le
+  surveillant GPU et la mise à jour automatique des réglages Fogbound sont
+  conservés sans changement. Le diagnostic 403 Cloudflare-spécifique (User-
+  Agent de navigateur, cross-check `curl.exe`, résolution DNS
+  système/publique) est retiré : il ne s'appliquait qu'à l'edge Cloudflare,
+  qui n'est plus dans le chemin.
+- **`cleanup-unused-tunnel-tools.ps1`** (nouveau) : repère et, sur
+  confirmation explicite (`-Delete` puis frappe de "OUI"), supprime
+  `bin\cloudflared.exe` et ses deux fichiers de log dans le dossier de
+  travail du pont, arrête un éventuel processus `cloudflared.exe` encore
+  actif avant suppression, et nettoie le champ `cloudflaredPid` devenu
+  obsolète dans `config.json`. Ne touche à rien d'autre (Caddy, Ollama,
+  AUTOMATIC1111, Tailscale). Mode rapport par défaut, même pattern que
+  `cleanup-unused-image-tools.ps1`.
+- **`GUIDE-TAILSCALE.md`** (nouveau) : pas à pas pour la configuration
+  ponctuelle du compte (création, installation, `tailscale up` — connexion
+  interactive obligatoire par navigateur, non scriptable par conception de
+  Tailscale) et des deux réglages de la console d'admin nécessaires à
+  Funnel (certificats HTTPS, permission `funnel` dans la politique ACL,
+  généralement déjà actifs par défaut sur un tailnet neuf mais vérifiés
+  explicitement), avec une FAQ sur la stabilité de l'adresse et la
+  confidentialité du trafic relayé par Funnel.
+
 ## 2026-09-16 — Le 403 persiste malgre le User-Agent : diagnostic renforce
 
 Confirme par un run reel : changer le User-Agent n'a pas suffi, le 403

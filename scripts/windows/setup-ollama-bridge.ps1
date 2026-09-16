@@ -11,17 +11,30 @@
   Ollama itself has NO built-in authentication -- exposing its port directly
   to the internet lets anyone who finds the URL use your GPU for free. So
   this script puts a small authenticated reverse proxy (Caddy) in front of
-  it, and a Cloudflare Tunnel (no account/domain needed) in front of that,
-  instead of exposing port 11434 directly:
+  it, and a Tailscale Funnel (a stable https://<machine>.<tailnet>.ts.net
+  hostname, free on Tailscale's Personal plan) in front of that, instead of
+  exposing port 11434 directly:
 
-      Phone -> Fogbound (Railway) -> Cloudflare Tunnel -> Caddy (checks a
+      Phone -> Fogbound (Railway) -> Tailscale Funnel -> Caddy (checks a
       secret token) -> Ollama (127.0.0.1:11434)
+
+  This replaces an earlier version of this script that used an anonymous
+  Cloudflare "quick tunnel" (*.trycloudflare.com). That tunnel type has no
+  uptime guarantee and no fixed hostname by design -- it turned out to fail
+  unpredictably (intermittent 403s from Cloudflare's own edge, unrelated to
+  anything in this script) with no reliable fix available on our side. See
+  CHANGELOG.md for the full diagnosis. Tailscale Funnel gives a real,
+  stable hostname instead, at the cost of a one-time interactive login (see
+  GUIDE-TAILSCALE.md next to this script) -- there is no way to script that
+  login step itself, Tailscale requires it to happen in a real browser.
 
   What it does, in order:
     1. Installs Ollama via winget if missing, makes sure its server is
        actually running, and pulls a default model if you don't have one yet.
-    2. Downloads portable Caddy + cloudflared binaries into a local bin/
-       folder (no winget PATH guesswork -- see notes below).
+    2. Downloads a portable Caddy binary into a local bin/ folder (no winget
+       PATH guesswork -- see notes below), and checks that Tailscale itself
+       is installed and logged in (see .NOTES -- unlike Caddy, Tailscale
+       cannot be silently auto-installed/auto-logged-in by this script).
     3. Generates (once) or reuses a secret bearer token, writes a Caddyfile
        that only forwards requests carrying that token, and starts Caddy.
        Three routes share the one token: Ollama itself, the GPU watcher's
@@ -31,8 +44,10 @@
     4. Starts ollama-watcher.ps1 (a separate script next to this one), which
        polls nvidia-smi and shows a tray icon (green/orange) so you can see
        locally when the GPU is busy enough that a game might stutter.
-    5. Starts a Cloudflare "quick tunnel" pointing at Caddy and extracts the
-       public https://xxxx.trycloudflare.com URL it gets assigned.
+    5. Points Tailscale Funnel at Caddy (tailscale serve + tailscale funnel)
+       and reads back the resulting stable public hostname via
+       'tailscale funnel status --json' (no log-scraping involved -- unlike
+       the old cloudflared approach, this is a structured, documented API).
     6. Validates the FULL path from the public internet: confirms a request
        without the token is rejected (401) and a request with it reaches
        Ollama and gets a real completion back.
@@ -43,19 +58,22 @@
        same tunnel to show its own hors ligne/indisponible/disponible
        indicator and to decide, instantly and without any extra round trip,
        whether to offer your configured fallback provider for a given turn.
-    8. Keeps running in the foreground (Caddy + the tunnel must stay alive
-       for this to keep working) until you press Ctrl+C, then cleans up.
+    8. Keeps running in the foreground (Caddy + Tailscale must stay alive for
+       this to keep working) until you press Ctrl+C, then cleans up (Caddy
+       and the watcher are stopped; the Funnel/serve config and Tailscale
+       itself are deliberately left running -- see .NOTES).
 
   See install-startup-task.ps1 to have this run automatically at logon
   instead of by hand every time, with Windows itself restarting it if it
   ever crashes while the PC stays on.
 
-  Run it again any time you want to start a session -- the tunnel URL
-  rotates every run (quick tunnels don't have a fixed hostname), so the
-  script re-pushes the new URL to Fogbound automatically each time. The
-  secret token is generated once and reused across runs, saved in
-  config.json next to this script, so you never have to retype it in
-  Fogbound's Settings after the first successful run.
+  Run it again any time you want to start a session -- unlike the old
+  cloudflared quick tunnel, the Tailscale hostname does NOT change between
+  runs, so Fogbound's settings only need to be re-pushed if the secret token
+  itself ever changes (it doesn't, once generated). The secret token is
+  generated once and reused across runs, saved in config.json next to this
+  script, so you never have to retype it in Fogbound's Settings after the
+  first successful run.
 
 .NOTES
   - Run from a normal PowerShell window: if execution policy blocks the
@@ -63,6 +81,21 @@
       powershell -ExecutionPolicy Bypass -File .\setup-ollama-bridge.ps1
   - If the Ollama install step fails, re-run this script from an
     Administrator PowerShell window and try again.
+  - Tailscale is NOT installed automatically by this script, unlike Ollama
+    and Caddy -- installing it silently is possible, but the mandatory
+    interactive browser login ('tailscale up') is not scriptable at all (by
+    Tailscale's own design, as an anti-phishing measure), so a fully silent
+    install would just fail one step later anyway with a less clear error.
+    See GUIDE-TAILSCALE.md next to this script for the one-time setup (a
+    few minutes): install, log in, enable HTTPS certificates, confirm the
+    Funnel permission. This script detects and clearly reports exactly
+    which of those steps is missing if one is (see the diagnostics below).
+  - This script never runs 'tailscale up' or 'tailscale down' -- it only
+    ever runs 'tailscale serve' / 'tailscale funnel' (routing config) and
+    reads status. It does not touch your Tailscale login state, and Ctrl+C
+    does not log you out or disable Funnel -- only Caddy and the watcher are
+    stopped on exit, so Fogbound keeps reaching the (now Ollama-less) proxy
+    port with a connection-refused instead of a stale/misleading answer.
   - Local image generation (AUTOMATIC1111 / Stable Diffusion WebUI) is NOT
     installed by this script -- unlike Ollama, it's a much heavier,
     less standardized install (Python environment, multi-GB model
@@ -74,6 +107,9 @@
     This script only adds the authenticated proxy route for it -- if it
     isn't running, that route just fails until you start it; everything
     else (Ollama, text generation) works regardless.
+  - If you used the old Cloudflare-based version of this script before, run
+    cleanup-unused-tunnel-tools.ps1 next to this one to remove the
+    now-unused cloudflared binary and its log files.
   - This script has not been run on a real Windows machine by the assistant
     that wrote it (no such access exists in that environment) -- it was
     built from verified package IDs and documented behavior, but please
@@ -101,6 +137,14 @@
   the tunnel still work without it -- you just lose the local busy/idle
   indicator and Fogbound's status indicator will show "offline" for the
   /bridge/status route specifically (Ollama generation itself is unaffected).
+
+.PARAMETER Diagnose
+  Runs only the Tailscale/Funnel prerequisite checks (installed, logged in,
+  HTTPS certs, Funnel permission, existing serve/funnel config) and prints
+  a clear report, then exits -- no Ollama/Caddy/tunnel setup is attempted.
+  Use this first if a previous run failed on the Tailscale step, or any
+  time you want to sanity-check the account setup from GUIDE-TAILSCALE.md
+  without going through the whole bridge startup.
 #>
 
 [CmdletBinding()]
@@ -109,7 +153,8 @@ param(
   [string]$Model = "qwen3:14b",
   [int]$SdPort = 7860,
   [switch]$SkipFogboundUpdate,
-  [switch]$NoWatcher
+  [switch]$NoWatcher,
+  [switch]$Diagnose
 )
 
 $ErrorActionPreference = "Stop"
@@ -121,25 +166,16 @@ $ErrorActionPreference = "Stop"
 $WorkDir      = Join-Path $env:USERPROFILE "FogboundOllamaBridge"
 $BinDir       = Join-Path $WorkDir "bin"
 $CaddyExe     = Join-Path $BinDir "caddy.exe"
-$CloudflaredExe = Join-Path $BinDir "cloudflared.exe"
 $ConfigPath   = Join-Path $WorkDir "config.json"
 $CaddyfilePath = Join-Path $WorkDir "Caddyfile"
-$TunnelLogPath = Join-Path $WorkDir "cloudflared.log"
-$TunnelErrLogPath = Join-Path $WorkDir "cloudflared.err.log"
 $TranscriptPath = Join-Path $WorkDir "bridge.log"
 $WatcherScriptPath = Join-Path $PSScriptRoot "ollama-watcher.ps1"
 $ProxyPort    = 8787
 $OllamaPort   = 11434
 $WatcherPort  = 8788
-# PowerShell's default User-Agent (e.g. "...WindowsPowerShell/5.1...") is a
-# distinctive automation fingerprint -- used on every request this script
-# makes through the public tunnel, in case Cloudflare's own bot/WAF
-# heuristics on *.trycloudflare.com (a real, documented source of 403s
-# unrelated to this bridge's own auth logic, which can only ever answer
-# 401 or forward to Ollama -- see the tunnel validation step) are keying
-# off it for a request that also carries an Authorization header, a
-# pattern that can read as credential/API abuse.
-$BrowserUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+# Tailscale Funnel only accepts these three public-facing ports -- not a
+# script limitation, a hard constraint of the Funnel feature itself.
+$FunnelPort   = 443
 
 New-Item -ItemType Directory -Force -Path $WorkDir | Out-Null
 New-Item -ItemType Directory -Force -Path $BinDir  | Out-Null
@@ -148,7 +184,9 @@ New-Item -ItemType Directory -Force -Path $BinDir  | Out-Null
 # the Windows Scheduled Task (see install-startup-task.ps1) leaves something
 # inspectable -- Write-Host alone would otherwise vanish with no console
 # attached. Doesn't suppress the normal console output when run by hand.
-try { Start-Transcript -Path $TranscriptPath -Append | Out-Null } catch {}
+if (-not $Diagnose) {
+  try { Start-Transcript -Path $TranscriptPath -Append | Out-Null } catch {}
+}
 
 $script:ChildProcesses = @()
 
@@ -165,6 +203,29 @@ function Write-Fail($msg) {
   Write-Host "    ECHEC: $msg" -ForegroundColor Red
 }
 
+function Write-Info($msg) {
+  Write-Host "    $msg"
+}
+
+# Guards native calls against two distinct real PowerShell traps that have
+# nothing to do with the command actually failing:
+#   1. Windows PowerShell 5.1 wraps ANY captured stderr (2>&1, 2>$null) into
+#      a terminating ErrorRecord under $ErrorActionPreference = "Stop",
+#      even for harmless stderr chatter a tool writes on a successful run.
+#   2. PowerShell 7.3+'s $PSNativeCommandUseErrorActionPreference (on by
+#      default) promotes ANY non-zero native exit code to a terminating
+#      error regardless of stderr -- a problem here because several
+#      Tailscale subcommands (e.g. checking Funnel status before Funnel is
+#      configured yet) legitimately exit non-zero as their normal "not set
+#      up yet" signal, which this script needs to detect and report nicely,
+#      not have it explode into an unhandled exception.
+function Invoke-NativeQuiet {
+  param([Parameter(Mandatory)][scriptblock]$ScriptBlock)
+  $prevErrorActionPreference = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  try { & $ScriptBlock } finally { $ErrorActionPreference = $prevErrorActionPreference }
+}
+
 function Stop-Bridge {
   foreach ($p in $script:ChildProcesses) {
     try {
@@ -176,12 +237,14 @@ function Stop-Bridge {
 }
 
 # Make sure a previous, uncleanly-stopped run doesn't leave stale processes
-# holding the ports this run needs.
+# holding the ports this run needs. Tailscale itself isn't tracked here --
+# it runs as a persistent background service, not a process this script
+# starts/owns, so it's never killed by this function.
 function Stop-StaleBridge {
   if (Test-Path $ConfigPath) {
     try {
       $cfg = Get-Content $ConfigPath -Raw | ConvertFrom-Json
-      foreach ($pidField in @('caddyPid', 'cloudflaredPid', 'watcherPid')) {
+      foreach ($pidField in @('caddyPid', 'watcherPid')) {
         $procId = $cfg.$pidField
         if ($procId) {
           $proc = Get-Process -Id $procId -ErrorAction SilentlyContinue
@@ -196,12 +259,162 @@ function Get-BridgeConfig {
   if (Test-Path $ConfigPath) {
     return Get-Content $ConfigPath -Raw | ConvertFrom-Json
   }
-  return [pscustomobject]@{ secret = $null; caddyPid = $null; cloudflaredPid = $null; watcherPid = $null }
+  return [pscustomobject]@{ secret = $null; caddyPid = $null; watcherPid = $null }
 }
 
 function Save-BridgeConfig($cfg) {
   $cfg | ConvertTo-Json | Set-Content -Path $ConfigPath -Encoding UTF8
 }
+
+# ---------------------------------------------------------------------------
+# Tailscale: install/login/permission checks + Funnel control
+#
+# Each of these is a genuinely distinct, independently-reachable failure
+# state a first-time (or re-)setup can land in -- not installed at all,
+# installed but never logged in, logged in but on the wrong/no tailnet,
+# logged in but missing the two admin-console toggles (HTTPS certs, Funnel
+# permission). Reporting the actual state instead of a generic "Tailscale
+# error" is the whole point of -Diagnose.
+# ---------------------------------------------------------------------------
+
+function Get-TailscaleExe {
+  $cmd = Get-Command tailscale -ErrorAction SilentlyContinue
+  if ($cmd) { return $cmd.Source }
+  # winget's default install location isn't always on PATH within the same
+  # session it was installed in -- checked as a fallback before giving up.
+  $fallback = "$env:ProgramFiles\Tailscale\tailscale.exe"
+  if (Test-Path $fallback) { return $fallback }
+  return $null
+}
+
+function Get-TailscaleStatusJson($tsExe) {
+  try {
+    $raw = Invoke-NativeQuiet { & $tsExe status --json 2>$null }
+    if ($LASTEXITCODE -ne 0 -or -not $raw) { return $null }
+    return $raw | ConvertFrom-Json
+  } catch { return $null }
+}
+
+# Returns one of: NotInstalled / NotRunning / NeedsLogin / LoggedIn
+function Test-TailscaleState {
+  param([string]$TsExe)
+  if (-not $TsExe) { return "NotInstalled" }
+  $status = Get-TailscaleStatusJson $TsExe
+  if (-not $status) { return "NotRunning" }
+  # BackendState is Tailscale's own documented state field: "NeedsLogin",
+  # "NeedsMachineAuth", "Stopped", "Starting", "Running".
+  if ($status.BackendState -eq "Running") { return "LoggedIn" }
+  if ($status.BackendState -eq "NeedsLogin") { return "NeedsLogin" }
+  return "NeedsLogin"
+}
+
+# Checks the two admin-console-side prerequisites (HTTPS certs, Funnel node
+# attribute) the only way possible from the CLI: by actually trying the
+# commands and reading the specific, documented error text Tailscale itself
+# prints when either is missing, rather than guessing from indirect signals.
+# Returns $null if everything looks fine, or a human-readable explanation.
+function Test-FunnelPrerequisites {
+  param([string]$TsExe)
+  $probe = Invoke-NativeQuiet { & $TsExe funnel status --json 2>&1 }
+  $probeText = ($probe | Out-String)
+  if ($probeText -match "HTTPS is not enabled" -or $probeText -match "enable HTTPS") {
+    return "Les certificats HTTPS ne sont pas actives pour votre tailnet (voir GUIDE-TAILSCALE.md, etape 'Activer HTTPS Certificates')."
+  }
+  if ($probeText -match "funnel" -and $probeText -match "(not allowed|attribute|ACL|access)") {
+    return "Ce compte n'a pas la permission Funnel activee dans la politique ACL du tailnet (voir GUIDE-TAILSCALE.md, etape 'Autoriser Funnel')."
+  }
+  return $null
+}
+
+if ($Diagnose) {
+  Write-Step "Diagnostic Tailscale"
+
+  $tsExe = Get-TailscaleExe
+  if (-not $tsExe) {
+    Write-Fail "Tailscale n'est pas installe (commande 'tailscale' introuvable, ni dans $env:ProgramFiles\Tailscale)."
+    Write-Info "Suivez GUIDE-TAILSCALE.md, etape 1 (installation), puis relancez -Diagnose."
+    exit 1
+  }
+  Write-Ok "Tailscale installe ($tsExe)."
+
+  $state = Test-TailscaleState -TsExe $tsExe
+  switch ($state) {
+    "NotRunning" {
+      Write-Fail "Le service Tailscale ne repond pas. Redemarrez le service 'Tailscale' (services.msc) ou reinstallez, puis relancez -Diagnose."
+      exit 1
+    }
+    "NeedsLogin" {
+      Write-Fail "Tailscale est installe mais vous n'etes pas connecte."
+      Write-Info "Lancez : `"$tsExe`" up -- une page de connexion s'ouvre dans votre navigateur (voir GUIDE-TAILSCALE.md, etape 2)."
+      exit 1
+    }
+    "LoggedIn" {
+      Write-Ok "Connecte a un tailnet."
+    }
+  }
+
+  $status = Get-TailscaleStatusJson $tsExe
+  if ($status -and $status.Self -and $status.Self.DNSName) {
+    $machineHost = $status.Self.DNSName.TrimEnd('.')
+    Write-Ok "Nom de machine sur le tailnet : $machineHost"
+  } else {
+    Write-Fail "Connecte, mais impossible de lire le nom de machine (MagicDNS) -- verifiez GUIDE-TAILSCALE.md, etape 'Verifier MagicDNS'."
+  }
+
+  $funnelIssue = Test-FunnelPrerequisites -TsExe $tsExe
+  if ($funnelIssue) {
+    Write-Fail $funnelIssue
+    exit 1
+  }
+  Write-Ok "Prerequis Funnel (HTTPS + permission) : OK."
+
+  $existingFunnel = Invoke-NativeQuiet { & $tsExe funnel status --json 2>$null }
+  Write-Info "Etat actuel de 'tailscale funnel status --json' :"
+  Write-Host "    $existingFunnel"
+
+  Write-Step "Diagnostic termine"
+  Write-Info "Si tout est OK ci-dessus, relancez ce script sans -Diagnose pour demarrer le pont."
+  exit 0
+}
+
+Write-Step "Verification de Tailscale (tunnel public stable)"
+
+$TsExe = Get-TailscaleExe
+if (-not $TsExe) {
+  Write-Fail "Tailscale n'est pas installe."
+  Write-Info "Ce script ne l'installe pas automatiquement : la connexion (etape suivante) demande obligatoirement"
+  Write-Info "un navigateur, donc une installation silencieuse echouerait de toute facon a l'etape d'apres."
+  Write-Info "Suivez GUIDE-TAILSCALE.md (a cote de ce script), puis relancez ce script."
+  Write-Info "Vous pouvez verifier votre progression a tout moment avec : .\setup-ollama-bridge.ps1 -Diagnose"
+  exit 1
+}
+Write-Ok "Tailscale installe ($TsExe)."
+
+$TsState = Test-TailscaleState -TsExe $TsExe
+if ($TsState -ne "LoggedIn") {
+  Write-Fail "Tailscale est installe mais pas connecte a un compte."
+  Write-Info "Lancez : `"$TsExe`" up  (une page de connexion s'ouvre dans votre navigateur)."
+  Write-Info "Puis relancez ce script. Detail : GUIDE-TAILSCALE.md, etape 2."
+  exit 1
+}
+Write-Ok "Connecte a un tailnet."
+
+$TsStatus = Get-TailscaleStatusJson $TsExe
+if (-not $TsStatus -or -not $TsStatus.Self -or -not $TsStatus.Self.DNSName) {
+  Write-Fail "Connecte, mais MagicDNS ne semble pas actif (pas de nom de machine lisible)."
+  Write-Info "Verifiez GUIDE-TAILSCALE.md, etape 'Verifier MagicDNS', puis relancez ce script."
+  exit 1
+}
+$MachineHostName = $TsStatus.Self.DNSName.TrimEnd('.')
+Write-Ok "Machine sur le tailnet : $MachineHostName"
+
+$FunnelIssue = Test-FunnelPrerequisites -TsExe $TsExe
+if ($FunnelIssue) {
+  Write-Fail $FunnelIssue
+  Write-Info "Vous pouvez revalider chaque etape avec : .\setup-ollama-bridge.ps1 -Diagnose"
+  exit 1
+}
+Write-Ok "Prerequis Funnel (certificats HTTPS + permission ACL) : OK."
 
 # ---------------------------------------------------------------------------
 # 1. Ollama: install, start, pull model
@@ -272,7 +485,7 @@ if (-not $haveModel) {
 Write-Ok "Modele '$Model' disponible."
 
 # ---------------------------------------------------------------------------
-# 2. Caddy + cloudflared: portable binaries, no winget/PATH guessing
+# 2. Caddy: portable binary, no winget/PATH guessing
 # ---------------------------------------------------------------------------
 
 Write-Step "Verification de Caddy (proxy avec authentification)"
@@ -295,16 +508,6 @@ if (-not (Test-Path $CaddyExe)) {
   }
 }
 Write-Ok "Caddy pret ($CaddyExe)."
-
-Write-Step "Verification de cloudflared (tunnel public)"
-
-if (-not (Test-Path $CloudflaredExe)) {
-  Write-Host "    Telechargement de cloudflared..."
-  Invoke-WebRequest -UseBasicParsing `
-    -Uri "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe" `
-    -OutFile $CloudflaredExe
-}
-Write-Ok "cloudflared pret ($CloudflaredExe)."
 
 # ---------------------------------------------------------------------------
 # 3. Secret token + Caddyfile
@@ -396,35 +599,17 @@ if ($NoWatcher) {
 }
 
 $script:LastHttpError = $null
-$script:LastHttpErrorIsDns = $false
 
 function Get-HttpStatus($uri, $headers) {
   try {
-    $resp = Invoke-WebRequest -UseBasicParsing -Uri $uri -Headers $headers -Method Post -UserAgent $BrowserUserAgent `
+    $resp = Invoke-WebRequest -UseBasicParsing -Uri $uri -Headers $headers -Method Post `
       -ContentType "application/json" `
       -Body '{"model":"__probe__","messages":[{"role":"user","content":"ping"}]}' `
       -TimeoutSec 15
     $script:LastHttpError = $null
-    $script:LastHttpErrorIsDns = $false
     return [int]$resp.StatusCode
   } catch {
     $script:LastHttpError = $_.Exception.Message
-    # Detected by exception type/status rather than message text: the message is
-    # localized (e.g. French "n'a pas pu etre resolu" vs English "could not be
-    # resolved"), and this .ps1 file's own accented literals can't be relied on
-    # to match either, since Windows PowerShell 5.1 reads a non-BOM script file
-    # using the system ANSI codepage, silently mangling non-ASCII characters.
-    $script:LastHttpErrorIsDns = $false
-    $probe = $_.Exception
-    while ($probe) {
-      if ($probe -is [System.Net.WebException] -and $probe.Status -eq [System.Net.WebExceptionStatus]::NameResolutionFailure) {
-        $script:LastHttpErrorIsDns = $true
-      }
-      if ($probe -is [System.Net.Sockets.SocketException] -and $probe.SocketErrorCode -eq [System.Net.Sockets.SocketError]::HostNotFound) {
-        $script:LastHttpErrorIsDns = $true
-      }
-      $probe = $probe.InnerException
-    }
     if ($_.Exception.Response) { return [int]$_.Exception.Response.StatusCode }
     return -1
   }
@@ -442,11 +627,9 @@ if ($statusNoAuth -eq 401) {
 }
 
 # Checked locally, not just through the tunnel further down: isolates
-# whether a real 403/401 seen later comes from Caddy's own token check
-# (would already show up right here, before any Cloudflare involvement at
-# all) or from something tunnel/Cloudflare-specific -- confirmed as a real
-# gap this script had (no local "with token" check existed at all before,
-# jumping straight to testing it only through the public tunnel).
+# whether a real problem seen later comes from Caddy's own token check
+# (would already show up right here, before Tailscale is even involved) or
+# from something Funnel/network-specific.
 $statusWithAuth = Get-HttpStatus "http://127.0.0.1:$ProxyPort/v1/chat/completions" @{ Authorization = "Bearer $Secret" }
 if ($statusWithAuth -ne 401) {
   Write-Ok "Avec jeton : accepte en local (reponse $statusWithAuth, transmise a Ollama)."
@@ -475,48 +658,66 @@ try {
 }
 
 # ---------------------------------------------------------------------------
-# 4. Cloudflare quick tunnel
+# 4. Tailscale Funnel: point it at Caddy, read back the stable hostname
 # ---------------------------------------------------------------------------
 
-Write-Step "Ouverture du tunnel Cloudflare"
+Write-Step "Configuration du tunnel public stable (Tailscale Funnel)"
 
-if (Test-Path $TunnelLogPath) { Remove-Item $TunnelLogPath -Force }
-if (Test-Path $TunnelErrLogPath) { Remove-Item $TunnelErrLogPath -Force }
-
-$cloudflaredProcess = Start-Process -FilePath $CloudflaredExe `
-  -ArgumentList "tunnel", "--url", "http://127.0.0.1:$ProxyPort" `
-  -WindowStyle Hidden -PassThru `
-  -RedirectStandardOutput $TunnelLogPath -RedirectStandardError $TunnelErrLogPath
-$script:ChildProcesses += $cloudflaredProcess
-$cfg.cloudflaredPid = $cloudflaredProcess.Id
-Save-BridgeConfig $cfg
-
-$TunnelUrl = $null
-$tries = 0
-while (-not $TunnelUrl -and $tries -lt 30) {
-  Start-Sleep -Seconds 1
-  $logContent = ""
-  if (Test-Path $TunnelLogPath) { $logContent += (Get-Content $TunnelLogPath -Raw -ErrorAction SilentlyContinue) }
-  if (Test-Path $TunnelErrLogPath) { $logContent += (Get-Content $TunnelErrLogPath -Raw -ErrorAction SilentlyContinue) }
-  # cloudflared also logs its own control-plane endpoint (https://api.trycloudflare.com)
-  # before printing the actual per-tunnel hostname. Real quick-tunnel names are always a
-  # multi-word hyphenated subdomain (e.g. good-toy-perfect-mice.trycloudflare.com), never
-  # a bare word like "api" -- require a hyphen to tell them apart, and take the last match
-  # in case the control-plane URL is mentioned again later (retries, telemetry, ...).
-  $urlMatches = [regex]::Matches($logContent, "https://[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)+\.trycloudflare\.com")
-  if ($urlMatches.Count -gt 0) {
-    $TunnelUrl = $urlMatches[$urlMatches.Count - 1].Value
-  }
-  $tries++
-}
-
-if (-not $TunnelUrl) {
-  Write-Fail "Impossible de recuperer l'URL du tunnel apres 30s. Regardez $TunnelErrLogPath (et $TunnelLogPath) pour le detail."
+# 'serve' declares the internal routing (public port -> local port); 'funnel'
+# switches that same route from tailnet-only to public-internet-reachable.
+# Both are idempotent -- safe to re-run every time this script starts.
+Invoke-NativeQuiet { & $TsExe serve --bg --https=$FunnelPort "http://127.0.0.1:$ProxyPort" 2>&1 } | Out-Null
+if ($LASTEXITCODE -ne 0) {
+  Write-Fail "'tailscale serve' a echoue (code $LASTEXITCODE)."
+  Write-Info "Relancez avec : .\setup-ollama-bridge.ps1 -Diagnose  pour un rapport detaille."
   Stop-Bridge
   exit 1
 }
-Write-Ok "Tunnel public : $TunnelUrl"
-Write-Host "    (l'annonce Cloudflare indique parfois un court delai avant que ce soit joignable partout)"
+
+Invoke-NativeQuiet { & $TsExe funnel $FunnelPort on 2>&1 } | Out-Null
+if ($LASTEXITCODE -ne 0) {
+  Write-Fail "'tailscale funnel' a echoue (code $LASTEXITCODE)."
+  Write-Info "Cause la plus frequente : la permission Funnel n'est pas activee pour ce compte (voir GUIDE-TAILSCALE.md)."
+  Write-Info "Relancez avec : .\setup-ollama-bridge.ps1 -Diagnose  pour un rapport detaille."
+  Stop-Bridge
+  exit 1
+}
+
+$TunnelUrl = $null
+$tries = 0
+while (-not $TunnelUrl -and $tries -lt 15) {
+  try {
+    $funnelStatusRaw = Invoke-NativeQuiet { & $TsExe funnel status --json 2>$null }
+    if ($LASTEXITCODE -eq 0 -and $funnelStatusRaw) {
+      $funnelStatus = $funnelStatusRaw | ConvertFrom-Json
+      # Documented shape: an object keyed by "hostname:port" whose value
+      # describes that listener. There's only ever one here (this script
+      # only ever configures the one on $FunnelPort), so the first key found
+      # with Funnel actually enabled is the one we want.
+      foreach ($key in $funnelStatus.AllowFunnel.PSObject.Properties.Name) {
+        if ($funnelStatus.AllowFunnel.$key) {
+          $TunnelUrl = "https://" + ($key -replace ":\d+$", "")
+          break
+        }
+      }
+    }
+  } catch {}
+  if (-not $TunnelUrl) {
+    Start-Sleep -Seconds 1
+    $tries++
+  }
+}
+
+# Fallback if the JSON shape above doesn't match (Tailscale's own CLI output
+# format has changed across versions before) -- MagicDNS already gave us the
+# exact hostname earlier, and Funnel always publishes on that same hostname.
+if (-not $TunnelUrl) {
+  $TunnelUrl = "https://$MachineHostName"
+  Write-Info "Impossible de confirmer via 'tailscale funnel status --json' (format inattendu) -- utilisation du nom de machine connu : $TunnelUrl"
+}
+
+Write-Ok "Tunnel public stable : $TunnelUrl"
+Write-Info "Cette adresse ne changera pas d'une execution a l'autre (contrairement a l'ancien tunnel Cloudflare)."
 
 # ---------------------------------------------------------------------------
 # 5. End-to-end validation through the PUBLIC tunnel
@@ -542,36 +743,11 @@ if ($publicStatusNoAuth -eq 401) {
 } else {
   $detail = if ($script:LastHttpError) { " Detail : $($script:LastHttpError)" } else { "" }
   Write-Fail "Sans jeton via le tunnel public : reponse $publicStatusNoAuth (attendu 401) apres $($maxTries * 3)s d'attente.$detail"
-  Write-Host "    Le tunnel Cloudflare lui-meme s'est bien ouvert (URL : $TunnelUrl) -- ce n'est donc pas un probleme de Caddy/Ollama."
-
-  if ($script:LastHttpErrorIsDns) {
-    $tunnelHost = ([Uri]$TunnelUrl).Host
-    Write-Host ""
-    Write-Host "    Ceci ressemble a un blocage DNS local plutot qu'a un vrai probleme de propagation :"
-    Write-Host "    la resolution du nom '$tunnelHost' echoue completement sur cette machine."
-    Write-Host "    Diagnostic automatique (DNS systeme actuel vs DNS public Cloudflare) :"
-    $viaSystem = $null
-    $viaPublic = $null
-    try { $viaSystem = Resolve-DnsName -Name $tunnelHost -ErrorAction Stop | Select-Object -First 1 } catch {}
-    try { $viaPublic = Resolve-DnsName -Name $tunnelHost -Server 1.1.1.1 -ErrorAction Stop | Select-Object -First 1 } catch {}
-    if (-not $viaSystem -and $viaPublic) {
-      Write-Host "    -> Le DNS systeme ECHOUE mais le DNS public 1.1.1.1 REUSSIT."
-      Write-Host "       Tres probablement votre antivirus, pare-feu ou le DNS de votre routeur bloque"
-      Write-Host "       specifiquement *.trycloudflare.com (certains produits le font car ce service"
-      Write-Host "       gratuit est parfois utilise a des fins malveillantes)."
-      Write-Host "       Solutions : changez temporairement le DNS de votre carte reseau pour 1.1.1.1 ou"
-      Write-Host "       8.8.8.8, ou desactivez la protection DNS/web de votre antivirus pour tester."
-    } elseif (-not $viaSystem -and -not $viaPublic) {
-      Write-Host "    -> Meme le DNS public 1.1.1.1 echoue : le blocage n'est pas au niveau DNS de Windows"
-      Write-Host "       mais plus bas (pare-feu, proxy d'entreprise, ou coupure reseau vers Cloudflare)."
-    } else {
-      Write-Host "    -> Les deux resolutions ont reussi cette fois -- reessayez le script, c'etait"
-      Write-Host "       peut-etre une propagation lente ponctuelle."
-    }
-    Write-Host ""
-  } else {
-    Write-Host "    Verifiez votre pare-feu/antivirus et reessayez ce script."
-  }
+  Write-Info "Causes les plus frequentes a ce stade :"
+  Write-Info " - Le pare-feu Windows bloque Tailscale (rare, Tailscale cree ses propres regles a l'installation)."
+  Write-Info " - Un antivirus tiers bloque le trafic HTTPS entrant sur cette machine."
+  Write-Info " - Le certificat HTTPS n'a pas fini de se generer (peut prendre jusqu'a une minute la toute premiere fois)."
+  Write-Info "Verifiez avec : .\setup-ollama-bridge.ps1 -Diagnose"
   Stop-Bridge
   exit 1
 }
@@ -582,75 +758,24 @@ try {
     messages = @(@{ role = "user"; content = "Reponds uniquement par le mot OK, rien d'autre." })
   } | ConvertTo-Json -Depth 5
 
-  $resp = Invoke-RestMethod -Method Post -Uri "$TunnelUrl/v1/chat/completions" -UserAgent $BrowserUserAgent `
+  $resp = Invoke-RestMethod -Method Post -Uri "$TunnelUrl/v1/chat/completions" `
     -Headers @{ Authorization = "Bearer $Secret" } `
     -ContentType "application/json" -Body $body -TimeoutSec 60
 
   $reply = $resp.choices[0].message.content
   Write-Ok "Avec jeton via le tunnel public : reponse recue d'Ollama -- '$reply'"
 } catch {
-  $statusCode = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { $null }
   Write-Fail "Avec jeton via le tunnel public : la requete a echoue -- $($_.Exception.Message)"
-  if ($statusCode -eq 403) {
-    # This Caddyfile can only ever answer 401 (bad/missing token) or forward
-    # the request to Ollama -- a plain "403 Forbidden" isn't a status our
-    # own stack is capable of producing, at all, which is how this was
-    # narrowed down to Cloudflare's own edge (not our Caddy/Ollama) in the
-    # first place: likely its bot/WAF heuristics on *.trycloudflare.com
-    # flagging an automated client sending an Authorization header as a
-    # credential/API-abuse-looking pattern. Already worked around above by
-    # sending a normal browser User-Agent instead of PowerShell's default
-    # one -- if that wasn't enough, only Cloudflare-side settings remain.
-    Write-Host "    Un 403 ici ne peut pas venir de ce script -- le Caddyfile ne sait repondre que 401"
-    Write-Host "    (jeton refuse) ou transmettre a Ollama, jamais 403. Ca vient donc de Cloudflare"
-    Write-Host "    lui-meme (heuristique anti-bot/WAF sur les tunnels *.trycloudflare.com), pas de"
-    Write-Host "    votre PC. Deja tente : un User-Agent de navigateur normal au lieu de celui, tres"
-    Write-Host "    reconnaissable, de PowerShell. Si ca persiste, il n'y a plus grand-chose a ajuster"
-    Write-Host "    cote script -- relancez pour obtenir un nouveau sous-domaine de tunnel (parfois"
-    Write-Host "    suffisant, l'heuristique semble viser certains sous-domaines plus que d'autres),"
-    Write-Host "    ou signalez-le sur https://github.com/cloudflare/cloudflared/issues."
-
-    # One-shot diagnostic using a completely different HTTP client (curl.exe,
-    # built into Windows 10 1803+) before the tunnel gets torn down below --
-    # isolates two things at once instead of guessing another round-trip:
-    # (a) is this specific to PowerShell/.NET's HTTP stack, or does a
-    # totally different client hit the same wall (curl with the identical
-    # Authorization header); (b) is it the "Authorization: Bearer" pattern
-    # itself being targeted (a well-known WAF/bot-heuristic signature) --
-    # tested by sending the same secret under a different, non-standard
-    # header name instead. That second call is expected to get 401 from our
-    # OWN Caddy (which only recognizes "Authorization"), not from
-    # Cloudflare -- what matters is only whether it also gets 403 before
-    # even reaching Caddy.
-    try {
-      $curlPath = (Get-Command curl.exe -ErrorAction SilentlyContinue).Source
-      if ($curlPath) {
-        Write-Host ""
-        Write-Host "    Diagnostic supplementaire (client HTTP different de PowerShell) :"
-        $tempOut = Join-Path $env:TEMP "fogbound-curl-diag.txt"
-
-        $curlStatusAuth = & $curlPath -s -o $tempOut -w "%{http_code}" -X POST -H "Authorization: Bearer $Secret" -H "Content-Type: application/json" -d $body "$TunnelUrl/v1/chat/completions"
-        Write-Host "       curl.exe avec 'Authorization: Bearer $Secret' : code $curlStatusAuth"
-
-        $curlStatusCustom = & $curlPath -s -o $tempOut -w "%{http_code}" -X POST -H "X-Fogbound-Token: $Secret" -H "Content-Type: application/json" -d $body "$TunnelUrl/v1/chat/completions"
-        Write-Host "       curl.exe avec un en-tete non standard (meme jeton, nom different) : code $curlStatusCustom"
-        Write-Host "       (401 attendu pour ce dernier -- notre Caddy ne reconnait que 'Authorization' --"
-        Write-Host "       seul un 403 ici serait interessant : ca voudrait dire que ce n'est pas specifique"
-        Write-Host "       au nom/format de l'en-tete.)"
-
-        Remove-Item $tempOut -Force -ErrorAction SilentlyContinue
-      }
-    } catch {
-      Write-Host "    (diagnostic curl.exe indisponible : $($_.Exception.Message))"
-    }
-  }
+  Write-Info "Ce Caddyfile ne sait repondre que 401 (jeton refuse) ou transmettre a Ollama -- si ce n'est ni"
+  Write-Info "l'un ni l'autre, le probleme est probablement reseau/Tailscale plutot que ce script."
+  Write-Info "Verifiez avec : .\setup-ollama-bridge.ps1 -Diagnose"
   Stop-Bridge
   exit 1
 }
 
 if (-not $NoWatcher) {
   try {
-    $statusResp = Invoke-RestMethod -Method Get -Uri "$TunnelUrl/bridge/status" -Headers @{ Authorization = "Bearer $Secret" } -UserAgent $BrowserUserAgent -TimeoutSec 15
+    $statusResp = Invoke-RestMethod -Method Get -Uri "$TunnelUrl/bridge/status" -Headers @{ Authorization = "Bearer $Secret" } -TimeoutSec 15
     Write-Ok "Point de statut GPU joignable via le tunnel public -- etat actuel : $($statusResp.state)"
   } catch {
     # Not fatal: the actual text generation above already proved end to end --
@@ -703,7 +828,7 @@ Write-Host ""
 Write-Host "=================================================================" -ForegroundColor Yellow
 Write-Host " Pont Ollama <-> Fogbound actif" -ForegroundColor Yellow
 Write-Host "=================================================================" -ForegroundColor Yellow
-Write-Host " URL du tunnel   : $TunnelUrl"
+Write-Host " URL du tunnel   : $TunnelUrl  (stable -- ne change pas d'une execution a l'autre)"
 Write-Host " Modele utilise  : $Model"
 Write-Host " Fogbound        : $FogboundUrl"
 Write-Host ""
@@ -715,15 +840,16 @@ Write-Host " Fournisseur = 'Ollama (local)' et Modele = '$Model' pour le texte ;
 Write-Host " Fournisseur = 'IA locale (Stable Diffusion)' pour les images si vous en utilisez une ; puis Enregistrer."
 Write-Host ""
 Write-Host " Journal complet de cette execution : $TranscriptPath"
+Write-Host " En cas de probleme : .\setup-ollama-bridge.ps1 -Diagnose"
 Write-Host " Laissez cette fenetre ouverte tant que vous jouez avec Ollama."
-Write-Host " Appuyez sur Ctrl+C pour tout arreter proprement."
+Write-Host " Appuyez sur Ctrl+C pour arreter Caddy et le surveillant (Tailscale continue de tourner)."
 Write-Host "=================================================================" -ForegroundColor Yellow
 
 try {
   while ($true) { Start-Sleep -Seconds 5 }
 } finally {
   Write-Host ""
-  Write-Host "Arret du proxy, du surveillant et du tunnel..."
+  Write-Host "Arret du proxy et du surveillant (Tailscale et sa configuration Funnel restent actifs)..."
   Stop-Bridge
   try { Stop-Transcript | Out-Null } catch {}
 }
