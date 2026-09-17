@@ -5,6 +5,39 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-17 — Cohérence narrative : les personnages ne doivent connaître que ce qu'ils ont vécu
+
+Remontée utilisateur en testant l'app en parallèle du déploiement PC : les
+PNJ réagissaient à des informations qu'ils n'avaient aucune raison de
+connaître (actions non vues, contenu de SECRET INFO), et leurs réactions
+manquaient de naturel/réalisme humain. Vérifié dans le code
+(`lib/promptBuilder.js`) : aucune des instructions maîtresses ne posait de
+règle d'asymétrie d'information entre le joueur/le lecteur et les
+personnages -- seule une consigne générique de "cohérence avec le World
+Bible" existait, et le bloc SECRET INFO se contentait de dire "caché du
+joueur" sans jamais préciser qu'il devait aussi rester caché des PNJ.
+
+Ajout d'une section "CHARACTER KNOWLEDGE & REALISM" dans les prompts
+maîtres (`buildMasterPrompt`, `buildNarrationMasterPrompt`) : un
+personnage ne connaît que ce qu'il a personnellement vu, ce qu'on lui a
+rapporté, ou ce qu'il peut raisonnablement déduire d'une information
+publique -- jamais SECRET INFO, jamais une action du joueur survenue hors
+de sa présence -- et doit réagir en personne réelle (méfiance, refus,
+émotion selon sa personnalité et son intérêt propre), pas en complaisance
+envers l'intrigue. Bloc SECRET INFO reformulé dans les trois prompts
+maîtres (narration, état, legacy) pour dire explicitement "caché du joueur
+ET de tout personnage tant que la fiction ne le lui fait pas apprendre".
+Règle ajoutée dans `buildStateMasterPrompt` : un changement dans
+"characters_changed" ne doit être attribué que si le chapitre montre
+vraiment le personnage l'apprendre, jamais parce que le joueur/lecteur le
+sait déjà.
+
+Choix délibéré de placer ça dans les prompts maîtres plutôt que dans le
+champ "instructions" de chaque monde : ça s'applique instantanément à
+tous les mondes déjà créés (pas besoin de les régénérer), et c'est une
+règle de qualité narrative universelle, pas propre à un univers
+particulier.
+
 ## 2026-09-17 — Correctif numpy/scikit-image oublié sur l'instance Chroma
 
 Suite au round precedent : les trois correctifs (auto-destruction,
