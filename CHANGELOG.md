@@ -5,6 +5,18 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-17 — Correctif numpy/scikit-image oublié sur l'instance Chroma
+
+Suite au round precedent : les trois correctifs (auto-destruction,
+webui-user.bat, ae.safetensors mal classe) tenaient tous. Mais Chroma a
+ensuite touche le MEME plantage numpy/scikit-image deja rencontre et
+corrige sur l'instance principale -- parce que le correctif (tentative
+automatique de reinstallation de scikit-image, voir entree du
+2026-09-16) n'avait ete ajoute que dans `setup-forge.ps1`, pas copie dans
+`setup-forge-chroma.ps1`. Meme oubli de recopie que le bug CLIP/setuptools
+trouve juste avant. Corrige en portant la meme logique de retry dans
+`setup-forge-chroma.ps1`.
+
 ## 2026-09-16 — Trois vrais bugs trouvés au round suivant (les deux precedents tenaient bon)
 
 Les deux correctifs precedents (auto-destruction du script, webui-user.bat

@@ -568,40 +568,77 @@ if ($logCleanupError) {
 }
 
 if (-not (Test-Path $WebUiStdinPath)) { New-Item -ItemType File -Path $WebUiStdinPath -Force | Out-Null }
-try {
-  $webuiProcess = Start-Process -FilePath $WebUiUserBat -WorkingDirectory $ResolvedWebUiDir `
-    -WindowStyle Hidden -PassThru `
-    -RedirectStandardOutput $WebUiLogPath -RedirectStandardError $WebUiErrLogPath -RedirectStandardInput $WebUiStdinPath
-} catch {
-  Write-Fail "Impossible de demarrer Forge-Chroma -- $($_.Exception.Message)"
-  exit 1
-}
 
-Write-Info "Processus demarre (PID $($webuiProcess.Id)). Journal : $WebUiLogPath"
-Write-Info "Cela peut prendre 10 a 15 minutes la toute premiere fois."
+# BUG FOUND ON A REAL RUN: this exact numpy/scikit-image ABI retry was
+# written for setup-forge.ps1 after hitting it on the main instance, but
+# never copied here -- Chroma's own bootstrap hit the identical crash
+# ("numpy.dtype size changed, may indicate binary incompatibility" in
+# skimage's compiled geometry.pyx) with no retry logic to catch it. Same
+# fix as setup-forge.ps1: see that script's comment and
+# lllyasviel/stable-diffusion-webui-forge issue #2969 for the full
+# reasoning. One automatic retry, reported honestly if it doesn't clear.
+$numpySkimageFixAttempted = $false
 
-$maxTries = 180
-$tries = 0
-$ready = $false
-while ($tries -lt $maxTries) {
-  Start-Sleep -Seconds 5
-  $tries++
+for ($launchAttempt = 1; $launchAttempt -le 2; $launchAttempt++) {
   try {
-    Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$ChromaPort/sdapi/v1/sd-models" -TimeoutSec 3 | Out-Null
-    $ready = $true
-    break
-  } catch {}
-  if ($webuiProcess.HasExited) {
-    Write-Fail "Le processus s'est arrete de lui-meme (code $($webuiProcess.ExitCode)). Regardez $WebUiErrLogPath pour le detail."
+    $webuiProcess = Start-Process -FilePath $WebUiUserBat -WorkingDirectory $ResolvedWebUiDir `
+      -WindowStyle Hidden -PassThru `
+      -RedirectStandardOutput $WebUiLogPath -RedirectStandardError $WebUiErrLogPath -RedirectStandardInput $WebUiStdinPath
+  } catch {
+    Write-Fail "Impossible de demarrer Forge-Chroma -- $($_.Exception.Message)"
     exit 1
   }
-  if ($tries % 12 -eq 0) {
-    Write-Info "... toujours en attente ($($tries * 5)s ecoulees) -- consultez $WebUiLogPath si ca semble bloque"
-  }
-}
 
-if (-not $ready) {
-  Write-Fail "L'API ne repond toujours pas apres 15 minutes. Regardez $WebUiLogPath et $WebUiErrLogPath."
+  Write-Info "Processus demarre (PID $($webuiProcess.Id)). Journal : $WebUiLogPath"
+  Write-Info "Cela peut prendre 10 a 15 minutes la toute premiere fois."
+
+  $maxTries = 180
+  $tries = 0
+  $ready = $false
+  $processDiedEarly = $false
+  while ($tries -lt $maxTries) {
+    Start-Sleep -Seconds 5
+    $tries++
+    try {
+      Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$ChromaPort/sdapi/v1/sd-models" -TimeoutSec 3 | Out-Null
+      $ready = $true
+      break
+    } catch {}
+    if ($webuiProcess.HasExited) {
+      $processDiedEarly = $true
+      break
+    }
+    if ($tries % 12 -eq 0) {
+      Write-Info "... toujours en attente ($($tries * 5)s ecoulees) -- consultez $WebUiLogPath si ca semble bloque"
+    }
+  }
+
+  if ($ready) { break }
+
+  $errLogText = if (Test-Path $WebUiErrLogPath) { Get-Content $WebUiErrLogPath -Raw } else { "" }
+  $isNumpySkimageAbiError = $errLogText -match "numpy\.dtype size changed" -or $errLogText -match "may indicate binary incompatibility"
+
+  if ($isNumpySkimageAbiError -and -not $numpySkimageFixAttempted -and (Test-Path $VenvPython)) {
+    $numpySkimageFixAttempted = $true
+    Write-Fail "Plantage numpy/scikit-image detecte (incompatibilite binaire connue, encore ouverte en amont -- voir https://github.com/lllyasviel/stable-diffusion-webui-forge/issues/2969)."
+    Write-Info "Tentative de correctif automatique : reinstallation forcee de scikit-image contre le numpy actuellement resolu..."
+    $skimageFixOutput = Invoke-NativeQuiet { & $VenvPython -m pip install --force-reinstall --no-cache-dir scikit-image 2>&1 }
+    if ($LASTEXITCODE -eq 0) {
+      Write-Ok "scikit-image reinstalle -- nouvelle tentative de lancement."
+    } else {
+      Write-Fail "La reinstallation de scikit-image a echoue aussi -- nouvelle tentative de lancement quand meme, sans grand espoir. Detail :"
+      $skimageFixOutput | Select-Object -Last 15 | ForEach-Object { Write-Host "    $_" }
+    }
+    if (-not $webuiProcess.HasExited) { Stop-Process -Id $webuiProcess.Id -Force -ErrorAction SilentlyContinue }
+    Start-Sleep -Milliseconds 500
+    continue
+  }
+
+  if ($processDiedEarly) {
+    Write-Fail "Le processus s'est arrete de lui-meme (code $($webuiProcess.ExitCode)). Regardez $WebUiErrLogPath pour le detail."
+  } else {
+    Write-Fail "L'API ne repond toujours pas apres 15 minutes. Regardez $WebUiLogPath et $WebUiErrLogPath."
+  }
   exit 1
 }
 
