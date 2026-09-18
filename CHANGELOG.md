@@ -5,6 +5,32 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-18 — Vrai bug trouvé : BOM UTF-8 dans ui-config.json casse le VAE/encodeur texte de Chroma
+
+Diagnostic complet fourni par le Claude local, confirmé par dump
+hexadécimal (`ef bb bf` en tête de fichier) et par le log d'erreur exact de
+Forge-Chroma (`json.decoder.JSONDecodeError: Unexpected UTF-8 BOM`).
+`setup-forge-chroma.ps1` pre-configure le checkpoint par defaut dans
+`ui-config.json` via `Set-Content -Encoding UTF8`, qui ecrit de l'UTF-8
+AVEC BOM sous Windows PowerShell 5.1 -- encore le meme piege d'encodage
+PS 5.1 deja rencontre plusieurs fois sur ce projet, cette fois sur un
+fichier que le cote Python de chromaforge doit relire avec `json.load()`,
+qui rejette purement et simplement tout BOM en tete de fichier.
+
+L'echec est silencieux (chromaforge ne plante pas au demarrage), mais
+`ui_loadsave.py` n'arrive jamais a charger ce fichier -- donc la selection
+VAE/encodeur texte faite dans le navigateur ne s'attache jamais reellement
+au modele charge (`additional_modules: []` confirme dans le log), ce qui
+se manifeste plus tard comme `KeyError: 'text_encoder_2'` puis
+`AssertionError: You do not have VAE state dict!` a la generation.
+
+**Correctif** : ecriture via `[System.IO.File]::WriteAllText` avec un
+`UTF8Encoding` explicitement sans BOM (`New-Object System.Text.UTF8Encoding $false`),
+qui fonctionne correctement sous PS 5.1 comme 7+. Le fichier se
+reecrit proprement au prochain lancement (le script le reecrit a chaque
+run, pas seulement s'il est absent) -- aucune suppression manuelle
+necessaire.
+
 ## 2026-09-17 — Cohérence narrative : les personnages ne doivent connaître que ce qu'ils ont vécu
 
 Remontée utilisateur en testant l'app en parallèle du déploiement PC : les

@@ -523,8 +523,20 @@ try {
   # doesn't exist yet" and "it exists, overwrite it" in one call.
   $uiConfig = if (Test-Path $UiConfigPath) { Get-Content $UiConfigPath -Raw | ConvertFrom-Json } else { [pscustomobject]@{} }
   $uiConfig | Add-Member -NotePropertyName "sd_model_checkpoint" -NotePropertyValue "Chroma1-HD.safetensors" -Force
-  ($uiConfig | ConvertTo-Json -Depth 10) | Set-Content -Path $UiConfigPath -Encoding UTF8
-  Write-Info "Checkpoint par defaut pre-configure dans ui-config.json (Chroma1-HD.safetensors) -- la selection du VAE/encodeur texte reste, elle, a faire une fois depuis le navigateur (voir .NOTES)."
+  # BUG FOUND ON A REAL RUN: "Set-Content -Encoding UTF8" writes UTF-8 WITH
+  # a BOM in Windows PowerShell 5.1 -- harmless for files only PowerShell
+  # itself re-reads, but chromaforge's own Python side loads this file with
+  # json.load(), which raises "Unexpected UTF-8 BOM" outright on it. That
+  # failure was silent (chromaforge doesn't crash, it just never finishes
+  # loading ui-config.json), so the VAE/text-encoder selection made in the
+  # browser never actually persisted, surfacing later as "KeyError:
+  # 'text_encoder_2'" / "AssertionError: You do not have VAE state dict!"
+  # when generating. [System.IO.File]::WriteAllText with a BOM-less
+  # UTF8Encoding writes real, BOM-free UTF-8 on both PS 5.1 and 7+. See
+  # CHANGELOG.md.
+  $uiConfigJson = $uiConfig | ConvertTo-Json -Depth 10
+  [System.IO.File]::WriteAllText($UiConfigPath, $uiConfigJson, (New-Object System.Text.UTF8Encoding $false))
+  Write-Info "Checkpoint par defaut pre-configure dans ui-config.json (Chroma1-HD.safetensors, UTF-8 sans BOM) -- la selection du VAE/encodeur texte reste, elle, a faire une fois depuis le navigateur (voir .NOTES)."
 } catch {
   Write-Info "Pre-configuration de ui-config.json non tentee/echouee ($($_.Exception.Message)) -- sans consequence, juste une commodite en moins pour le tout premier lancement."
 }
