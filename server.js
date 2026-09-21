@@ -28,6 +28,11 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
+// Locally-generated images are written to disk under DATA_DIR/images (see
+// providers/imageProviders.js) instead of stored inline as base64 in
+// db.json -- served from the same persistent volume the database lives on,
+// not from the app bundle, so they survive deploys.
+app.use('/images', express.static(path.join(process.env.DATA_DIR || path.join(__dirname, 'data'), 'images')));
 
 // secretInfo is deliberately hidden state (see docs/INFINITE_WORLDS_REFERENCE.md,
 // Phase E) — strip it before any save object reaches the client. Returns a
@@ -637,124 +642,6 @@ app.get('/api/localsd/models', async (req, res) => {
   } catch (e) {
     res.status(502).json({ error: e.message, models: [] });
   }
-});
-
-// TEMPORARY -- forensic recovery aid for the db.json corruption incident
-// (see lib/dbAdapter.js). The repair recovered worlds/turns/memoryFacts but
-// NOT saves/playableCharacters/trackedItemDefs/saveTrackedItemValues (they
-// come later in the object's real key order, added by later schema
-// migrations, and the truncation landed before them). Turns and
-// memoryFacts only carry saveId, not worldId, so matching an orphaned save
-// back to its world needs its turn text / snapshot character names
-// eyeballed against the surviving worlds. Read-only. Remove this route
-// once recovery is done.
-app.get('/api/debug/orphan-report', (req, res) => {
-  const fs = require('fs');
-  const dataDir = process.env.DATA_DIR || path.join(__dirname, 'data');
-
-  const worlds = db.get('worlds').value().map(w => ({ id: w.id, title: w.title, tone: w.tone, setting: (w.setting || '').slice(0, 200) }));
-  const saves = db.get('saves').value();
-  const allTurns = db.get('turns').value();
-  const bySave = {};
-  allTurns.forEach(t => {
-    if (!bySave[t.saveId]) bySave[t.saveId] = [];
-    bySave[t.saveId].push(t);
-  });
-  const orphanSaves = Object.keys(bySave).filter(saveId => !saves.find(s => s.id === saveId));
-  const orphanReport = orphanSaves.map(saveId => {
-    const turns = bySave[saveId].sort((a, b) => a.turnNumber - b.turnNumber);
-    const first = turns[0];
-    const last = turns[turns.length - 1];
-    const charNames = new Set();
-    turns.forEach(t => (t.snapshot && t.snapshot.characters || []).forEach(c => charNames.add(c.name)));
-    return {
-      saveId,
-      turnCount: turns.length,
-      turnNumbers: [first.turnNumber, last.turnNumber],
-      firstPlayerAction: first.playerAction,
-      firstChapterSnippet: (first.chapterText || '').slice(0, 300),
-      lastChapterSnippet: (last.chapterText || '').slice(0, 300),
-      snapshotCharacterNames: Array.from(charNames)
-    };
-  });
-
-  const rawKeys = Object.keys(db.getState());
-  let corruptedFiles = [];
-  try {
-    corruptedFiles = fs.readdirSync(dataDir).filter(f => f.startsWith('db.json.corrupted-'));
-  } catch (e) {}
-  const corruptedInfo = corruptedFiles.map(f => {
-    const full = path.join(dataDir, f);
-    const stat = fs.statSync(full);
-    let savesFragment = null;
-    try {
-      const raw = fs.readFileSync(full, 'utf-8');
-      const idx = raw.indexOf('"saves"');
-      if (idx >= 0) savesFragment = raw.slice(idx, idx + 2000);
-      else savesFragment = '(no "saves" key found anywhere in the raw file)';
-    } catch (e) { savesFragment = `(error reading: ${e.message})`; }
-    return { file: f, sizeBytes: stat.size, savesFragment };
-  });
-
-  res.json({
-    liveTopLevelKeys: rawKeys,
-    worlds,
-    savesCount: saves.length,
-    orphanedSaveIds: orphanSaves,
-    orphanReport,
-    corruptedBackups: corruptedInfo
-  });
-});
-
-// TEMPORARY -- companion to /api/debug/orphan-report. Searches the raw
-// preserved corrupted backup file(s) for a substring (e.g. a distinctive
-// name from a save that didn't show up in the repaired data at all), to
-// find out whether it's present but sits past the point the repair could
-// safely close, or truly never made it to disk before the crash. Also
-// reports the file's very last bytes so a real cutoff can be eyeballed
-// directly. Read-only. Remove this route once recovery is done.
-app.get('/api/debug/search-corrupted', (req, res) => {
-  const fs = require('fs');
-  const dataDir = process.env.DATA_DIR || path.join(__dirname, 'data');
-  const q = req.query.q;
-  const context = Math.min(Number(req.query.context) || 800, 5000);
-  const maxMatches = Math.min(Number(req.query.max) || 5, 20);
-  const tailBytes = Math.min(Number(req.query.tail) || 3000, 20000);
-
-  let files = [];
-  try {
-    files = fs.readdirSync(dataDir).filter(f => f.startsWith('db.json.corrupted-'));
-  } catch (e) {
-    return res.status(500).json({ error: e.message });
-  }
-
-  const results = files.map(f => {
-    const full = path.join(dataDir, f);
-    const raw = fs.readFileSync(full, 'utf-8');
-    const entry = { file: f, sizeBytes: raw.length, tail: raw.slice(-tailBytes) };
-    if (q) {
-      const allPositions = [];
-      const matches = [];
-      let idx = raw.indexOf(q);
-      while (idx !== -1) {
-        allPositions.push(idx);
-        if (matches.length < maxMatches) {
-          matches.push({
-            position: idx,
-            context: raw.slice(Math.max(0, idx - context / 2), idx + q.length + context / 2)
-          });
-        }
-        idx = raw.indexOf(q, idx + q.length);
-      }
-      entry.query = q;
-      entry.totalOccurrences = allPositions.length;
-      entry.allPositions = allPositions;
-      entry.matches = matches;
-    }
-    return entry;
-  });
-
-  res.json({ results });
 });
 
 const PORT = process.env.PORT || 3000;

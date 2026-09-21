@@ -5,6 +5,74 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-21 — Incident production : corruption de db.json, sauvegarde reconstruite, cause racine corrigée
+
+Incident réel en production : le conteneur s'est mis à redémarrer en boucle
+("Killed" toutes les 15-40 min dans les logs Railway), et l'un de ces OOM
+kill a fini par tomber pendant une écriture de `db.json`, le tronquant.
+L'adaptateur `FileSync` de lowdb fait un `fs.writeFileSync` non-atomique du
+fichier entier à chaque sauvegarde, et son `read()` plante directement au
+chargement du module (avant même qu'Express écoute) sur tout JSON invalide
+-- l'app ne redémarrait plus du tout.
+
+**Cause racine identifiée** : les images (couvertures de monde, portraits
+de personnage, images de tour) sont stockées en base64 inline dans
+`db.json`, sans aucune limite pour les couvertures/portraits (seules les
+images de tour sont plafonnées à 10 par sauvegarde). Ce fichier a grossi
+jusqu'à dépasser la limite mémoire du conteneur.
+
+**Trois correctifs, dans l'ordre où ils ont été nécessaires :**
+
+1. `lib/dbAdapter.js` (nouveau) : adaptateur `SafeFileSync` -- écriture
+   atomique (fichier temporaire + rename, donc un kill en cours d'écriture
+   laisse l'ancien fichier intact au lieu d'un fichier à moitié écrit), et
+   au chargement, tentative de réparation d'un JSON tronqué (recherche du
+   dernier point de coupure sûr, fermeture des structures encore ouvertes)
+   avant d'abandonner. L'original corrompu est toujours conservé à côté
+   (jamais supprimé). Testé sur ~200 points de troncature synthétiques.
+   A permis de relancer l'app et recharger 9 mondes / 335 memoryFacts / 55
+   tours.
+
+2. Investigation forensique (voir l'historique de session) : la sauvegarde
+   activement jouée au moment du crash ("The Keeper's Small Favor", 43
+   tours) a perdu son texte de tours -- introuvable, même sous forme
+   partielle, dans le fichier corrompu préservé (recherche exhaustive :
+   chaque occurrence de `"chapterText"` dans les 10,7 Mo du fichier est
+   comptée et correspond exactement aux 55 tours des 7 AUTRES sauvegardes).
+   En revanche, son historique complet de `memoryFacts` (158 faits, du
+   tour 0 à au moins le tour 30) a survécu intact, car cette collection est
+   positionnée avant `turns` dans l'ordre réel des clés.
+   `lib/migrations.js` (nouveau) : migration unique au démarrage qui
+   reconstruit la ligne `saves` manquante, un personnage jouable minimal
+   (nom du protagoniste déduit de la fréquence de mention, en excluant le
+   PNJ guide connu), les PNJ mentionnés, et un tour de transition dont le
+   texte est un récapitulatif construit directement à partir des faits
+   survivants (rien d'inventé) -- pour que la suite de l'histoire reparte
+   avec un vrai contexte plutôt qu'un démarrage à froid.
+
+3. Correctif de la cause racine (`providers/imageProviders.js`,
+   `server.js`, `lib/gameEngine.js`) : les images générées localement
+   (data URI base64 de Stability/Forge/Chroma) sont maintenant écrites sur
+   disque sous `DATA_DIR/images/` et servies via une route statique
+   `/images/*` sur le même volume persistant que la base -- seul un chemin
+   `/images/<fichier>.png` est stocké dans `db.json` désormais (les URLs
+   déjà hébergées, comme celles de Replicate, passent inchangées). Nettoyage
+   du fichier associé à chaque remplacement/suppression (regénération de
+   couverture/portrait, suppression de personnage/monde/sauvegarde, purge
+   des images de tour, retour en arrière). `db.json` reste désormais à une
+   taille de texte pur, ce qui retire la cause réelle des OOM kill plutôt
+   que de simplement les tolérer.
+
+Filet de sécurité supplémentaire dans `dbAdapter.js` : une sauvegarde
+glissante de `db.json` toutes les 15 minutes (12 versions conservées) sur
+le même volume, indépendante de l'écriture atomique -- utile pour tout
+autre mode de corruption qu'une simple troncature.
+
+`lib/db.js` détecte aussi et journalise clairement le cas où `settings`
+(fournisseur de texte, clés API...) a été perdu par le même mécanisme --
+ce champ ne peut pas être reconstruit automatiquement, l'utilisateur doit
+les ressaisir dans les Réglages.
+
 ## 2026-09-21 — Vrai bug en production : création de monde bloquée avec Claude Sonnet 5 (thinking étendu par défaut)
 
 Remontée utilisateur en direct : génération de monde avec Sonnet qui

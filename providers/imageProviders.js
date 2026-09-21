@@ -1,4 +1,10 @@
 const fetch = require('node-fetch');
+const fs = require('fs');
+const path = require('path');
+const { v4: uuid } = require('uuid');
+
+const dataDir = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
+const imagesDir = path.join(dataDir, 'images');
 
 // Returns a URL (or base64 data URL) for the generated image, or null.
 
@@ -105,10 +111,35 @@ async function callMock({ prompt }) {
 
 const providers = { stability: callStability, replicate: callReplicate, localsd: callLocalSD, mock: callMock, none: callMock };
 
+// Providers return either null, an already-hosted URL (Replicate), or a
+// base64 data URI (Stability, local Forge/Chroma). A data URI stored
+// inline in db.json has no size cap and is what actually drives this
+// app's memory footprint -- several hundred KB to a few MB per image, with
+// nothing to ever shrink it (see MAX_STORED_TURN_IMAGES in gameEngine.js,
+// which only caps turn images, not world covers or character portraits).
+// That's a confirmed, real production incident: it drove memory usage up
+// until the container's OOM killer fired mid-write, which corrupted the
+// database once already (see lib/dbAdapter.js). Writing the bytes to disk
+// here instead, and only ever putting a short /images/<file> path in
+// db.json, removes the actual cause of those OOM kills rather than just
+// tolerating them -- db.json now stays plain-text-sized permanently.
+function persistIfDataUri(result) {
+  if (!result || !result.startsWith('data:')) return result; // null, or already an external URL -- nothing to do
+  const match = /^data:([^;]+);base64,(.+)$/s.exec(result);
+  if (!match) return result;
+  const [, mime, base64] = match;
+  const ext = (mime.split('/')[1] || 'png').replace(/[^a-z0-9]/gi, '') || 'png';
+  fs.mkdirSync(imagesDir, { recursive: true });
+  const filename = `${uuid()}.${ext}`;
+  fs.writeFileSync(path.join(imagesDir, filename), Buffer.from(base64, 'base64'));
+  return `/images/${filename}`;
+}
+
 async function generateImage({ provider, prompt, apiKey, model, baseUrl }) {
   if (!prompt) return null;
   const fn = providers[provider] || providers.mock;
-  return fn({ prompt, apiKey, model, baseUrl });
+  const result = await fn({ prompt, apiKey, model, baseUrl });
+  return persistIfDataUri(result);
 }
 
 // Best-effort classification by filename -- Forge's API doesn't report what
