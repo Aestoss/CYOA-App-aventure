@@ -50,34 +50,64 @@ async function callAnthropic({ system, user, apiKey, model }) {
       // the world-creation schema (much bigger) is accounted for — Claude
       // would hit the cap mid-response and get cut off before the closing
       // brace, so parseModelJSON's JSON.parse failed on truncated input.
-      max_tokens: 8192,
+      // BUG FOUND ON A REAL RUN: 8192 turned out too small again, for a
+      // different reason -- current-generation Claude models (Sonnet 5,
+      // Opus 5, etc.) run extended "adaptive" thinking ON BY DEFAULT
+      // whenever the `thinking` param is omitted, and thinking tokens count
+      // against this same max_tokens ceiling. On a genuinely creative task
+      // like world creation, thinking alone consumed the entire 8192-token
+      // budget before any visible JSON text ever started, so the returned
+      // text was 0 chars and parseModelJSON's "truncated" error fired even
+      // though the request itself succeeded (confirmed in production logs).
+      // Not fixed by tuning `thinking`/`output_config.effort` here: the
+      // model field is free text (any Claude version, including older ones
+      // with a different thinking API), so raising the ceiling is the one
+      // fix that stays correct regardless of which model is configured.
+      max_tokens: 16000,
       system,
       messages: [{ role: 'user', content: user }]
     })
   });
   if (!res.ok) await throwApiError('Anthropic', res);
   const data = await res.json();
+  const text = data.content.map(b => b.text || '').join('');
+  // Same real failure mode as streamAnthropic (see its comment): max_tokens
+  // hit with zero visible text, almost certainly all spent on this model's
+  // default-on extended thinking. Surfaced directly here instead of the
+  // generic "truncated JSON" error parseModelJSON would throw on empty input.
+  if (!text && data.stop_reason === 'max_tokens') {
+    throw new Error('Anthropic hit max_tokens with no visible text generated -- likely spent the whole budget on extended thinking before writing any output. Try again, or raise max_tokens further if this keeps happening.');
+  }
   return {
-    text: data.content.map(b => b.text || '').join(''),
+    text,
     usage: { inputTokens: data.usage?.input_tokens || 0, outputTokens: data.usage?.output_tokens || 0 }
   };
 }
 
-// NOTE: implemented from Anthropic's documented streaming event shape
-// (content_block_delta events carrying a text_delta) but not exercised
-// against a real Anthropic key in this session — only Gemini and the mock
-// provider were. Falls back safely: if this turns out to be wrong,
-// generateText()'s caller still gets a correct final `text` from the
-// accumulated deltas, it just wouldn't stream cleanly.
+// BUG FOUND ON A REAL RUN (confirmed in production logs, world creation
+// with claude-sonnet-5): this streamed path IS exercised for real — it's
+// what createWorld uses for progress reporting — and it returned 0 chars
+// of text, tripping parseModelJSON's "truncated" error even though the
+// HTTP request itself succeeded. Cause: current-generation Claude models
+// run extended "adaptive" thinking ON BY DEFAULT when `thinking` is
+// omitted, and thinking tokens count against the same max_tokens ceiling
+// — on a creative, schema-heavy task like world creation, thinking alone
+// consumed the entire budget before any text_delta ever arrived. The
+// model field here is free text (any Claude version a user types in,
+// including older ones with a different thinking API), so raising the
+// ceiling — rather than tuning `thinking`/`output_config.effort`, which
+// aren't safe to send unconditionally across arbitrary model versions —
+// is the fix that stays correct regardless of which model is configured.
 async function streamAnthropic({ system, user, apiKey, model, onDelta }) {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({ model: model || 'claude-sonnet-4-6', max_tokens: 8192, system, messages: [{ role: 'user', content: user }], stream: true })
+    body: JSON.stringify({ model: model || 'claude-sonnet-4-6', max_tokens: 32000, system, messages: [{ role: 'user', content: user }], stream: true })
   });
   if (!res.ok) await throwApiError('Anthropic', res);
   let text = '';
   let usage = { inputTokens: 0, outputTokens: 0 };
+  let stopReason = null;
   for await (const payload of sseDataLines(res.body)) {
     let data;
     try { data = JSON.parse(payload); } catch (e) { continue; }
@@ -88,7 +118,17 @@ async function streamAnthropic({ system, user, apiKey, model, onDelta }) {
       usage.inputTokens = data.message.usage.input_tokens || 0;
     } else if (data.type === 'message_delta' && data.usage) {
       usage.outputTokens = data.usage.output_tokens || 0;
+      if (data.delta?.stop_reason) stopReason = data.delta.stop_reason;
     }
+  }
+  // A real, previously-misdiagnosed failure mode (see the comment above
+  // this function): max_tokens hit with genuinely zero text -- almost
+  // certainly the whole budget spent on this model's default-on extended
+  // thinking before any visible output started. Surfacing this here gives
+  // a direct diagnosis instead of the generic "truncated JSON" error the
+  // caller's parseModelJSON would otherwise throw on an empty string.
+  if (!text && stopReason === 'max_tokens') {
+    throw new Error('Anthropic hit max_tokens with no visible text generated -- likely spent the whole budget on extended thinking before writing any output. Try again, or raise max_tokens further if this keeps happening.');
   }
   return { text, usage };
 }

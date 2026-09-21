@@ -5,6 +5,38 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-21 — Vrai bug en production : création de monde bloquée avec Claude Sonnet 5 (thinking étendu par défaut)
+
+Remontée utilisateur en direct : génération de monde avec Sonnet qui
+"tourne dans le vide". Confirmé dans les logs Railway en production :
+`Error: Model response was truncated before valid JSON completed... got 0
+chars`. Le menu déroulant de sélection de modèle lui-même est correct (IDs
+réels : `claude-sonnet-5`, `claude-opus-5`, etc.) — le vrai problème est
+dans l'appel à l'API Anthropic.
+
+**Cause réelle** : les modèles Claude actuels (Sonnet 5, Opus 5...) ont le
+raisonnement étendu ("extended thinking") activé par défaut dès que le
+paramètre `thinking` n'est pas envoyé explicitement, et les tokens de
+raisonnement comptent dans le même budget `max_tokens`. Sur une tâche aussi
+riche que la création d'un monde (gros schéma JSON), le raisonnement interne
+a consommé tout le budget (8192 tokens) avant même de commencer à écrire le
+JSON visible — d'où "0 chars" et un blocage apparent, la requête HTTP ayant
+pourtant réussi. `streamAnthropic` (le chemin réellement emprunté par la
+création de monde) portait déjà un commentaire admettant ne jamais avoir été
+testé contre une vraie clé Anthropic dans ce projet — confirmé en défaut.
+
+**Correctif** : `max_tokens` relevé à 16000 (`callAnthropic`, appels
+classiques) et 32000 (`streamAnthropic`, utilisé pour la création de monde
+et le chemin de narration en streaming). Pas de réglage de `thinking`/
+`output_config.effort` : le champ modèle de cette app est du texte libre
+(n'importe quelle version de Claude), donc un paramètre spécifique à une
+génération de modèle risquerait de casser un autre modèle choisi par
+l'utilisateur — augmenter la marge est le seul correctif valable quel que
+soit le modèle configuré. Ajout d'un diagnostic clair (`stop_reason ===
+'max_tokens'` avec texte vide) au cas où le budget serait encore dépassé un
+jour, au lieu du message trompeur "JSON tronqué" sur une réponse en réalité
+totalement vide.
+
 ## 2026-09-21 — Test complet sur 30 tours (Gemini Flash-Lite 3.5) : correctif de langue manquant trouvé
 
 Suite à la demande de valider la mémoire structurée (voir entrée précédente)
