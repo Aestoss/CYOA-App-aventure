@@ -295,10 +295,20 @@ async function streamGemini({ system, user, apiKey, model, onDelta }) {
 // completed" a few thousand characters in. Same failure class as the
 // Anthropic max_tokens incident (see callAnthropic) -- an unverified
 // assumption about how much a turn needs, wrong once a save gets deep
-// enough. Raised well past any prompt this app produces; num_ctx this size
-// is native to the models Fogbound recommends (Llama 3.1, Qwen3, Mistral
-// Small all support 32k+), at the cost of more KV-cache VRAM.
-const OLLAMA_GENERATION_OPTIONS = { max_tokens: 8192, options: { num_ctx: 32768 } };
+// enough.
+//
+// First fix raised this to 32768, which stopped the truncation but traded
+// it for a worse problem on a real run: the request never came back within
+// the client's patience at all (mobile browser gave up after ~68s with no
+// response). The likely cause is VRAM, not the app -- if a GPU can't hold
+// the model's weights plus a KV cache this large, Ollama silently spills
+// part of it to CPU RAM, and CPU-offloaded inference is dramatically
+// slower. 16384 is a middle ground: comfortably above the ~7-7.7k-token
+// prompt size the truncation sizes implied (1871-4364 chars generated
+// before hitting the old 8192 ceiling), while needing much less KV-cache
+// VRAM than 32768 -- likely enough to stay fully on GPU on the same
+// hardware that ran fine at 8192.
+const OLLAMA_GENERATION_OPTIONS = { max_tokens: 8192, options: { num_ctx: 16384 } };
 
 // Ollama exposes an OpenAI-compatible endpoint (/v1/chat/completions) which is
 // far more stable to target than its native API shape — same request/response
