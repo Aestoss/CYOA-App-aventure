@@ -281,22 +281,24 @@ async function streamGemini({ system, user, apiKey, model, onDelta }) {
 // (historically a small context, e.g. 2048-4096 tokens depending on version/
 // model, unless the Modelfile itself overrides it), silently truncating the
 // model's response once the system+user prompt plus however much it had
-// already written filled that window. Fogbound's own AI-suggested actions
-// (suggested_actions) are the LAST thing the narration call writes, in the
-// ===META=== trailer after the whole chapter -- so a truncated response
-// always loses them first, before it loses anything the player would
-// actually notice missing (see splitNarrationResponse's fallback to no
-// suggestions). This is the leading suspect for suggestions "sometimes
-// disappearing" on longer sessions: prompt size grows with the number of
-// memory facts/recent turns accumulated so far, so a save that's been going
-// a while is more likely to be sitting right at whatever the unstated
-// default was. Ollama's OpenAI-compatible endpoint accepts these two as a
-// documented `options` extension alongside the standard fields. 8192 tokens
-// of context and up to 4096 tokens of output are both comfortably above
-// what a single Fogbound turn prompt/chapter ever needs (chapterLength maxes
-// out at 1000 words, well under either figure) while staying realistic for
-// a single consumer GPU to hold alongside a 7-14B model's weights.
-const OLLAMA_GENERATION_OPTIONS = { max_tokens: 4096, options: { num_ctx: 8192 } };
+// already written filled that window.
+//
+// BUG FOUND ON A REAL RUN: num_ctx was originally set to 8192 on the (wrong)
+// assumption that a single Fogbound turn prompt "comfortably" fits under it.
+// Confirmed false in production: a real, established world (deep WORLD LORE
+// + memoryFacts + RECENT_TURNS_WINDOW of raw turn text) routinely pushes the
+// prompt itself past 6-7k tokens, leaving too little of the 8192 total for
+// the model to finish the chapter AND the JSON metadata trailer -- visible
+// on the PC side as the model loading and running at 100% but never
+// returning (it's still generating right up to the wall), and on the
+// server as parseModelJSON's generic "truncated before valid JSON
+// completed" a few thousand characters in. Same failure class as the
+// Anthropic max_tokens incident (see callAnthropic) -- an unverified
+// assumption about how much a turn needs, wrong once a save gets deep
+// enough. Raised well past any prompt this app produces; num_ctx this size
+// is native to the models Fogbound recommends (Llama 3.1, Qwen3, Mistral
+// Small all support 32k+), at the cost of more KV-cache VRAM.
+const OLLAMA_GENERATION_OPTIONS = { max_tokens: 8192, options: { num_ctx: 32768 } };
 
 // Ollama exposes an OpenAI-compatible endpoint (/v1/chat/completions) which is
 // far more stable to target than its native API shape — same request/response
@@ -318,6 +320,9 @@ async function callOllama({ system, user, apiKey, model, baseUrl }) {
   });
   if (!res.ok) await throwApiError('Ollama', res);
   const data = await res.json();
+  if (data.choices[0].finish_reason === 'length') {
+    throw new Error(`Ollama hit the context/output limit (num_ctx: ${OLLAMA_GENERATION_OPTIONS.options.num_ctx}) before finishing -- the response is incomplete. This save's prompt may have grown past what even a raised limit covers, or the model itself was built with a smaller max context than requested.`);
+  }
   return {
     text: data.choices[0].message.content,
     usage: { inputTokens: data.usage?.prompt_tokens || 0, outputTokens: data.usage?.completion_tokens || 0 }
@@ -343,15 +348,20 @@ async function streamOllama({ system, user, apiKey, model, baseUrl, onDelta }) {
   if (!res.ok) await throwApiError('Ollama', res);
   let text = '';
   let usage = { inputTokens: 0, outputTokens: 0 };
+  let finishReason = null;
   for await (const payload of sseDataLines(res.body)) {
     if (payload === '[DONE]') break;
     let data;
     try { data = JSON.parse(payload); } catch (e) { continue; }
     const delta = data.choices?.[0]?.delta?.content;
     if (delta) { text += delta; onDelta(delta); }
+    if (data.choices?.[0]?.finish_reason) finishReason = data.choices[0].finish_reason;
     if (data.usage) {
       usage = { inputTokens: data.usage.prompt_tokens || 0, outputTokens: data.usage.completion_tokens || 0 };
     }
+  }
+  if (finishReason === 'length') {
+    throw new Error(`Ollama hit the context/output limit (num_ctx: ${OLLAMA_GENERATION_OPTIONS.options.num_ctx}) before finishing -- the response is incomplete. This save's prompt may have grown past what even a raised limit covers, or the model itself was built with a smaller max context than requested.`);
   }
   return { text, usage };
 }
