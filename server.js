@@ -733,21 +733,22 @@ app.get('/api/debug/search-corrupted', (req, res) => {
     const raw = fs.readFileSync(full, 'utf-8');
     const entry = { file: f, sizeBytes: raw.length, tail: raw.slice(-tailBytes) };
     if (q) {
+      const allPositions = [];
       const matches = [];
       let idx = raw.indexOf(q);
-      let count = 0;
-      while (idx !== -1 && matches.length < maxMatches) {
-        matches.push({
-          position: idx,
-          context: raw.slice(Math.max(0, idx - context / 2), idx + q.length + context / 2)
-        });
+      while (idx !== -1) {
+        allPositions.push(idx);
+        if (matches.length < maxMatches) {
+          matches.push({
+            position: idx,
+            context: raw.slice(Math.max(0, idx - context / 2), idx + q.length + context / 2)
+          });
+        }
         idx = raw.indexOf(q, idx + q.length);
-        count++;
       }
-      // Keep counting past maxMatches without storing more context.
-      while (idx !== -1) { count++; idx = raw.indexOf(q, idx + q.length); }
       entry.query = q;
-      entry.totalOccurrences = count;
+      entry.totalOccurrences = allPositions.length;
+      entry.allPositions = allPositions;
       entry.matches = matches;
     }
     return entry;
