@@ -5,6 +5,45 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-21 — Test complet sur 30 tours (Gemini Flash-Lite 3.5) : correctif de langue manquant trouvé
+
+Suite à la demande de valider la mémoire structurée (voir entrée précédente)
+sur une partie longue plutôt que 9 tours : nouveau monde de test (station
+arctique isolée), 30 tours joués via l'API réelle avec `gemini-3.5-flash-lite`.
+
+**Résultats confirmés sur ce run réel :**
+- Un fait biographique ("Chloé travaille avec Halvorsen depuis huit ans",
+  énoncé au tour 2) est resté identique mot pour mot en le reposant aux
+  tours 8, 14 et 28 — 26 tours d'écart avec l'énoncé original. Même chose
+  pour un second fait ("Thomas employé depuis six mois", tour 13 vs tour 29).
+  Confirme que le rattachement par personnage tient sur une partie complète,
+  pas seulement un test court.
+- La relecture rétrospective (`maybeSummarize`) s'est bien déclenchée pour de
+  vrai avec ce modèle, au tour 20 puis au tour 30 (comportement normal :
+  seulement tous les `SUMMARIZE_EVERY` tours avec assez de tours eligible
+  au-dela de la fenetre).
+- Asymétrie d'information et refus réalistes toujours confirmés sur ce
+  nouveau monde (Halvorsen refuse de donner une date précise ; les PNJ
+  absents d'une scène ne réagissent pas à ce qu'ils n'ont pas vu).
+
+**Vrai bug trouvé pendant ce test** : le résumé du tour 20 est revenu
+entièrement en anglais alors que toute la partie est en français.
+`buildSummaryPrompt` n'a jamais eu de paramètre de langue ni d'instruction
+"RESPONSE LANGUAGE", contrairement à `buildNarrationMasterPrompt`/
+`buildStateMasterPrompt` qui en ont une. Sans conséquence directe pour le
+joueur (`memoryFacts` n'est jamais affiché tel quel), mais ce texte anglais
+se réinjecte ensuite dans le bloc KNOWN FACTS de chaque tour suivant, à côté
+d'une consigne de langue française — un risque réel de contamination.
+**Correctif** : `buildSummaryPrompt` reçoit maintenant la langue de
+l'histoire (`world.language || settings.language`, comme les deux autres
+prompts maîtres) et une consigne RESPONSE LANGUAGE explicite. Revérifié sur
+la même partie : le résumé du tour 30 (après correctif, serveur relancé) est
+sorti entièrement en français, comparé directement au résumé anglais du
+tour 20 (avant correctif) dans la même sauvegarde.
+
+Coût réel de cette campagne de 30 tours avec Flash-Lite : 34 appels
+(création de monde + tours + 2 relectures rétrospectives), ~$0.23.
+
 ## 2026-09-21 — Mémoire structurée : faits par personnage, faits de lore fixes, relecture rétrospective
 
 Suite à la review comparative avec Infinite Worlds (voir entrée du 17/09) :
