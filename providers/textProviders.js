@@ -359,7 +359,13 @@ async function callMock({ system, user }) {
   const noUsage = { inputTokens: 0, outputTokens: 0 };
   const isSummary = /Summarize the following story turns/.test(system || '');
   if (isSummary) {
-    return { text: 'The traveler arrived at the lighthouse and began exploring its fog-wrapped steps, with the Keeper watching cautiously from the doorway.', usage: noUsage };
+    return {
+      usage: noUsage,
+      text: JSON.stringify({
+        summary: 'The traveler arrived at the lighthouse and began exploring its fog-wrapped steps, with the Keeper watching cautiously from the doorway.',
+        missed_facts: []
+      })
+    };
   }
   const isCharacterGen = /Generate a single playable character/.test(system || '');
   if (isCharacterGen) {
@@ -486,7 +492,16 @@ async function callMock({ system, user }) {
       text: JSON.stringify({
         tracked_item_updates: tookLantern ? [{ name: 'Inventory', new_value: 'a small brass lantern' }, { name: 'Keeper Trust', new_value: 4 }] : [],
         secret_info: tookLantern ? 'Keeper Oduya left the lantern out on purpose, to see who would take it.' : '',
-        state_updates: { location: 'Lighthouse steps', new_facts: [], characters_changed: [], inventory_changed: tookLantern ? ['+ brass lantern'] : [] },
+        state_updates: {
+          location: 'Lighthouse steps',
+          // Exercises the { fact, character, type } shape (see
+          // buildStateMasterPrompt's NEW FACTS section) rather than only ever
+          // sending an empty array — otherwise the mock provider would never
+          // catch a regression in how gameEngine.js stores/renders these.
+          new_facts: tookLantern ? [{ fact: 'Keeper Oduya has tended the lighthouse for eleven years.', character: 'Keeper Oduya', type: 'biographical' }] : [],
+          characters_changed: [],
+          inventory_changed: tookLantern ? ['+ brass lantern'] : []
+        },
         image_prompt: 'A foggy lighthouse at dusk, glass architecture, a lone figure on stone steps'
       })
     };

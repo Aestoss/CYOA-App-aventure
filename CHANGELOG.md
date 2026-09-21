@@ -5,6 +5,62 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-21 — Mémoire structurée : faits par personnage, faits de lore fixes, relecture rétrospective
+
+Suite à la review comparative avec Infinite Worlds (voir entrée du 17/09) :
+un vrai bug de dérive factuelle a été reproduit en direct via l'API Gemini
+(9 tours joués sur un monde de test) — un PNJ énonçant un chiffre précis au
+tour 2 ("trente ans de service"), puis un chiffre différent et faux au tour
+9 une fois ce détail sorti de la fenêtre des 5 derniers tours et jamais
+capturé comme fait durable. Même classe de bug que la plainte n°1 des
+utilisateurs d'Infinite Worlds ("les noms, motivations, rebondissements
+disparaissent en longue partie"), causée ici par une extraction imparfaite
+plutôt qu'une architecture différente.
+
+Quatre changements combinés (demandés explicitement comme un ensemble) :
+
+1. **Extraction plus stricte** (`buildStateMasterPrompt`/`buildMasterPrompt`,
+   section NEW FACTS) : tout détail concret énoncé par un personnage nommé
+   (chiffre, date, nom, promesse précise) doit désormais TOUJOURS être
+   capturé, même s'il ne semble pas central à l'intrigue sur le moment.
+2. **Relecture rétrospective à l'archivage** (`buildSummaryPrompt` +
+   `maybeSummarize`) : au lieu de ne produire qu'un résumé en prose, le
+   point d'archivage (tous les `SUMMARIZE_EVERY` tours) fait maintenant une
+   seconde passe dédiée sur le même lot de tours, spécifiquement pour
+   rattraper les détails concrets manqués par l'extraction du premier
+   passage — recoupée avec ce qui est déjà enregistré pour ne pas dupliquer.
+   Répond directement au bug reproduit : ce lot de tours a maintenant une
+   seconde chance avant que le texte brut ne disparaisse pour de bon.
+3. **Faits rattachés à un personnage précis** (`character` sur chaque
+   entrée `new_facts`) : un fait tagué avec le bon nom reste attaché à ce
+   personnage et réapparaît systématiquement dans son bloc `OTHER
+   CHARACTERS`, sans plafond et indépendamment de la fenêtre de tours
+   récents — c'est ce qui aurait empêché le bug observé.
+4. **Stockage différencié par type** (`type`: "biographical" vs "plot") :
+   un détail fixe (jamais appelé à changer) est désormais séparé de l'état
+   d'intrigue évolutif — les faits "biographical" sans personnage rattaché
+   vivent dans un nouveau bloc WORLD LORE, jamais plafonné ni évincé par de
+   nouveaux faits d'intrigue, contrairement au pool général KNOWN FACTS
+   (toujours plafonné à `RELEVANT_FACTS_LIMIT`, pour l'état qui doit
+   justement pouvoir évoluer/être remplacé).
+
+**Bug de duplication trouvé et corrigé au passage** : `buildTurnPrompt`
+(utilisé par `playTurn`, la route non-streaming `POST /api/saves/:id/turn`,
+bien réelle malgré un commentaire affirmant l'inverse) dupliquait mot pour
+mot toute la construction de blocs déjà factorisée dans
+`buildTurnContextBlocks` (utilisée par le chemin narration/état en
+streaming, celui que le frontend utilise réellement). Cette duplication
+avait déjà dérivé une fois (le correctif CHARACTER KNOWLEDGE & REALISM n'y
+était jamais arrivé). Refactorisé pour appeler le helper partagé — un seul
+endroit à modifier désormais pour les deux chemins.
+
+Testé de bout en bout avec le provider `mock` (aucune clé API requise) :
+persistance d'un fait `{fact, character, type}` biographique, vérification
+qu'il n'entre ni dans KNOWN FACTS ni dans WORLD LORE mais qu'il s'attache
+bien au personnage nommé, rendu correct dans le prompt réel généré, et 20
+tours joués pour confirmer que la relecture rétrospective se déclenche et
+parse sa nouvelle réponse JSON sans erreur.
+
 ## 2026-09-18 — Vrai bug trouvé : BOM UTF-8 dans ui-config.json casse le VAE/encodeur texte de Chroma
 
 Diagnostic complet fourni par le Claude local, confirmé par dump
