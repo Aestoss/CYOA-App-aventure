@@ -639,5 +639,72 @@ app.get('/api/localsd/models', async (req, res) => {
   }
 });
 
+// TEMPORARY -- forensic recovery aid for the db.json corruption incident
+// (see lib/dbAdapter.js). The repair recovered worlds/turns/memoryFacts but
+// NOT saves/playableCharacters/trackedItemDefs/saveTrackedItemValues (they
+// come later in the object's real key order, added by later schema
+// migrations, and the truncation landed before them). Turns and
+// memoryFacts only carry saveId, not worldId, so matching an orphaned save
+// back to its world needs its turn text / snapshot character names
+// eyeballed against the surviving worlds. Read-only. Remove this route
+// once recovery is done.
+app.get('/api/debug/orphan-report', (req, res) => {
+  const fs = require('fs');
+  const dataDir = process.env.DATA_DIR || path.join(__dirname, 'data');
+
+  const worlds = db.get('worlds').value().map(w => ({ id: w.id, title: w.title, tone: w.tone, setting: (w.setting || '').slice(0, 200) }));
+  const saves = db.get('saves').value();
+  const allTurns = db.get('turns').value();
+  const bySave = {};
+  allTurns.forEach(t => {
+    if (!bySave[t.saveId]) bySave[t.saveId] = [];
+    bySave[t.saveId].push(t);
+  });
+  const orphanSaves = Object.keys(bySave).filter(saveId => !saves.find(s => s.id === saveId));
+  const orphanReport = orphanSaves.map(saveId => {
+    const turns = bySave[saveId].sort((a, b) => a.turnNumber - b.turnNumber);
+    const first = turns[0];
+    const last = turns[turns.length - 1];
+    const charNames = new Set();
+    turns.forEach(t => (t.snapshot && t.snapshot.characters || []).forEach(c => charNames.add(c.name)));
+    return {
+      saveId,
+      turnCount: turns.length,
+      turnNumbers: [first.turnNumber, last.turnNumber],
+      firstPlayerAction: first.playerAction,
+      firstChapterSnippet: (first.chapterText || '').slice(0, 300),
+      lastChapterSnippet: (last.chapterText || '').slice(0, 300),
+      snapshotCharacterNames: Array.from(charNames)
+    };
+  });
+
+  const rawKeys = Object.keys(db.getState());
+  let corruptedFiles = [];
+  try {
+    corruptedFiles = fs.readdirSync(dataDir).filter(f => f.startsWith('db.json.corrupted-'));
+  } catch (e) {}
+  const corruptedInfo = corruptedFiles.map(f => {
+    const full = path.join(dataDir, f);
+    const stat = fs.statSync(full);
+    let savesFragment = null;
+    try {
+      const raw = fs.readFileSync(full, 'utf-8');
+      const idx = raw.indexOf('"saves"');
+      if (idx >= 0) savesFragment = raw.slice(idx, idx + 2000);
+      else savesFragment = '(no "saves" key found anywhere in the raw file)';
+    } catch (e) { savesFragment = `(error reading: ${e.message})`; }
+    return { file: f, sizeBytes: stat.size, savesFragment };
+  });
+
+  res.json({
+    liveTopLevelKeys: rawKeys,
+    worlds,
+    savesCount: saves.length,
+    orphanedSaveIds: orphanSaves,
+    orphanReport,
+    corruptedBackups: corruptedInfo
+  });
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Fogbound listening on port ${PORT}`));
