@@ -706,5 +706,55 @@ app.get('/api/debug/orphan-report', (req, res) => {
   });
 });
 
+// TEMPORARY -- companion to /api/debug/orphan-report. Searches the raw
+// preserved corrupted backup file(s) for a substring (e.g. a distinctive
+// name from a save that didn't show up in the repaired data at all), to
+// find out whether it's present but sits past the point the repair could
+// safely close, or truly never made it to disk before the crash. Also
+// reports the file's very last bytes so a real cutoff can be eyeballed
+// directly. Read-only. Remove this route once recovery is done.
+app.get('/api/debug/search-corrupted', (req, res) => {
+  const fs = require('fs');
+  const dataDir = process.env.DATA_DIR || path.join(__dirname, 'data');
+  const q = req.query.q;
+  const context = Math.min(Number(req.query.context) || 800, 5000);
+  const maxMatches = Math.min(Number(req.query.max) || 5, 20);
+  const tailBytes = Math.min(Number(req.query.tail) || 3000, 20000);
+
+  let files = [];
+  try {
+    files = fs.readdirSync(dataDir).filter(f => f.startsWith('db.json.corrupted-'));
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+
+  const results = files.map(f => {
+    const full = path.join(dataDir, f);
+    const raw = fs.readFileSync(full, 'utf-8');
+    const entry = { file: f, sizeBytes: raw.length, tail: raw.slice(-tailBytes) };
+    if (q) {
+      const matches = [];
+      let idx = raw.indexOf(q);
+      let count = 0;
+      while (idx !== -1 && matches.length < maxMatches) {
+        matches.push({
+          position: idx,
+          context: raw.slice(Math.max(0, idx - context / 2), idx + q.length + context / 2)
+        });
+        idx = raw.indexOf(q, idx + q.length);
+        count++;
+      }
+      // Keep counting past maxMatches without storing more context.
+      while (idx !== -1) { count++; idx = raw.indexOf(q, idx + q.length); }
+      entry.query = q;
+      entry.totalOccurrences = count;
+      entry.matches = matches;
+    }
+    return entry;
+  });
+
+  res.json({ results });
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Fogbound listening on port ${PORT}`));
