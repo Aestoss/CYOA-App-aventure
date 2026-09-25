@@ -175,44 +175,35 @@ supplémentaire).
         Changement non trivial ; à cadrer avant de s'y lancer (quel(s)
         fournisseur(s) prioriser, SSE vs WebSocket, que faire pour le
         fournisseur mock qui ne "streame" rien).
-- [ ] **Streamer le texte des chapitres au fur et à mesure, comme Infinite
-      Worlds.** Demande utilisateur : sur Infinite Worlds, le texte d'un
-      nouveau tour apparaît progressivement (mot par mot / phrase par
-      phrase) pendant que la suite est encore en train d'être générée,
-      plutôt que d'attendre le bloc complet comme actuellement (le chapitre
-      entier s'affiche d'un coup une fois `playTurn` totalement terminé).
-      Objectif double : donner l'impression que ça avance (moins frustrant
-      pendant l'attente) et, si c'est vraiment possible, afficher le tout
-      début du chapitre plus tôt plutôt que d'attendre la fin de la
-      génération complète du JSON du tour.
-      - Nuance importante à trancher avant d'implémenter : `chapter_text`
-        n'est qu'un champ du JSON structuré renvoyé par le modèle pour un
-        tour (avec `outcome`, `tracked_item_updates`, `state_updates`,
-        `suggested_actions`, etc., voir `lib/gameEngine.js`/
-        `lib/promptBuilder.js`). Avec l'API standard (non-streamée)
-        actuelle, il faut que le JSON entier soit reçu et valide
-        (`parseModelJSON`) avant de pouvoir en extraire quoi que ce soit,
-        donc `chapter_text` n'est disponible ni plus tôt ni séparément des
-        autres champs. Pour un vrai gain de latence perçue sur le début du
-        texte, il faudrait soit (a) demander `chapter_text` en flux SSE
-        *avant* le reste du JSON (changement de format de sortie demandé
-        au modèle, plus fragile à parser), soit (b) accepter un vrai
-        streaming JSON incrémental côté serveur pour détecter dès que le
-        champ `chapter_text` est complet et le pousser au client avant que
-        le reste du tour ait fini d'arriver.
-      - Recoupe la note ci-dessus sur la barre de progression de création
-        de monde (même prérequis technique : streaming API côté
-        `providers/textProviders.js`, canal SSE/WebSocket `server.js` →
-        client). Si un jour ce chantier de streaming est fait, il vaudrait
-        la peine de le faire une fois pour les deux usages (création de
-        monde ET génération de tour) plutôt que deux fois séparément.
-      - Sans streaming réel, une version "cosmétique" light est possible en
-        attendant : une fois la réponse complète reçue, afficher
-        `chapter_text` avec un effet d'apparition progressive côté client
-        uniquement (ex. mot par mot avec un petit délai) — ça améliore le
-        ressenti pendant la lecture, mais ne réduit pas le temps d'attente
-        réel avant que le premier mot apparaisse, contrairement au vrai
-        streaming.
+      - Le prérequis technique existe maintenant : `generateTextStream`
+        dans `providers/textProviders.js` (voir l'item streaming des
+        chapitres ci-dessous) fait déjà du SSE réel pour
+        Anthropic/OpenAI/OpenRouter/Gemini/Ollama, plus un mock qui streame
+        mot par mot. Reste à brancher `createWorld` dessus et à exposer un
+        canal SSE dédié pour la création (actuellement seul le tour de jeu
+        l'utilise).
+- [x] **Streamer le texte des chapitres au fur et à mesure, comme Infinite
+      Worlds.** Fait : implémenté via l'option (a) envisagée ci-dessous — le
+      tour est maintenant écrit en deux appels IA au lieu d'un seul.
+      `lib/promptBuilder.js` expose `buildNarrationPrompt` (ne demande que
+      la prose du chapitre, texte brut, rien à attendre côté JSON) et
+      `buildStatePrompt` (donne le chapitre déjà écrit et demande le reste
+      — `outcome`, `tracked_item_updates`, `secret_info`, `state_updates`,
+      `image_prompt`, `suggested_actions` — en JSON). `playTurn` dans
+      `lib/gameEngine.js` enchaîne les deux : le premier appel passe par
+      `generateTextStream` (nouveau, dans `providers/textProviders.js`,
+      streaming SSE réel pour Anthropic/OpenAI/OpenRouter/Gemini/Ollama, et
+      un mock qui streame mot par mot pour les tests) et pousse chaque
+      morceau de texte via `onChapterChunk` ; le second appel reste un
+      `callText` classique. Le serveur expose `POST
+      /api/saves/:id/turn/stream` et `POST
+      /api/saves/:id/turns/:turnNumber/regenerate/stream` (JSON
+      newline-delimited : `{"type":"chunk",...}` puis `{"type":"done",
+      "turn":...}`), et `public/app.js` (`playAction`/le popover de
+      régénération) les consomme en affichant le texte au fur et à mesure
+      qu'il arrive. Testé de bout en bout (fournisseur mock + Playwright) :
+      texte streamé, tracked items, suggestions et fin de partie (victoire)
+      tous corrects après un tour et une régénération.
 - [ ] **Slider de longueur des chapitres : granularité 100 → 1000 mots,
       par pas de 100.** Remplacer les 3 paliers actuels (court/moyen/long
       ≈ 200/400/800 mots, `CHAPTER_LENGTH_VALUES` dans `public/app.js`,

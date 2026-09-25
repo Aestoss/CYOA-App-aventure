@@ -5,6 +5,34 @@ qui est prévu mais pas encore fait, voir `TODO.md`. Les dates suivent les
 commits Git ; les entrées sont groupées par lot de fonctionnalités plutôt
 que commit par commit.
 
+## 2026-09-25 — Chapitres streamés en direct, comme Infinite Worlds
+
+- **Le texte d'un tour apparaît maintenant progressivement** pendant sa
+  génération, au lieu d'attendre le bloc complet. Chaque tour est désormais
+  écrit en deux appels IA au lieu d'un seul : un premier appel écrit
+  uniquement la prose du chapitre (`buildNarrationPrompt` dans
+  `lib/promptBuilder.js`) et streame en direct via un nouveau
+  `generateTextStream` (`providers/textProviders.js`, SSE réel pour
+  Anthropic/OpenAI/OpenRouter/Gemini, endpoint OpenAI-compatible pour
+  Ollama, et un mock qui streame mot par mot pour les tests) ; un second
+  appel, non streamé, lit ce chapitre et renvoie le reste de l'état
+  structuré du tour (`outcome`, objets suivis, infos secrètes, image,
+  suggestions — `buildStatePrompt`).
+- Deux nouvelles routes côté serveur (`POST /api/saves/:id/turn/stream` et
+  `POST /api/saves/:id/turns/:turnNumber/regenerate/stream`) répondent en
+  JSON newline-delimited (`{"type":"chunk",...}` puis `{"type":"done",
+  "turn":...}`) ; `public/app.js` les consomme et affiche le texte au fur
+  et à mesure qu'il arrive, aussi bien pour un tour normal
+  (`playAction`) que pour une régénération.
+- Les anciennes routes non streamées restent en place (utilisées par le
+  popup de fond d'histoire au premier tour) — aucun changement de
+  comportement pour elles.
+
+Vérifié avec le fournisseur mock (curl en direct + Playwright, cycle
+complet création → sélection de personnage → tour joué → régénération →
+victoire) : texte reçu morceau par morceau puis assemblé correctement,
+objets suivis/suggestions/fin de partie identiques à avant.
+
 ## 2026-09-14 — Sélecteur de modèle avec prix, fournisseur Ollama, correctif génération Anthropic
 
 - **Corrigé un bug bloquant** : avec une vraie clé Anthropic, la génération
