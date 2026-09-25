@@ -14,34 +14,6 @@ async function throwApiError(providerName, res) {
   throw err;
 }
 
-// Consumes a Server-Sent-Events body (node-fetch's res.body is a Node
-// Readable, which supports async iteration): buffers by the blank-line
-// event boundary, extracts "data: ..." payload lines, and JSON.parses each
-// one into onEvent. Handles both Anthropic-style (typed events) and
-// OpenAI-style (bare data lines, "[DONE]" sentinel) SSE streams.
-async function consumeSSE(nodeStream, onEvent) {
-  let buffer = '';
-  for await (const chunk of nodeStream) {
-    buffer += chunk.toString('utf8');
-    let idx;
-    while ((idx = buffer.indexOf('\n\n')) !== -1) {
-      const rawEvent = buffer.slice(0, idx);
-      buffer = buffer.slice(idx + 2);
-      const dataStr = rawEvent
-        .split('\n')
-        .filter(line => line.startsWith('data:'))
-        .map(line => line.slice(5).trim())
-        .join('\n');
-      if (!dataStr || dataStr === '[DONE]') continue;
-      try {
-        onEvent(JSON.parse(dataStr));
-      } catch (e) {
-        // A partial/malformed event — ignore it rather than aborting the stream.
-      }
-    }
-  }
-}
-
 async function callAnthropic({ system, user, apiKey, model }) {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -72,38 +44,6 @@ async function callAnthropic({ system, user, apiKey, model }) {
   };
 }
 
-async function streamAnthropic({ system, user, apiKey, model, onChunk }) {
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01'
-    },
-    body: JSON.stringify({
-      model: model || 'claude-sonnet-4-6',
-      max_tokens: 8192,
-      system,
-      messages: [{ role: 'user', content: user }],
-      stream: true
-    })
-  });
-  if (!res.ok) await throwApiError('Anthropic', res);
-  let text = '';
-  const usage = { inputTokens: 0, outputTokens: 0 };
-  await consumeSSE(res.body, event => {
-    if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
-      text += event.delta.text;
-      onChunk(event.delta.text);
-    } else if (event.type === 'message_start' && event.message?.usage) {
-      usage.inputTokens = event.message.usage.input_tokens || 0;
-    } else if (event.type === 'message_delta' && event.usage) {
-      usage.outputTokens = event.usage.output_tokens || 0;
-    }
-  });
-  return { text, usage };
-}
-
 async function callOpenAI({ system, user, apiKey, model }) {
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
@@ -124,48 +64,6 @@ async function callOpenAI({ system, user, apiKey, model }) {
   };
 }
 
-// Shared by OpenAI, OpenRouter, and Ollama — all three speak the same
-// OpenAI-compatible chat-completions streaming shape (SSE "data:" lines,
-// choices[0].delta.content, a "[DONE]" sentinel).
-async function streamOpenAICompatible(url, { system, user, apiKey, model, onChunk, defaultModel, extraHeaders, includeUsage }) {
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
-      ...extraHeaders
-    },
-    body: JSON.stringify({
-      model: model || defaultModel,
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: user }
-      ],
-      stream: true,
-      ...(includeUsage ? { stream_options: { include_usage: true } } : {})
-    })
-  });
-  if (!res.ok) await throwApiError('API', res);
-  let text = '';
-  const usage = { inputTokens: 0, outputTokens: 0 };
-  await consumeSSE(res.body, event => {
-    const delta = event.choices?.[0]?.delta?.content;
-    if (delta) {
-      text += delta;
-      onChunk(delta);
-    }
-    if (event.usage) {
-      usage.inputTokens = event.usage.prompt_tokens || usage.inputTokens;
-      usage.outputTokens = event.usage.completion_tokens || usage.outputTokens;
-    }
-  });
-  return { text, usage };
-}
-
-async function streamOpenAI({ system, user, apiKey, model, onChunk }) {
-  return streamOpenAICompatible('https://api.openai.com/v1/chat/completions', { system, user, apiKey, model, onChunk, defaultModel: 'gpt-4o', includeUsage: true });
-}
-
 async function callOpenRouter({ system, user, apiKey, model }) {
   const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
@@ -184,10 +82,6 @@ async function callOpenRouter({ system, user, apiKey, model }) {
     text: data.choices[0].message.content,
     usage: { inputTokens: data.usage?.prompt_tokens || 0, outputTokens: data.usage?.completion_tokens || 0 }
   };
-}
-
-async function streamOpenRouter({ system, user, apiKey, model, onChunk }) {
-  return streamOpenAICompatible('https://openrouter.ai/api/v1/chat/completions', { system, user, apiKey, model, onChunk, defaultModel: 'anthropic/claude-sonnet-4.6', includeUsage: true });
 }
 
 async function callGemini({ system, user, apiKey, model }) {
@@ -215,36 +109,6 @@ async function callGemini({ system, user, apiKey, model }) {
 // far more stable to target than its native API shape — same request/response
 // contract as callOpenAI, just against a local (or tunneled) baseUrl instead
 // of a fixed hostname, and with no key required by default.
-async function streamGemini({ system, user, apiKey, model, onChunk }) {
-  const m = model || 'gemini-3.6-flash';
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${m}:streamGenerateContent?alt=sse&key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: system }] },
-        contents: [{ role: 'user', parts: [{ text: user }] }]
-      })
-    }
-  );
-  if (!res.ok) await throwApiError('Gemini', res);
-  let text = '';
-  const usage = { inputTokens: 0, outputTokens: 0 };
-  await consumeSSE(res.body, event => {
-    const delta = (event.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('');
-    if (delta) {
-      text += delta;
-      onChunk(delta);
-    }
-    if (event.usageMetadata) {
-      usage.inputTokens = event.usageMetadata.promptTokenCount || usage.inputTokens;
-      usage.outputTokens = event.usageMetadata.candidatesTokenCount || usage.outputTokens;
-    }
-  });
-  return { text, usage };
-}
-
 async function callOllama({ system, user, apiKey, model, baseUrl }) {
   const url = `${(baseUrl || 'http://localhost:11434').replace(/\/$/, '')}/v1/chat/completions`;
   const res = await fetch(url, {
@@ -264,11 +128,6 @@ async function callOllama({ system, user, apiKey, model, baseUrl }) {
     text: data.choices[0].message.content,
     usage: { inputTokens: data.usage?.prompt_tokens || 0, outputTokens: data.usage?.completion_tokens || 0 }
   };
-}
-
-async function streamOllama({ system, user, apiKey, model, baseUrl, onChunk }) {
-  const url = `${(baseUrl || 'http://localhost:11434').replace(/\/$/, '')}/v1/chat/completions`;
-  return streamOpenAICompatible(url, { system, user, apiKey, model, onChunk, defaultModel: 'llama3.1' });
 }
 
 // Deterministic fake provider — no network, no key required. Used for local
@@ -370,91 +229,74 @@ async function callMock({ system, user }) {
   // Test hooks so the win/loss wiring can be exercised end-to-end without a
   // real API key: a real model would judge this from context, but the mock
   // is deterministic and doesn't read the story, so it keys off the action text.
-  const isStateCall = /state-tracking half of the Narrator AI/.test(system || '');
   const actionMatch = user.match(/PLAYER ACTION THIS TURN: (.*)/);
   const action = (actionMatch && actionMatch[1]) || '';
-  const data = mockTurnData(action);
-  if (isStateCall) {
-    const { chapter_text, ...state } = data;
-    return { usage: noUsage, text: JSON.stringify(state) };
-  }
-  return { usage: noUsage, text: JSON.stringify(data) };
-}
-
-// The full structured turn a real model would return for a given player
-// action, shared by callMock's turn-shaped JSON response and streamMock's
-// narration (which just streams out its chapter_text word by word).
-function mockTurnData(action) {
   if (/\bwin\b/i.test(action)) {
     return {
-      chapter_text: 'The fog parts at last, and you see clearly what it was hiding — and what to do about it.',
-      outcome: 'success',
-      skill_used: null,
-      game_over: { result: 'victory', text: null },
-      tracked_item_updates: [],
-      secret_info: '',
-      state_updates: { location: null, new_facts: [], characters_changed: [], inventory_changed: [] },
-      image_prompt: null,
-      suggested_actions: []
+      usage: noUsage,
+      text: JSON.stringify({
+        chapter_text: 'The fog parts at last, and you see clearly what it was hiding — and what to do about it.',
+        outcome: 'success',
+        skill_used: null,
+        game_over: { result: 'victory', text: null },
+        tracked_item_updates: [],
+        secret_info: '',
+        state_updates: { location: null, new_facts: [], characters_changed: [], inventory_changed: [] },
+        image_prompt: null,
+        suggested_actions: []
+      })
     };
   }
   if (/\blose\b/i.test(action)) {
     return {
-      chapter_text: 'The fog thickens until you can no longer tell which way leads back to the light.',
-      outcome: 'failure',
-      skill_used: null,
-      game_over: { result: 'defeat', text: null },
-      tracked_item_updates: [],
-      secret_info: '',
-      state_updates: { location: null, new_facts: [], characters_changed: [], inventory_changed: [] },
-      image_prompt: null,
-      suggested_actions: []
+      usage: noUsage,
+      text: JSON.stringify({
+        chapter_text: 'The fog thickens until you can no longer tell which way leads back to the light.',
+        outcome: 'failure',
+        skill_used: null,
+        game_over: { result: 'defeat', text: null },
+        tracked_item_updates: [],
+        secret_info: '',
+        state_updates: { location: null, new_facts: [], characters_changed: [], inventory_changed: [] },
+        image_prompt: null,
+        suggested_actions: []
+      })
     };
   }
   if (/\btake the lantern\b/i.test(action)) {
     return {
-      chapter_text: 'You lift the lantern from its hook. Keeper Oduya says nothing, but her eyes follow it.',
-      outcome: 'success',
-      skill_used: null,
-      game_over: null,
-      tracked_item_updates: [{ name: 'Inventory', new_value: 'a small brass lantern' }, { name: 'Keeper Trust', new_value: 4 }],
-      secret_info: 'Keeper Oduya left the lantern out on purpose, to see who would take it.',
-      state_updates: { location: null, new_facts: [], characters_changed: [], inventory_changed: ['+ brass lantern'] },
-      image_prompt: null,
-      suggested_actions: ['Ask why she\'s watching you', 'Light the lantern', 'Put it back']
+      usage: noUsage,
+      text: JSON.stringify({
+        chapter_text: 'You lift the lantern from its hook. Keeper Oduya says nothing, but her eyes follow it.',
+        outcome: 'success',
+        skill_used: null,
+        game_over: null,
+        tracked_item_updates: [{ name: 'Inventory', new_value: 'a small brass lantern' }, { name: 'Keeper Trust', new_value: 4 }],
+        secret_info: 'Keeper Oduya left the lantern out on purpose, to see who would take it.',
+        state_updates: { location: null, new_facts: [], characters_changed: [], inventory_changed: ['+ brass lantern'] },
+        image_prompt: null,
+        suggested_actions: ['Ask why she\'s watching you', 'Light the lantern', 'Put it back']
+      })
     };
   }
+
   return {
-    chapter_text: 'You step forward, and the fog seems to lean in around you, as if listening. Somewhere above, the lighthouse lens turns without a keeper\'s hand.',
-    outcome: 'n/a',
-    skill_used: null,
-    game_over: null,
-    tracked_item_updates: [],
-    secret_info: '',
-    state_updates: { location: 'Lighthouse steps', new_facts: [], characters_changed: [], inventory_changed: [] },
-    image_prompt: 'A foggy lighthouse at dusk, glass architecture, a lone figure on stone steps',
-    suggested_actions: ['Call out to the Keeper', 'Climb the steps', 'Look for another way in']
+    usage: noUsage,
+    text: JSON.stringify({
+      chapter_text: 'You step forward, and the fog seems to lean in around you, as if listening. Somewhere above, the lighthouse lens turns without a keeper\'s hand.',
+      outcome: 'n/a',
+      skill_used: null,
+      game_over: null,
+      tracked_item_updates: [],
+      secret_info: '',
+      state_updates: { location: 'Lighthouse steps', new_facts: [], characters_changed: [], inventory_changed: [] },
+      image_prompt: 'A foggy lighthouse at dusk, glass architecture, a lone figure on stone steps',
+      suggested_actions: ['Call out to the Keeper', 'Climb the steps', 'Look for another way in']
+    })
   };
 }
 
-// Streaming counterpart to callMock's turn branch: computes the same
-// deterministic chapter text, then emits it to onChunk word by word so the
-// mock provider exercises the real streaming path end to end.
-async function streamMock({ system, user, onChunk }) {
-  const actionMatch = user.match(/PLAYER ACTION THIS TURN: (.*)/);
-  const action = (actionMatch && actionMatch[1]) || '';
-  const { chapter_text } = mockTurnData(action);
-  const tokens = chapter_text.split(/(\s+)/).filter(Boolean);
-  let text = '';
-  for (const token of tokens) {
-    text += token;
-    onChunk(token);
-  }
-  return { text, usage: { inputTokens: 0, outputTokens: 0 } };
-}
-
 const providers = { anthropic: callAnthropic, openai: callOpenAI, openrouter: callOpenRouter, gemini: callGemini, ollama: callOllama, mock: callMock };
-const streamProviders = { anthropic: streamAnthropic, openai: streamOpenAI, openrouter: streamOpenRouter, gemini: streamGemini, ollama: streamOllama, mock: streamMock };
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -492,31 +334,4 @@ async function generateText({ provider, system, user, apiKey, model, baseUrl }) 
   throw lastError; // unreachable, but keeps the return type honest
 }
 
-// Streaming counterpart to generateText, used for the narration half of a
-// turn so chapter text can reach the player as it's written (see
-// server.js's /turn/stream route and gameEngine.js's playTurn). Retries the
-// same way generateText does, but only while nothing has actually streamed
-// to the caller yet — once onChunk has fired, retrying would replay the
-// prompt and duplicate text on the client, so a mid-stream failure is
-// surfaced instead of silently retried.
-async function generateTextStream({ provider, system, user, apiKey, model, baseUrl, onChunk }) {
-  const fn = streamProviders[provider] || streamProviders.mock;
-  let lastError;
-  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
-    let emittedAny = false;
-    const wrappedOnChunk = delta => {
-      emittedAny = true;
-      onChunk(delta);
-    };
-    try {
-      return await fn({ system, user, apiKey, model, baseUrl, onChunk: wrappedOnChunk });
-    } catch (e) {
-      lastError = e;
-      if (emittedAny || !isRetryable(e) || attempt === RETRY_DELAYS_MS.length) throw e;
-      await sleep(RETRY_DELAYS_MS[attempt]);
-    }
-  }
-  throw lastError; // unreachable, but keeps the return type honest
-}
-
-module.exports = { generateText, generateTextStream };
+module.exports = { generateText };

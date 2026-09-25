@@ -385,64 +385,6 @@ app.post('/api/saves/:id/turns/:turnNumber/regenerate', async (req, res) => {
   }
 });
 
-// Newline-delimited JSON event stream, one event per line: {"type":"chunk","text":...}
-// as the chapter text is written, then a single {"type":"done","turn":...} once
-// the full turn (including tracked items, image, etc.) is ready, or
-// {"type":"error","message":...} if anything failed. x-accel-buffering:no
-// asks any reverse proxy in front of this (e.g. Railway) not to buffer the
-// response, so chunks actually reach the client as they're written rather
-// than arriving all at once when the connection closes.
-function streamTurnResponse(res, playPromise) {
-  res.writeHead(200, {
-    'content-type': 'application/x-ndjson; charset=utf-8',
-    'cache-control': 'no-cache',
-    'x-accel-buffering': 'no'
-  });
-  const send = event => res.write(`${JSON.stringify(event)}\n`);
-  return playPromise(text => send({ type: 'chunk', text }))
-    .then(turn => {
-      send({ type: 'done', turn });
-      res.end();
-    })
-    .catch(e => {
-      console.error(e);
-      send({ type: 'error', message: e.message });
-      res.end();
-    });
-}
-
-app.post('/api/saves/:id/turn/stream', (req, res) => {
-  const { action, authorMode, debug } = req.body;
-  if (!action || !action.trim()) return res.status(400).json({ error: 'action is required' });
-  let save, itemDefs;
-  try {
-    save = getSave(req.params.id);
-    itemDefs = db.get('trackedItemDefs').filter({ worldId: save.worldId }).value();
-  } catch (e) {
-    return res.status(400).json({ error: e.message });
-  }
-  streamTurnResponse(res, onChapterChunk =>
-    playTurn(req.params.id, action.trim(), { authorMode: Boolean(authorMode), onChapterChunk })
-      .then(turn => publicTurn(turn, { debug: Boolean(debug), itemDefs }))
-  );
-});
-
-app.post('/api/saves/:id/turns/:turnNumber/regenerate/stream', (req, res) => {
-  const { action, note, debug } = req.body;
-  const turnNumber = Number(req.params.turnNumber);
-  let save, itemDefs;
-  try {
-    save = getSave(req.params.id);
-    itemDefs = db.get('trackedItemDefs').filter({ worldId: save.worldId }).value();
-  } catch (e) {
-    return res.status(400).json({ error: e.message });
-  }
-  streamTurnResponse(res, onChapterChunk =>
-    regenerateTurn(req.params.id, turnNumber, { action, note, onChapterChunk })
-      .then(turn => publicTurn(turn, { debug: Boolean(debug), itemDefs }))
-  );
-});
-
 app.post('/api/saves/:id/rewind', (req, res) => {
   try {
     const { turnNumber } = req.body;

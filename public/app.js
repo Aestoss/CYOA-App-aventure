@@ -1427,80 +1427,31 @@ function renderSuggestions(actions) {
   });
 }
 
-// Reads a newline-delimited JSON event stream from one of the /turn/stream
-// or /regenerate/stream routes: {"type":"chunk","text":...} events are
-// forwarded to onChunk as they arrive (so the chapter can be shown appearing
-// gradually, like Infinite Worlds, instead of waiting for the whole turn to
-// finish generating), then a single {"type":"done","turn":...} resolves
-// with the finished turn, or {"type":"error","message":...} rejects.
-async function streamTurnRequest(url, body, onChunk) {
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body)
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    let data;
-    try { data = JSON.parse(text); } catch (e) { throw new Error(t('illegibleResponse')(res.status)); }
-    throw new Error(data.error || 'Unknown error');
-  }
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  let turn = null;
-  let errorMessage = null;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    let idx;
-    while ((idx = buffer.indexOf('\n')) !== -1) {
-      const line = buffer.slice(0, idx).trim();
-      buffer = buffer.slice(idx + 1);
-      if (!line) continue;
-      let event;
-      try { event = JSON.parse(line); } catch (e) { continue; }
-      if (event.type === 'chunk') onChunk(event.text);
-      else if (event.type === 'done') turn = event.turn;
-      else if (event.type === 'error') errorMessage = event.message;
-    }
-  }
-  if (errorMessage) throw new Error(errorMessage);
-  if (!turn) throw new Error(t('illegibleResponse')(res.status));
-  return turn;
-}
-
 async function playAction(action) {
   const input = document.getElementById('actionInput');
   input.value = '';
   const content = document.getElementById('pageContent');
-  const chapter = document.createElement('div');
-  chapter.className = 'chapter';
-  const actionLine = document.createElement('div');
-  actionLine.className = 'player-action';
-  actionLine.textContent = `→ ${action}`;
-  chapter.appendChild(actionLine);
-  const streamEl = document.createElement('p');
-  streamEl.className = 'loading';
-  streamEl.textContent = debugModeOn ? t('narratorApplyingInstruction') : t('narratorThinking');
-  chapter.appendChild(streamEl);
-  content.appendChild(chapter);
+  const pending = document.createElement('p');
+  pending.className = 'loading';
+  pending.textContent = debugModeOn ? t('narratorApplyingInstruction') : t('narratorThinking');
+  content.appendChild(pending);
   document.getElementById('suggestedActions').innerHTML = '';
 
   const updatedAtBefore = currentSave.updatedAt;
-  let streamedText = '';
   try {
-    await streamTurnRequest(`${API}/saves/${currentSaveId}/turn/stream`, { action, authorMode: debugModeOn, debug: debugModeOn }, chunk => {
-      streamEl.classList.remove('loading');
-      streamedText += chunk;
-      streamEl.textContent = streamedText;
+    const res = await fetch(`${API}/saves/${currentSaveId}/turn`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action, authorMode: debugModeOn, debug: debugModeOn })
     });
+    const text = await res.text();
+    let data;
+    try { data = JSON.parse(text); } catch (e) { throw new Error(t('illegibleResponse')(res.status)); }
+    if (!res.ok) throw new Error(data.error || 'Unknown error');
     await refreshSave(true);
   } catch (e) {
     if (!(await attemptRecovery(updatedAtBefore))) {
-      streamEl.className = 'loading';
-      streamEl.textContent = t('errorPrefix') + e.message + t('retryHint');
+      pending.textContent = t('errorPrefix') + e.message + t('retryHint');
     }
   }
 }
@@ -1551,34 +1502,22 @@ document.getElementById('regenerateConfirmBtn').onclick = async () => {
   const btn = document.getElementById('regenerateConfirmBtn');
   const updatedAtBefore = currentSave.updatedAt;
   btn.disabled = true;
-  document.getElementById('regeneratePopover').classList.add('hidden');
-
-  const content = document.getElementById('pageContent');
-  const chapter = document.createElement('div');
-  chapter.className = 'chapter';
-  const actionLine = document.createElement('div');
-  actionLine.className = 'player-action';
-  actionLine.textContent = `→ ${action}`;
-  chapter.appendChild(actionLine);
-  const streamEl = document.createElement('p');
-  streamEl.className = 'loading';
-  streamEl.textContent = t('narratorThinking');
-  chapter.appendChild(streamEl);
-  content.innerHTML = '';
-  content.appendChild(chapter);
-
-  let streamedText = '';
   try {
-    await streamTurnRequest(`${API}/saves/${currentSaveId}/turns/${turn.turnNumber}/regenerate/stream`, { action, note, debug: debugModeOn }, chunk => {
-      streamEl.classList.remove('loading');
-      streamedText += chunk;
-      streamEl.textContent = streamedText;
+    const res = await fetch(`${API}/saves/${currentSaveId}/turns/${turn.turnNumber}/regenerate`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action, note, debug: debugModeOn })
     });
+    const text = await res.text();
+    let data;
+    try { data = JSON.parse(text); } catch (e) { throw new Error(t('illegibleResponse')(res.status)); }
+    if (!res.ok) throw new Error(data.error);
+    document.getElementById('regeneratePopover').classList.add('hidden');
     await refreshSave(true);
   } catch (e) {
+    document.getElementById('regeneratePopover').classList.add('hidden');
     if (!(await attemptRecovery(updatedAtBefore))) {
       alert(t('errorPrefix') + e.message + t('regenFailedHint'));
-      await refreshSave(false);
     }
   } finally {
     btn.disabled = false;
